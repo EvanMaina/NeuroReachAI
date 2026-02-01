@@ -1,0 +1,338 @@
+services:
+  # PostgreSQL Database - Optimized for 1M+ leads
+  db:
+    image: postgres:14-alpine
+    container_name: neuroreach-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-neuroreach}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neuroreach_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-neuroreach}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    # PostgreSQL Performance Tuning
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=256MB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=64MB
+      -c default_statistics_target=100
+      -c max_connections=200
+      -c idle_in_transaction_session_timeout=30000
+      -c statement_timeout=30000
+      -c log_min_duration_statement=200
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neuroreach} -d ${POSTGRES_DB:-neuroreach}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Redis Cache - Optimized for high-throughput caching
+  redis:
+    image: redis:7-alpine
+    container_name: neuroreach-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 768M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # FastAPI Backend - Optimized with proper resource limits
+  # All config comes from backend/.env — only Docker-internal networking overrides below
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neuroreach-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      # Docker-internal networking overrides (these use container hostnames)
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-neuroreach}:${POSTGRES_PASSWORD:-neuroreach_dev_password}@db:5432/${POSTGRES_DB:-neuroreach}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      # SMS dev server: route to smsdev container
+      - SMS_LOCAL_URL=http://smsdev:1081
+      # Performance tuning
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend/src:/app/src:ro
+      - ./backend/static:/app/static:ro
+      - ./backend/scripts:/app/scripts:ro
+      - ./frontend/dist-widget:/app/frontend/dist-widget:ro
+      - ./frontend/dist-assessment:/app/frontend/dist-assessment:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # React Frontend - Optimized with resource limits
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: neuroreach-frontend
+    restart: unless-stopped
+    environment:
+      # Vite proxy forwards /api/* to the backend container; Axios uses relative URLs.
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Celery Worker for Async Lead Processing
+  # All config comes from backend/.env — only Docker-internal networking overrides below
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neuroreach-celery-worker
+    restart: unless-stopped
+    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-10}
+    env_file:
+      - ./backend/.env
+    environment:
+      # Docker-internal networking overrides (these use container hostnames)
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-neuroreach}:${POSTGRES_PASSWORD:-neuroreach_dev_password}@db:5432/${POSTGRES_DB:-neuroreach}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - BACKEND_URL=http://backend:8000
+      # SMS dev server: route to smsdev container
+      - SMS_LOCAL_URL=http://smsdev:1081
+    volumes:
+      - ./backend/src:/app/src:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A src.tasks.celery_app inspect ping --timeout 10 2>&1 | grep -q pong"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Celery Beat for Scheduled Tasks
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neuroreach-celery-beat
+    restart: unless-stopped
+    command: celery -A src.tasks.celery_app beat --loglevel=info --schedule=/var/run/celery/celerybeat-schedule
+    env_file:
+      - ./backend/.env
+    environment:
+      # Docker-internal networking overrides
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-neuroreach}:${POSTGRES_PASSWORD:-neuroreach_dev_password}@db:5432/${POSTGRES_DB:-neuroreach}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    volumes:
+      - ./backend/src:/app/src:ro
+      - celerybeat_schedule:/var/run/celery
+    depends_on:
+      - celery-worker
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /var/run/celery/celerybeat-schedule || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Elasticsearch for Scalable Search
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: neuroreach-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.name=neuroreach-cluster
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # SMS Dev Server - Local SMS Capture and Viewer (Development Only)
+  # Browse captured SMS at http://localhost:1081
+  smsdev:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.smsdev
+    container_name: neuroreach-smsdev
+    restart: unless-stopped
+    ports:
+      - "1081:1081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:1081/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Maildev - Local Email Testing (Development Only)
+  maildev:
+    image: maildev/maildev:latest
+    container_name: neuroreach-maildev
+    restart: unless-stopped
+    ports:
+      - "1080:1080"  # Web UI
+      - "1025:1025"  # SMTP Server
+    environment:
+      - MAILDEV_INCOMING_USER=
+      - MAILDEV_INCOMING_PASS=
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:1080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Flower - Celery Monitoring (optional, for development)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: neuroreach-flower
+    restart: unless-stopped
+    command: celery -A src.tasks.celery_app flower --port=5555 --basic-auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower_admin_2024}
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    ports:
+      - "5555:5555"
+    depends_on:
+      - celery-worker
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  celerybeat_schedule:
+    driver: local
+
+networks:
+  default:
+    name: neuroreach-network

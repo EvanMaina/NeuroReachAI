@@ -1,0 +1,672 @@
+/**
+ * Widget Embed CSS — Premium Healthcare Grade
+ * 
+ * Scoped to .nr-widget-root via tailwind.config.widget.js
+ * All utilities use `important: '.nr-widget-root'` to prevent host conflicts.
+ * 
+ * v2.0.0 — Complete checkbox/radio overhaul:
+ * - .nr-card-checkbox / .nr-card-radio = single styled input inside option cards
+ * - .nr-sms-checkbox = prominent SMS consent checkbox
+ * - No duplicate indicators anywhere
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   Hard Reset — Isolate from host styles
+   ============================================ */
+
+.nr-widget-root,
+.nr-widget-root *,
+.nr-widget-root *::before,
+.nr-widget-root *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.nr-widget-root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1f2937;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   Premium Input Styling (global)
+   ============================================ */
+
+.nr-widget-root input,
+.nr-widget-root button,
+.nr-widget-root select,
+.nr-widget-root textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Text inputs — consistent height, radius, focus ring */
+.nr-widget-root input[type="text"],
+.nr-widget-root input[type="email"],
+.nr-widget-root input[type="tel"],
+.nr-widget-root input[type="date"],
+.nr-widget-root input[type="number"] {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: #1f2937;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nr-widget-root input[type="text"]:focus,
+.nr-widget-root input[type="email"]:focus,
+.nr-widget-root input[type="tel"]:focus,
+.nr-widget-root input[type="date"]:focus,
+.nr-widget-root input[type="number"]:focus {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.nr-widget-root input::placeholder {
+  color: #b0b8c4;
+  font-weight: 400;
+}
+
+/* Has icon — left padding for icon inputs */
+.nr-widget-root input.nr-has-icon {
+  padding-left: 36px;
+}
+
+/* ============================================
+   Typography Overrides for Widget Context
+   ============================================ */
+
+/* Step headings — compact */
+.nr-widget-root h3 {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  color: #111827 !important;
+  margin: 0 !important;
+}
+
+/* Step subtext */
+.nr-widget-root h3 + p,
+.nr-widget-root .space-y-2 > p {
+  font-size: 12.5px !important;
+  color: #6b7280 !important;
+  line-height: 1.4 !important;
+}
+
+/* Labels */
+.nr-widget-root label {
+  font-size: 13px;
+}
+
+/* Helper text under inputs */
+.nr-widget-root .text-xs.text-gray-500 {
+  font-size: 11px !important;
+}
+
+/* ============================================
+   Option Cards — Consistent Border/Radius
+   ============================================ */
+
+.nr-widget-root label[class*="border-2"],
+.nr-widget-root button[class*="border-2"] {
+  border-width: 1.5px !important;
+  border-radius: 10px !important;
+}
+
+/* ============================================
+   ★ CARD CHECKBOX — .nr-card-checkbox
+   Single custom-styled checkbox inside option cards.
+   Replaces all native checkboxes in card labels.
+   ============================================ */
+
+.nr-widget-root .nr-card-checkbox {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  max-width: 20px !important;
+  max-height: 20px !important;
+  border-radius: 6px !important;
+  border: 2px solid #d1d5db !important;
+  background: #ffffff !important;
+  cursor: pointer !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transition: all 0.2s ease !important;
+  outline: none !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+}
+
+.nr-widget-root .nr-card-checkbox:checked {
+  border-color: #7c3aed !important;
+  background: #7c3aed !important;
+}
+
+.nr-widget-root .nr-card-checkbox:checked::after {
+  content: '' !important;
+  display: block !important;
+  width: 5px !important;
+  height: 9px !important;
+  border: solid #fff !important;
+  border-width: 0 2.5px 2.5px 0 !important;
+  position: absolute !important;
+  top: 45% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) rotate(45deg) !important;
+}
+
+.nr-widget-root .nr-card-checkbox:focus {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15) !important;
+}
+
+/* ============================================
+   ★ CARD RADIO — .nr-card-radio
+   Single custom-styled radio inside option cards.
+   Replaces all native radios in card labels.
+   ============================================ */
+
+.nr-widget-root .nr-card-radio {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  max-width: 20px !important;
+  max-height: 20px !important;
+  border-radius: 50% !important;
+  border: 2px solid #d1d5db !important;
+  background: #ffffff !important;
+  cursor: pointer !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transition: all 0.2s ease !important;
+  outline: none !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+}
+
+.nr-widget-root .nr-card-radio:checked {
+  border-color: #7c3aed !important;
+  background: #7c3aed !important;
+}
+
+.nr-widget-root .nr-card-radio:checked::after {
+  content: '' !important;
+  display: block !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.nr-widget-root .nr-card-radio:focus {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15) !important;
+}
+
+/* ============================================
+   ★ OPTION CARD — .nr-option-card
+   Selected/unselected state styling for all cards.
+   ============================================ */
+
+/* Selected card — purple border + light purple bg */
+.nr-widget-root .nr-option-card[class*="border-indigo-500"],
+.nr-widget-root .nr-option-card[class*="border-secondary-500"],
+.nr-widget-root label[class*="border-indigo-500"],
+.nr-widget-root label[class*="border-secondary-500"] {
+  border-color: #7c3aed !important;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe) !important;
+}
+
+/* Selected card text color */
+.nr-widget-root .nr-option-card[class*="border-indigo-500"] span,
+.nr-widget-root .nr-option-card[class*="border-secondary-500"] span {
+  color: #5b21b6 !important;
+}
+
+/* Hover on unselected cards */
+.nr-widget-root .nr-option-card[class*="border-gray-200"]:hover {
+  border-color: #c4b5fd !important;
+  background: #faf5ff !important;
+}
+
+/* ============================================
+   ★ NUCLEAR: Hide ALL native checkbox/radio inside
+     old-style border-2 labels that DON'T have our
+     custom classes — catches ANY stragglers.
+   ============================================ */
+
+/* Hide any native input in sr-only — make sure it stays hidden */
+.nr-widget-root .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+}
+
+/* ============================================
+   ★ SMS CONSENT — Prominent Card Design
+   Step 11: Large, visible, clear consent checkbox
+   ============================================ */
+
+.nr-widget-root .nr-sms-consent-card {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe) !important;
+  border: 1.5px solid #c4b5fd !important;
+  border-radius: 10px !important;
+  padding: 12px 14px !important;
+  margin-top: 4px !important;
+}
+
+.nr-widget-root .nr-sms-consent-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  cursor: pointer !important;
+  font-size: 14px !important;
+}
+
+.nr-widget-root .nr-sms-checkbox {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  min-height: 22px !important;
+  max-width: 22px !important;
+  max-height: 22px !important;
+  border-radius: 6px !important;
+  border: 2px solid #8b5cf6 !important;
+  background: #ffffff !important;
+  cursor: pointer !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transition: all 0.2s ease !important;
+  outline: none !important;
+}
+
+.nr-widget-root .nr-sms-checkbox:checked {
+  border-color: #7c3aed !important;
+  background: #7c3aed !important;
+}
+
+.nr-widget-root .nr-sms-checkbox:checked::after {
+  content: '' !important;
+  display: block !important;
+  width: 6px !important;
+  height: 10px !important;
+  border: solid #fff !important;
+  border-width: 0 2.5px 2.5px 0 !important;
+  position: absolute !important;
+  top: 45% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) rotate(45deg) !important;
+}
+
+.nr-widget-root .nr-sms-checkbox:focus {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2) !important;
+}
+
+.nr-widget-root .nr-sms-consent-text {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #374151 !important;
+  line-height: 1.4 !important;
+}
+
+/* ============================================
+   Info Boxes — Compact & Consistent
+   ============================================ */
+
+.nr-widget-root div[class*="bg-green-50"],
+.nr-widget-root div[class*="bg-blue-50"],
+.nr-widget-root div[class*="bg-amber-50"],
+.nr-widget-root div[class*="bg-purple-50"],
+.nr-widget-root div[class*="bg-gray-50"] {
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+}
+
+.nr-widget-root div[class*="bg-green-50"] p,
+.nr-widget-root div[class*="bg-blue-50"] p,
+.nr-widget-root div[class*="bg-amber-50"] p,
+.nr-widget-root div[class*="bg-purple-50"] p,
+.nr-widget-root div[class*="bg-gray-50"] p {
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+}
+
+/* ============================================
+   Step Container Padding Override
+   Steps use p-6 but widget wrapper already adds 16px 20px.
+   Strip inner padding to prevent double-spacing.
+   ============================================ */
+
+.nr-widget-root .p-6 {
+  padding: 0 !important;
+}
+
+.nr-widget-root .p-4 {
+  padding: 0 !important;
+}
+
+/* Restore padding for info boxes & card labels (not step containers) */
+.nr-widget-root div[class*="bg-green-50"].p-4,
+.nr-widget-root div[class*="bg-blue-50"].p-4,
+.nr-widget-root div[class*="bg-amber-50"].p-4,
+.nr-widget-root div[class*="bg-gray-50"].p-4,
+.nr-widget-root div[class*="bg-purple-50"].p-4 {
+  padding: 10px 12px !important;
+}
+
+.nr-widget-root label.p-4,
+.nr-widget-root label[class*="p-4"] {
+  padding: 10px 12px !important;
+}
+
+.nr-widget-root label.p-3,
+.nr-widget-root label[class*="p-3"],
+.nr-widget-root button[class*="p-3"] {
+  padding: 10px 12px !important;
+}
+
+/* ============================================
+   Spacing — Tighten vertical gaps
+   ============================================ */
+
+.nr-widget-root .space-y-6 > * + * {
+  margin-top: 16px !important;
+}
+
+.nr-widget-root .space-y-5 > * + * {
+  margin-top: 14px !important;
+}
+
+.nr-widget-root .space-y-4 > * + * {
+  margin-top: 12px !important;
+}
+
+.nr-widget-root .space-y-3 > * + * {
+  margin-top: 8px !important;
+}
+
+.nr-widget-root .space-y-2 > * + * {
+  margin-top: 4px !important;
+}
+
+/* ============================================
+   Button Styles
+   ============================================ */
+
+.nr-widget-root .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.25);
+}
+
+.nr-widget-root .btn-primary:hover {
+  background: linear-gradient(135deg, #4338ca, #6d28d9);
+  box-shadow: 0 6px 20px rgba(79, 70, 229, 0.35);
+  transform: translateY(-1px);
+}
+
+.nr-widget-root .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.nr-widget-root .btn-secondary:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+/* ============================================
+   Panel Animations
+   ============================================ */
+
+.nr-widget-panel-open {
+  animation: nr-widget-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.nr-widget-panel-closing {
+  animation: nr-widget-slide-out 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes nr-widget-slide-in {
+  from { opacity: 0; transform: scale(0.85) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes nr-widget-slide-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.85) translateY(20px); }
+}
+
+/* ============================================
+   Pulse Ring (launcher button)
+   ============================================ */
+
+@keyframes nr-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0; transform: scale(1.3); }
+}
+
+/* ============================================
+   Spinner
+   ============================================ */
+
+.nr-spin {
+  animation: nr-spin-anim 1s linear infinite;
+}
+
+@keyframes nr-spin-anim {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Scrollbar
+   ============================================ */
+
+.nr-widget-root ::-webkit-scrollbar {
+  width: 4px;
+}
+
+.nr-widget-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nr-widget-root ::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.nr-widget-root ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* ============================================
+   Fade-in (conditional fields)
+   ============================================ */
+
+.nr-widget-root .animate-fade-in {
+  animation: nr-fade-in 0.2s ease-out;
+}
+
+@keyframes nr-fade-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   Shimmer (header accent)
+   ============================================ */
+
+.nr-widget-root .animate-shimmer {
+  animation: nr-shimmer 3s infinite;
+}
+
+@keyframes nr-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ============================================
+   Screen Reader Only
+   ============================================ */
+
+.nr-widget-root .sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+}
+
+/* ============================================
+   Contact Step — Grid Fix for Small Widget
+   ============================================ */
+
+.nr-widget-root .grid.grid-cols-2.gap-4 {
+  gap: 8px !important;
+}
+
+.nr-widget-root .grid.grid-cols-2.gap-2 {
+  gap: 6px !important;
+}
+
+/* ============================================
+   Confirmation Step Overrides
+   ============================================ */
+
+.nr-widget-root .text-2xl {
+  font-size: 18px !important;
+}
+
+.nr-widget-root .text-xl {
+  font-size: 15px !important;
+}
+
+.nr-widget-root .w-16.h-16 {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+.nr-widget-root .w-8.h-8 {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* ============================================
+   Input Height Override — 44px minimum for mobile tap targets
+   ============================================ */
+
+.nr-widget-root input[type="text"],
+.nr-widget-root input[type="email"],
+.nr-widget-root input[type="tel"],
+.nr-widget-root input[type="date"],
+.nr-widget-root input[type="number"] {
+  min-height: 44px !important;
+}
+
+/* ============================================
+   ★ GLOBAL SAFETY NET — Catch ALL remaining native
+     checkboxes/radios inside ANY card label/button that
+     somehow doesn't have our custom classes.
+     Uses lower specificity so custom classes win.
+   ============================================ */
+
+/* Any checkbox/radio that is a direct child of a border-2 label
+   AND is NOT one of our named classes — hide it completely */
+.nr-widget-root label[class*="border-2"] > input[type="checkbox"]:not(.nr-card-checkbox):not(.nr-sms-checkbox),
+.nr-widget-root label[class*="border-2"] > input[type="radio"]:not(.nr-card-radio) {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Also hide any generic checkbox/radio that uses old Tailwind classes */
+.nr-widget-root label[class*="border-2"] > input[type="checkbox"].w-4,
+.nr-widget-root label[class*="border-2"] > input[type="checkbox"].w-5,
+.nr-widget-root label[class*="border-2"] > input[type="radio"].w-4,
+.nr-widget-root label[class*="border-2"] > input[type="radio"].h-4,
+.nr-widget-root label[class*="border-2"] > input[type="radio"].mt-0\.5 {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Accent color for any stray visible checkboxes/radios */
+.nr-widget-root input[type="checkbox"],
+.nr-widget-root input[type="radio"] {
+  accent-color: #7c3aed;
+}

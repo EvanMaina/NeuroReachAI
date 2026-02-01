@@ -1,0 +1,81 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv
+env/
+venv/
+ENV/
+
+# Environment config files (contain secrets -- NEVER commit)
+backend/.env
+backend/.env.development
+backend/.env.production
+backend/.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+
+# Build
+*.log
+*.tmp
+*.temp
+
+# Database
+*.db
+*.sqlite3
+
+# Frontend build
+frontend/dist/
+frontend/.vite/
+
+# Secrets (NEVER commit)
+*.pem
+*.key
+.env.local
+.env.*.local
+secrets/
+
+# Docker
+.docker/
+
+# Alembic
+alembic/versions/*.pyc
+  
+# Sensitive files  
+login_response.json  
+-p/ 

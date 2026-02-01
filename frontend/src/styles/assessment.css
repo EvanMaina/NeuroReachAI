@@ -1,0 +1,857 @@
+/**
+ * Assessment Page CSS — Premium Healthcare Experience
+ * 
+ * Design system: Apple Health / One Medical / Calm inspired.
+ * ZERO SCROLL per step. ZERO STRAIN reading.
+ * 
+ * Color Palette:
+ *   Primary navy:    #1B2A4A
+ *   Secondary text:  #4A5568
+ *   Card bg:         #FFFFFF
+ *   Page bg:         #F7F8FA
+ *   Accent:          #2C5282
+ *   Success:         #38A169
+ *   Border:          #E2E8F0
+ *   Selected bg:     #EBF4FF
+ *   Selected border: #1B2A4A
+ * 
+ * Typography:
+ *   Step title:  22–26px / 700
+ *   Question:    18–20px / 600
+ *   Option:      16px / 500
+ *   Helper:      14px / 400
+ *   Nav buttons: 16px / 600
+ * 
+ * @version 2.0.0 — Production UX Overhaul
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   Page Reset & Base
+   ============================================ */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #F7F8FA;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #1f2937;
+  overflow-x: hidden;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+#assessment-root {
+  min-height: 100%;
+}
+
+/* ============================================
+   .nr-widget-root — Scoped Tailwind layer
+   ============================================ */
+
+.nr-widget-root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #1f2937;
+}
+
+.nr-widget-root input,
+.nr-widget-root button,
+.nr-widget-root select,
+.nr-widget-root textarea {
+  font-family: inherit;
+}
+
+/* ============================================
+   Page Layout — Navy gradient header + card
+   ============================================ */
+
+.assess-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0;
+  background: #F7F8FA;
+  position: relative;
+}
+
+/* Navy gradient header band */
+.assess-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 260px;
+  background: linear-gradient(135deg, #1B2A4A 0%, #2C3E6B 50%, #1a3a5c 100%);
+  z-index: 0;
+}
+
+/* Subtle pattern overlay on the gradient */
+.assess-page::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 260px;
+  background: radial-gradient(circle at 20% 50%, rgba(255,255,255,0.05) 0%, transparent 50%),
+              radial-gradient(circle at 80% 50%, rgba(255,255,255,0.03) 0%, transparent 50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.assess-container {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+  padding: 20px 16px 40px;
+}
+
+/* ============================================
+   Header — Logo + assessment label
+   ============================================ */
+
+.assess-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 16px;
+}
+
+.assess-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assess-logo img {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+}
+
+.assess-logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.assess-logo-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: #FFFFFF;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.assess-logo-sub {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.assess-header-right {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assess-header-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+.assess-header-sub {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ============================================
+   Main Card — max-width 600, generous radius
+   ============================================ */
+
+.assess-card {
+  background: #FFFFFF;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 10px 40px rgba(0,0,0,0.08);
+  border: 1px solid rgba(255,255,255,0.8);
+  overflow: hidden;
+}
+
+/* ============================================
+   Progress Bar — 4px thin, navy fill
+   ============================================ */
+
+.assess-progress {
+  padding: 16px 32px 12px;
+  border-bottom: 1px solid #EDF2F7;
+}
+
+.assess-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.assess-progress-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1B2A4A;
+  letter-spacing: 0.02em;
+}
+
+.assess-progress-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: #718096;
+}
+
+.assess-progress-bar {
+  height: 4px;
+  background: #EDF2F7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.assess-progress-fill {
+  height: 100%;
+  background: #1B2A4A;
+  border-radius: 999px;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ============================================
+   Step Content — Generous padding, no scroll
+   ============================================ */
+
+.assess-step-content {
+  padding: 28px 32px 20px;
+}
+
+/* ============================================
+   TYPOGRAPHY OVERRIDES — Premium scale
+   Step titles, questions, options, helpers
+   ============================================ */
+
+/* Step title (h3) — 22px bold navy */
+.assess-page h3 {
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  color: #1B2A4A !important;
+  line-height: 1.3 !important;
+  margin-bottom: 4px !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* Subtitle / helper text after h3 */
+.assess-page h3 + p,
+.assess-page .space-y-2 > p:first-child,
+.assess-page .space-y-1 > p:first-child {
+  font-size: 15px !important;
+  color: #4A5568 !important;
+  line-height: 1.5 !important;
+}
+
+/* ============================================
+   FORM INPUTS — 48px height, readable, rounded
+   ============================================ */
+
+.assess-page input[type="text"],
+.assess-page input[type="email"],
+.assess-page input[type="tel"],
+.assess-page input[type="date"],
+.assess-page input[type="number"] {
+  height: 48px !important;
+  min-height: 48px !important;
+  font-size: 16px !important;
+  padding: 0 16px !important;
+  border-radius: 12px !important;
+  border: 1.5px solid #E2E8F0 !important;
+  background: #fff !important;
+  outline: none !important;
+  color: #1f2937 !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+.assess-page input[type="text"]:focus,
+.assess-page input[type="email"]:focus,
+.assess-page input[type="tel"]:focus,
+.assess-page input[type="date"]:focus {
+  border-color: #1B2A4A !important;
+  box-shadow: 0 0 0 3px rgba(27, 42, 74, 0.08) !important;
+}
+
+/* Labels — 14px medium */
+.assess-page label {
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: #4A5568 !important;
+}
+
+/* ============================================
+   OPTION CARDS — Navy selected, 44px+ touch
+   ============================================ */
+
+.assess-page .nr-option-card,
+.assess-page label[class*="border-2"],
+.assess-page button[class*="border-2"] {
+  padding: 14px 16px !important;
+  border-radius: 12px !important;
+  border-width: 1.5px !important;
+  border-color: #E2E8F0 !important;
+  min-height: 44px !important;
+  transition: all 0.15s ease !important;
+}
+
+/* Option text — 16px/500 */
+.assess-page .nr-option-card span,
+.assess-page label[class*="border-2"] span {
+  font-size: 16px !important;
+  font-weight: 500 !important;
+}
+
+/* Selected state — #EBF4FF bg + #1B2A4A border */
+.assess-page .nr-option-card[class*="border-indigo-500"],
+.assess-page label[class*="border-indigo-500"],
+.assess-page button[class*="border-indigo-500"],
+.assess-page .nr-option-card[class*="border-green-500"],
+.assess-page button[class*="border-green-500"],
+.assess-page .nr-option-card[class*="border-blue-500"],
+.assess-page button[class*="border-blue-500"] {
+  border-color: #1B2A4A !important;
+  background: #EBF4FF !important;
+}
+
+.assess-page label[class*="bg-indigo-50"],
+.assess-page button[class*="bg-indigo-50"],
+.assess-page label[class*="bg-green-50"],
+.assess-page button[class*="bg-green-50"] {
+  background: #EBF4FF !important;
+}
+
+/* Selected text color */
+.assess-page [class*="text-indigo-900"],
+.assess-page [class*="text-green-700"] {
+  color: #1B2A4A !important;
+}
+
+.assess-page [class*="text-indigo-700"] {
+  color: #2C5282 !important;
+}
+
+/* Checkboxes and radios — navy accent, 20px */
+.assess-page .nr-card-checkbox,
+.assess-page .nr-card-radio {
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  accent-color: #1B2A4A !important;
+}
+
+.assess-page .nr-card-checkbox:checked,
+.assess-page .nr-card-radio:checked {
+  border-color: #1B2A4A !important;
+  background: #1B2A4A !important;
+}
+
+.assess-page .nr-card-checkbox:focus,
+.assess-page .nr-card-radio:focus {
+  box-shadow: 0 0 0 3px rgba(27, 42, 74, 0.12) !important;
+}
+
+/* Hover on option cards */
+.assess-page .nr-option-card:hover,
+.assess-page label[class*="border-2"]:hover,
+.assess-page button[class*="border-2"]:hover {
+  border-color: #CBD5E0 !important;
+}
+
+/* ============================================
+   SPACING — Tighter for zero-scroll
+   ============================================ */
+
+.assess-page .space-y-5 > * + * { margin-top: 16px !important; }
+.assess-page .space-y-4 > * + * { margin-top: 12px !important; }
+.assess-page .space-y-3 > * + * { margin-top: 10px !important; }
+.assess-page .space-y-2 > * + * { margin-top: 8px !important; }
+
+/* Remove padding from widget containers */
+.assess-page .p-6 { padding: 0 !important; }
+.assess-page .p-4 { padding: 0 !important; }
+
+/* Restore padding for info boxes */
+.assess-page div[class*="bg-green-50"],
+.assess-page div[class*="bg-blue-50"],
+.assess-page div[class*="bg-amber-50"],
+.assess-page div[class*="bg-purple-50"],
+.assess-page div[class*="bg-gray-50"] {
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+}
+
+.assess-page label.p-3,
+.assess-page label[class*="p-3"],
+.assess-page button[class*="p-3"] {
+  padding: 14px 16px !important;
+}
+
+/* Description text on option cards — compact */
+.assess-page .nr-option-card .text-xs,
+.assess-page label[class*="border-2"] .text-xs,
+.assess-page button[class*="border-2"] .text-xs {
+  font-size: 13px !important;
+  color: #718096 !important;
+  margin-top: 1px !important;
+}
+
+/* ============================================
+   SMS consent card — navy
+   ============================================ */
+
+.assess-page .nr-sms-consent-card {
+  background: #EBF4FF !important;
+  border-color: #93a5c8 !important;
+}
+
+.assess-page .nr-sms-checkbox:checked {
+  border-color: #1B2A4A !important;
+  background: #1B2A4A !important;
+}
+
+/* ============================================
+   Navigation — Premium buttons
+   ============================================ */
+
+.assess-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px 24px;
+  gap: 16px;
+  border-top: 1px solid #EDF2F7;
+}
+
+.assess-btn-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 20px;
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #4A5568;
+  background: #fff;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.assess-btn-back:hover:not(:disabled) {
+  background: #F7F8FA;
+  border-color: #CBD5E0;
+}
+
+.assess-btn-back:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.assess-btn-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 32px;
+  min-height: 48px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: #1B2A4A;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(27, 42, 74, 0.2);
+  transition: all 0.15s;
+  min-width: 180px;
+}
+
+.assess-btn-next:hover:not(:disabled) {
+  background: #243558;
+  box-shadow: 0 4px 16px rgba(27, 42, 74, 0.3);
+  transform: translateY(-1px);
+}
+
+.assess-btn-next:disabled {
+  background: #CBD5E0;
+  box-shadow: none;
+  cursor: not-allowed;
+  color: #fff;
+}
+
+/* ============================================
+   Error Message
+   ============================================ */
+
+.assess-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 32px 12px;
+  padding: 10px 16px;
+  background: #FFF5F5;
+  border: 1px solid #FED7D7;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #C53030;
+}
+
+/* ============================================
+   HIPAA Notice — Step 1 only
+   ============================================ */
+
+.assess-hipaa-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: #EBF4FF;
+  border: 1px solid #BEE3F8;
+  border-radius: 12px;
+}
+
+.assess-hipaa-notice strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1B2A4A;
+  margin-bottom: 2px;
+}
+
+.assess-hipaa-notice p {
+  font-size: 14px;
+  color: #4A5568;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.assess-hipaa-notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ============================================
+   Trust Footer — Encryption + HIPAA badge
+   ============================================ */
+
+.assess-trust-footer {
+  text-align: center;
+  margin-top: 14px;
+  font-size: 14px;
+  color: #718096;
+  letter-spacing: 0.01em;
+}
+
+/* ============================================
+   Page Footer — Copyright
+   ============================================ */
+
+.assess-footer {
+  text-align: center;
+  padding: 16px 0 8px;
+  font-size: 14px;
+  color: #718096;
+}
+
+/* ============================================
+   Spinner
+   ============================================ */
+
+.assess-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2.5px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: assess-spin 0.8s linear infinite;
+}
+
+@keyframes assess-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Screen Reader Only
+   ============================================ */
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border-width: 0 !important;
+}
+
+/* ============================================
+   SEVERITY STEP — Horizontal Chip Layout
+   Used when .assess-page wraps the SeverityStep
+   ============================================ */
+
+.assess-severity-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.assess-severity-question {
+  font-size: 15px;
+  font-weight: 500;
+  color: #2D3748;
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+}
+
+.assess-severity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assess-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1.5px solid #E2E8F0;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4A5568;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  min-height: 36px;
+  outline: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.assess-chip:hover {
+  border-color: #CBD5E0;
+  background: #F7F8FA;
+}
+
+.assess-chip--selected {
+  border-color: #1B2A4A;
+  background: #EBF4FF;
+  color: #1B2A4A;
+  font-weight: 600;
+}
+
+.assess-chip--selected:hover {
+  border-color: #1B2A4A;
+  background: #EBF4FF;
+}
+
+.assess-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #EDF2F7;
+}
+
+.assess-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1B2A4A;
+}
+
+.assess-section-subtitle {
+  font-size: 14px;
+  color: #4A5568;
+  font-weight: 400;
+}
+
+.assess-severity-helper {
+  font-size: 14px;
+  color: #718096;
+  font-weight: 400;
+  padding-top: 4px;
+  border-top: 1px solid #EDF2F7;
+}
+
+/* ============================================
+   RESPONSIVE — Mobile-first zero-scroll
+   ============================================ */
+
+@media (max-width: 640px) {
+  .assess-container {
+    max-width: 100%;
+    padding: 12px 12px 24px;
+  }
+
+  .assess-header {
+    padding: 8px 0 12px;
+  }
+
+  .assess-card {
+    border-radius: 14px;
+  }
+
+  .assess-progress {
+    padding: 12px 20px 10px;
+  }
+
+  .assess-step-content {
+    padding: 20px 20px 16px;
+  }
+
+  .assess-nav {
+    padding: 12px 20px 20px;
+    flex-direction: row;
+  }
+
+  /* Full-width continue button on mobile */
+  .assess-btn-next {
+    flex: 1;
+    min-width: unset;
+    padding: 14px 20px;
+  }
+
+  .assess-btn-back {
+    padding: 12px 16px;
+    min-width: auto;
+  }
+
+  /* Smaller title on mobile */
+  .assess-page h3 {
+    font-size: 20px !important;
+  }
+
+  /* Tighter spacing on mobile */
+  .assess-page .space-y-4 > * + * { margin-top: 10px !important; }
+  .assess-page .space-y-3 > * + * { margin-top: 8px !important; }
+  .assess-page .space-y-2 > * + * { margin-top: 6px !important; }
+
+  .assess-page .nr-option-card,
+  .assess-page label[class*="border-2"],
+  .assess-page button[class*="border-2"] {
+    padding: 12px 14px !important;
+  }
+
+  /* Severity chips smaller on mobile */
+  .assess-chip {
+    padding: 7px 12px;
+    font-size: 13px;
+    min-height: 34px;
+  }
+
+  .assess-severity-question {
+    font-size: 14px;
+  }
+
+  /* Error message padding */
+  .assess-error {
+    margin: 0 20px 10px;
+  }
+
+  .assess-hipaa-notice {
+    margin-top: 12px;
+    padding: 12px 14px;
+  }
+}
+
+/* Very small screens (375x667 iPhone SE) */
+@media (max-width: 380px) {
+  .assess-container {
+    padding: 4px 12px 20px;
+  }
+
+  .assess-step-content {
+    padding: 16px 16px 12px;
+  }
+
+  .assess-nav {
+    padding: 10px 16px 16px;
+  }
+
+  .assess-progress {
+    padding: 10px 16px 8px;
+  }
+
+  .assess-page h3 {
+    font-size: 18px !important;
+  }
+
+  .assess-chip {
+    padding: 6px 10px;
+    font-size: 12px;
+    min-height: 32px;
+  }
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+
+.animate-fade-in {
+  animation: assess-fade-in 0.2s ease-out;
+}
+
+@keyframes assess-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   Scrollbar — Minimal
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E0;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A0AEC0;
+}
+
+/* ============================================
+   Global accent color
+   ============================================ */
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #1B2A4A;
+}
