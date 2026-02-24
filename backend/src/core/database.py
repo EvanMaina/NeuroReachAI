@@ -7,7 +7,7 @@ for database sessions in FastAPI endpoints.
 
 from typing import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker, declarative_base
 from sqlalchemy.pool import QueuePool
 
@@ -129,13 +129,16 @@ def init_db() -> None:
 def check_db_connection() -> bool:
     """
     Check if database connection is healthy.
-    
+
+    Uses ``text()`` as required by SQLAlchemy 2.x — plain string SQL is
+    deprecated and emits warnings in 1.4+ while failing in 2.0+.
+
     Returns:
         True if connection successful, False otherwise
     """
     try:
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(text("SELECT 1"))
         return True
     except Exception:
         return False

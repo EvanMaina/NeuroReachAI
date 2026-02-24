@@ -5,13 +5,20 @@
  * - Restore a lead back to the active pipeline
  * - Permanently delete a lead (irreversible)
  *
+ * PERMANENT FIX (v2): Uses React Query for data fetching instead of manual
+ * useState/useEffect/fetch. This ensures:
+ * - Data persists in cache across navigation (no fresh spinner every time)
+ * - Stale-while-revalidate shows cached data instantly on return
+ * - 5-second safety net prevents infinite spinner under any condition
+ * - Optimistic cache updates for instant UI feedback on actions
+ *
  * Only visible to Primary Admin and Administrator roles.
  *
  * @module pages/DeletedLeadsDashboard
- * @version 1.0.0
+ * @version 2.0.0
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Trash2,
   RotateCcw,
@@ -23,17 +30,17 @@ import {
   ShieldAlert,
   Inbox,
 } from 'lucide-react';
+import { RefreshButton } from '../components/common/RefreshButton';
 import { Sidebar } from '../components/dashboard/Sidebar';
 import {
-  listDeletedLeads,
   restoreLead,
   permanentDeleteLead,
   type IDeletedLeadItem,
 } from '../services/leads';
-import type { IPaginatedResponse } from '../types/lead';
 import { useAuth } from '../hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
 import { LEADS_QUERY_KEYS } from '../hooks/useLeads';
+import { useDeletedLeads, useDeletedLeadsCache } from '../hooks/useDeletedLeads';
 
 // =============================================================================
 // Types
@@ -78,24 +85,63 @@ function safeStr(val: unknown): string {
 const DeletedLeadsDashboard: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { removeLeadFromCache } = useDeletedLeadsCache();
 
-  // Data state
-  const [leads, setLeads] = useState<IDeletedLeadItem[]>([]);
-  const [total, setTotal] = useState(0);
+  // Pagination
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const PAGE_SIZE = 50;
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
 
   // Action state
-  const [actionInProgress, setActionInProgress] = useState<string | null>(null); // lead id
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   // Confirmation dialog for permanent delete
   const [confirmDelete, setConfirmDelete] = useState<IDeletedLeadItem | null>(null);
+
+  // Admin check (hooks must be called unconditionally)
+  const isAdmin = !!user && ['primary_admin', 'administrator'].includes(user.role);
+
+  // =========================================================================
+  // React Query — replaces manual useState/useEffect/fetch
+  // =========================================================================
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useDeletedLeads(page, PAGE_SIZE, isAdmin);
+
+  // Derive data from query result
+  const leads = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = data?.total_pages ?? 1;
+
+  // =========================================================================
+  // 5-Second Safety Net
+  //
+  // If the query is loading with NO cached data for more than 5 seconds,
+  // show an error state with a Retry button instead of spinning forever.
+  // This is a SAFETY NET — not the primary fix. The primary fix is React Query.
+  // =========================================================================
+  const isInitialLoading = isLoading && !data;
+  const [loadingTooLong, setLoadingTooLong] = useState(false);
+  const loadTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (isInitialLoading) {
+      loadTimerRef.current = setTimeout(() => setLoadingTooLong(true), 5000);
+    } else {
+      setLoadingTooLong(false);
+    }
+    return () => {
+      if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
+    };
+  }, [isInitialLoading]);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -104,47 +150,24 @@ const DeletedLeadsDashboard: React.FC = () => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Fetch deleted leads
-  const fetchLeads = useCallback(async (pageNum: number = 1) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res: IPaginatedResponse<IDeletedLeadItem> = await listDeletedLeads(pageNum, 50);
-      setLeads(res.items);
-      setTotal(res.total);
-      setPage(res.page);
-      setTotalPages(res.total_pages);
-    } catch (err: any) {
-      console.error('[DeletedLeads] fetch error:', err);
-      setError(err?.response?.data?.detail || 'Failed to load deleted leads');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchLeads(1);
-  }, [fetchLeads]);
-
   // Restore a lead
   const handleRestore = useCallback(async (lead: IDeletedLeadItem) => {
     setActionInProgress(lead.id);
     try {
       await restoreLead(lead.id);
       setToast({ message: `${lead.lead_number} restored successfully`, type: 'success' });
-      // Remove from local list immediately
-      setLeads(prev => prev.filter(l => l.id !== lead.id));
-      setTotal(prev => Math.max(0, prev - 1));
+      // Optimistic cache update — remove from list immediately
+      removeLeadFromCache(lead.id, page, PAGE_SIZE);
       // Invalidate active leads cache so restored lead appears
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
-    } catch (err: any) {
-      console.error('[DeletedLeads] restore error:', err);
-      setToast({ message: err?.response?.data?.detail || 'Failed to restore lead', type: 'error' });
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      setToast({ message: axiosErr?.response?.data?.detail || 'Failed to restore lead', type: 'error' });
     } finally {
       setActionInProgress(null);
     }
-  }, [queryClient]);
+  }, [queryClient, removeLeadFromCache, page]);
 
   // Permanently delete a lead
   const handlePermanentDelete = useCallback(async (lead: IDeletedLeadItem) => {
@@ -153,15 +176,15 @@ const DeletedLeadsDashboard: React.FC = () => {
     try {
       await permanentDeleteLead(lead.id);
       setToast({ message: `${lead.lead_number} permanently deleted`, type: 'success' });
-      setLeads(prev => prev.filter(l => l.id !== lead.id));
-      setTotal(prev => Math.max(0, prev - 1));
-    } catch (err: any) {
-      console.error('[DeletedLeads] permanent delete error:', err);
-      setToast({ message: err?.response?.data?.detail || 'Failed to permanently delete', type: 'error' });
+      // Optimistic cache update — remove from list immediately
+      removeLeadFromCache(lead.id, page, PAGE_SIZE);
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      setToast({ message: axiosErr?.response?.data?.detail || 'Failed to permanently delete', type: 'error' });
     } finally {
       setActionInProgress(null);
     }
-  }, []);
+  }, [removeLeadFromCache, page]);
 
   // Filtered leads by search
   const filteredLeads = searchQuery.trim()
@@ -177,8 +200,7 @@ const DeletedLeadsDashboard: React.FC = () => {
       })
     : leads;
 
-  // Access check
-  const isAdmin = user && ['primary_admin', 'administrator'].includes(user.role);
+  // Access check — early return AFTER all hooks
   if (!isAdmin) {
     return (
       <div className="flex min-h-screen bg-slate-50">
@@ -227,35 +249,61 @@ const DeletedLeadsDashboard: React.FC = () => {
             </div>
 
             {/* Refresh */}
-            <button
-              onClick={() => fetchLeads(page)}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-              Refresh
-            </button>
+            <RefreshButton
+              onRefresh={() => { refetch(); }}
+              isRefreshing={isFetching}
+              label="Refresh"
+            />
           </div>
         </div>
 
-        {/* Error banner */}
-        {error && (
+        {/* Error banner (for query errors that have cached data to fall back on) */}
+        {isError && data && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
             <AlertTriangle size={18} className="text-red-500 flex-shrink-0" />
-            <p className="text-sm text-red-700 flex-1">{error}</p>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
-              <X size={16} />
+            <p className="text-sm text-red-700 flex-1">
+              Failed to refresh deleted leads. Showing cached data.
+            </p>
+            <button onClick={() => refetch()} className="text-red-600 hover:text-red-800 text-sm font-medium">
+              Retry
             </button>
           </div>
         )}
 
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          {isLoading && leads.length === 0 ? (
+          {/* STATE 1: Initial loading (no cached data) — show spinner */}
+          {isInitialLoading && !loadingTooLong ? (
             <div className="p-12 text-center">
               <RefreshCw size={32} className="mx-auto text-gray-300 animate-spin mb-4" />
               <p className="text-gray-500">Loading deleted leads...</p>
             </div>
+
+          /* STATE 2: Error or loading timed out (no cached data) — show error + retry */
+          ) : (isError && !data) || loadingTooLong ? (
+            <div className="p-12 text-center">
+              <AlertTriangle size={40} className="mx-auto text-amber-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-700 mb-1">
+                {loadingTooLong ? 'Taking too long' : 'Failed to load'}
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                {loadingTooLong
+                  ? 'The server is taking longer than expected to respond.'
+                  : (error?.message || 'An error occurred while loading deleted leads.')}
+              </p>
+              <button
+                onClick={() => {
+                  setLoadingTooLong(false);
+                  refetch();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                <RefreshCw size={16} />
+                Retry
+              </button>
+            </div>
+
+          /* STATE 3: Data loaded but empty — show empty state */
           ) : filteredLeads.length === 0 ? (
             <div className="p-12 text-center">
               <Inbox size={40} className="mx-auto text-gray-300 mb-4" />
@@ -268,24 +316,26 @@ const DeletedLeadsDashboard: React.FC = () => {
                   : 'Deleted leads will appear here for recovery or permanent removal.'}
               </p>
             </div>
+
+          /* STATE 4: Data loaded with results — show table */
           ) : (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Lead #</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Patient</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Condition</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Priority</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Status</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Created</th>
-                      <th className="text-left px-4 py-3 font-semibold text-gray-600">Deleted</th>
-                      <th className="text-right px-4 py-3 font-semibold text-gray-600">Actions</th>
+                    <tr className="bg-gray-50 border-b-2 border-gray-200">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lead #</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Patient</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Deleted</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {filteredLeads.map(lead => {
+                    {filteredLeads.map((lead, index) => {
                       const name = [safeStr(lead.first_name), safeStr(lead.last_name)]
                         .filter(Boolean)
                         .join(' ') || 'Name not provided';
@@ -297,15 +347,25 @@ const DeletedLeadsDashboard: React.FC = () => {
                       const isBusy = actionInProgress === lead.id;
 
                       const priorityColors: Record<string, string> = {
-                        hot: 'bg-red-100 text-red-700',
-                        medium: 'bg-amber-100 text-amber-700',
-                        low: 'bg-blue-100 text-blue-700',
+                        hot: 'bg-red-500 text-white',
+                        medium: 'bg-amber-500 text-white',
+                        low: 'bg-blue-500 text-white',
+                      };
+
+                      const statusColors: Record<string, string> = {
+                        new: 'bg-emerald-500 text-white',
+                        contacted: 'bg-blue-500 text-white',
+                        qualified: 'bg-indigo-500 text-white',
+                        converted: 'bg-green-600 text-white',
+                        lost: 'bg-gray-500 text-white',
+                        follow_up: 'bg-purple-500 text-white',
+                        not_interested: 'bg-gray-400 text-white',
                       };
 
                       return (
                         <tr
                           key={lead.id}
-                          className={`hover:bg-gray-50 transition-colors ${isBusy ? 'opacity-50 pointer-events-none' : ''}`}
+                          className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} hover:bg-indigo-50/40 transition-colors duration-150 ${isBusy ? 'opacity-50 pointer-events-none' : ''}`}
                         >
                           <td className="px-4 py-3 font-mono text-xs text-gray-600">
                             {lead.lead_number}
@@ -319,14 +379,20 @@ const DeletedLeadsDashboard: React.FC = () => {
                           <td className="px-4 py-3 text-gray-700 capitalize">{condition}</td>
                           <td className="px-4 py-3">
                             <span
-                              className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${
-                                priorityColors[priority.toLowerCase()] || 'bg-gray-100 text-gray-600'
+                              className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold capitalize ${
+                                priorityColors[priority.toLowerCase()] || 'bg-gray-400 text-white'
                               }`}
                             >
                               {priority}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-600 capitalize">{status}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold capitalize ${
+                              statusColors[status.toLowerCase().replace(/ /g, '_')] || 'bg-gray-400 text-white'
+                            }`}>
+                              {status}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(lead.created_at)}</td>
                           <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(lead.deleted_at)}</td>
                           <td className="px-4 py-3">
@@ -368,15 +434,15 @@ const DeletedLeadsDashboard: React.FC = () => {
                   </p>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => fetchLeads(page - 1)}
-                      disabled={page <= 1 || isLoading}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page <= 1 || isFetching}
                       className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Previous
                     </button>
                     <button
-                      onClick={() => fetchLeads(page + 1)}
-                      disabled={page >= totalPages || isLoading}
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages || isFetching}
                       className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Next

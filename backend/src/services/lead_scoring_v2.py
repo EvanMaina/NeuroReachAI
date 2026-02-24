@@ -7,7 +7,7 @@ granular score breakdown.
 
 SCORING RULES (EXACT AS SPECIFIED):
 - Condition Score: max of selected conditions (depression/anxiety/ocd/ptsd = 50, other = 25)
-- TMS Therapy Interest: Daily=5, Accelerated=10, SAINT=15, Not Sure=0
+- TMS Therapy Interest: Daily=5, Accelerated=15, Not Sure=0
 - Severity Score: max across selected conditions based on PHQ-2/GAD-2/OCD/PTSD
 - Insurance: in-network=+30, other/out-of-network=+20, no insurance=-20
 - Duration: >12 months=+20, 6-12 months=+10, <6 months=0
@@ -47,10 +47,10 @@ CONDITION_SCORES = {
 }
 
 # TMS Therapy Interest Scores (Section 5.2)
+# Accelerated TMS scored at 15 to maintain hot lead generation rate.
 TMS_INTEREST_SCORES = {
     "daily_tms": 5,
-    "accelerated_tms": 10,
-    "saint_protocol": 15,
+    "accelerated_tms": 15,
     "not_sure": 0,
 }
 

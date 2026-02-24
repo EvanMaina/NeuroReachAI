@@ -31,6 +31,74 @@ interface AssessmentPageProps {
 }
 
 /**
+ * Convert a raw Pydantic field name + message into a human-readable string.
+ * Examples:
+ *   phone, "Value error, Invalid phone number format" → "Please enter a valid phone number."
+ *   email, "value is not a valid email address"      → "Please enter a valid email address."
+ */
+function humanizeValidationError(field: string, msg: string): string {
+  const f = field.toLowerCase();
+  const m = msg.toLowerCase();
+
+  if (f === 'phone' || m.includes('phone')) {
+    return 'Please enter a valid phone number (e.g. (602) 555-1234).';
+  }
+  if (f === 'email' || m.includes('email')) {
+    return 'Please enter a valid email address.';
+  }
+  if (f === 'first_name' || f === 'last_name' || m.includes('name')) {
+    return 'Please enter your full name.';
+  }
+  if (f === 'date_of_birth' || m.includes('date')) {
+    return 'Please enter a valid date of birth.';
+  }
+  if (f === 'zip_code' || m.includes('zip')) {
+    return 'Please enter a valid ZIP code.';
+  }
+  // Strip leading "Value error, " prefix that Pydantic v2 adds
+  const cleaned = msg.replace(/^value error,\s*/i, '');
+  // Capitalise first letter
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+/**
+ * Extract a human-readable error string from a FastAPI / Pydantic error response.
+ *
+ * FastAPI 422 shape:  { detail: [{ type, loc, msg, input, url }] }
+ * FastAPI 400/500:    { detail: "string" }  OR  { message: "string" }
+ */
+function extractErrorMessage(errorData: unknown, status: number): string {
+  if (!errorData || typeof errorData !== 'object') {
+    return `Server error (${status}). Please try again.`;
+  }
+  const data = errorData as Record<string, unknown>;
+
+  // FastAPI 422 — detail is an array of Pydantic validation errors
+  if (Array.isArray(data.detail) && data.detail.length > 0) {
+    const first = data.detail[0] as Record<string, unknown>;
+    if (first && typeof first === 'object') {
+      const rawMsg = typeof first.msg === 'string' ? first.msg : '';
+      // loc is an array like ["body", "phone"] — take the last element as field name
+      const loc = Array.isArray(first.loc) ? first.loc : [];
+      const field = loc.length > 0 ? String(loc[loc.length - 1]) : 'field';
+      return humanizeValidationError(field, rawMsg);
+    }
+  }
+
+  // FastAPI string detail
+  if (typeof data.detail === 'string' && data.detail.trim()) {
+    return data.detail.trim();
+  }
+
+  // Generic message field
+  if (typeof data.message === 'string' && data.message.trim()) {
+    return data.message.trim();
+  }
+
+  return `Server error (${status}). Please try again.`;
+}
+
+/**
  * Submit lead data to backend — single attempt, no retries.
  *
  * The request must work on the first try. If it doesn't, we surface the
@@ -42,7 +110,7 @@ async function submitLeadToAPI(
 ): Promise<ILeadSubmitResponse> {
   const url = `${apiUrl}/api/leads/submit`;
 
-  console.log(`[Assessment] Submitting to ${url}`);
+  if (import.meta.env.DEV) console.log(`[Assessment] Submitting to ${url}`);
 
   const response = await fetch(url, {
     method: 'POST',
@@ -57,14 +125,14 @@ async function submitLeadToAPI(
   // Parse the response — always try JSON first
   if (!response.ok) {
     const errorData = await response.json().catch(() => null);
-    const errorMessage =
-      errorData?.detail || errorData?.message || `Server error (${response.status})`;
-    console.error('[Assessment] Server error:', response.status, errorData);
+    if (import.meta.env.DEV) console.error('[Assessment] Server error:', response.status, errorData);
+    // Always produce a human-readable string — NEVER throw raw objects
+    const errorMessage = extractErrorMessage(errorData, response.status);
     throw new Error(errorMessage);
   }
 
   const result = await response.json();
-  console.log('[Assessment] Submission successful:', result);
+  if (import.meta.env.DEV) console.log('[Assessment] Submission successful:', result);
   return result;
 }
 
@@ -98,7 +166,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ apiUrl }) => {
       setIsCompleted(true);
     } catch (error) {
       // ALWAYS log the full error for debugging
-      console.error('[Assessment] Submission failed:', error);
+      if (import.meta.env.DEV) console.error('[Assessment] Submission failed:', error);
 
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
         // ACTUAL network error — browser couldn't reach the server at all
@@ -131,7 +199,7 @@ export const AssessmentPage: React.FC<AssessmentPageProps> = ({ apiUrl }) => {
       case 3:
         return <SeverityStep conditions={form.formData.conditions} phq2_interest={form.formData.phq2_interest} phq2_mood={form.formData.phq2_mood} gad2_nervous={form.formData.gad2_nervous} gad2_worry={form.formData.gad2_worry} ocd_time_occupied={form.formData.ocd_time_occupied} ptsd_intrusion={form.formData.ptsd_intrusion} onPhq2InterestChange={(v) => form.updateFormData('phq2_interest', v)} onPhq2MoodChange={(v) => form.updateFormData('phq2_mood', v)} onGad2NervousChange={(v) => form.updateFormData('gad2_nervous', v)} onGad2WorryChange={(v) => form.updateFormData('gad2_worry', v)} onOcdTimeChange={(v) => form.updateFormData('ocd_time_occupied', v)} onPtsdIntrusionChange={(v) => form.updateFormData('ptsd_intrusion', v)} />;
       case 4:
-        return <TMSInterestStep conditions={form.formData.conditions} tmsInterest={form.formData.tmsTherapyInterest} onTmsInterestChange={(v) => form.updateFormData('tmsTherapyInterest', v)} />;
+        return <TMSInterestStep tmsInterest={form.formData.tmsTherapyInterest} onTmsInterestChange={(v) => form.updateFormData('tmsTherapyInterest', v)} />;
       case 5:
         return <DurationStep duration={form.formData.symptomDuration} onChange={(v) => form.updateFormData('symptomDuration', v)} />;
       case 6:

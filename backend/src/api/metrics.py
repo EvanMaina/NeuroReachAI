@@ -205,8 +205,8 @@ def _compute_queue_metrics(
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
     
-    # Build base query based on queue type
-    base_query = db.query(Lead)
+    # Build base query based on queue type — EXCLUDES soft-deleted leads
+    base_query = db.query(Lead).filter(Lead.deleted_at.is_(None))
     
     # Import or_ for SQL OR conditions
     from sqlalchemy import or_
@@ -323,25 +323,30 @@ def _compute_queue_metrics(
     # Calculate conversion rate (leads that became scheduled)
     # For priority queues, we need to check historical data
     if queue_type in [QueueTypeFilter.HOT, QueueTypeFilter.MEDIUM, QueueTypeFilter.LOW]:
-        # Get all leads with this priority (including scheduled ones)
+        # Get all leads with this priority (including scheduled ones) — EXCLUDES soft-deleted
         priority_map = {
             QueueTypeFilter.HOT: PriorityType.HOT,
             QueueTypeFilter.MEDIUM: PriorityType.MEDIUM,
             QueueTypeFilter.LOW: PriorityType.LOW,
         }
         all_priority_leads = db.query(Lead).filter(
-            Lead.priority == priority_map[queue_type]
+            Lead.priority == priority_map[queue_type],
+            Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
         ).count()
         scheduled_priority = db.query(Lead).filter(
             Lead.priority == priority_map[queue_type],
-            Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE])
+            Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE]),
+            Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
         ).count()
         conversion_rate = (scheduled_priority / all_priority_leads * 100) if all_priority_leads > 0 else 0.0
     else:
-        # For other queues, calculate based on queue-specific logic
-        all_in_queue_historical = db.query(Lead).count()  # Simplified
+        # For other queues, calculate based on queue-specific logic — EXCLUDES soft-deleted
+        all_in_queue_historical = db.query(Lead).filter(
+            Lead.deleted_at.is_(None)  # EXCLUDE soft-deleted leads
+        ).count()
         scheduled_count_all = db.query(Lead).filter(
-            Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE])
+            Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE]),
+            Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
         ).count()
         conversion_rate = (scheduled_count_all / all_in_queue_historical * 100) if all_in_queue_historical > 0 else 0.0
     
@@ -363,13 +368,12 @@ def _compute_queue_metrics(
     
     response_rate = (answered_leads / contacted_leads * 100) if contacted_leads > 0 else 0.0
     
-    # Calculate average time in queue (hours)
-    # This is calculated as avg(now - created_at) for leads still in this queue
+    # Calculate average time in queue (hours) — EXCLUDES soft-deleted leads
     avg_time_query = db.query(
         func.avg(
             func.extract('epoch', func.now() - Lead.created_at) / 3600
         )
-    )
+    ).filter(Lead.deleted_at.is_(None))  # EXCLUDE soft-deleted leads
     
     # Apply same filters as base_query
     if queue_type == QueueTypeFilter.NEW:
@@ -464,8 +468,7 @@ async def get_monthly_trends(
             earliest = db.query(func.min(Lead.created_at)).scalar()
             start_date = earliest if earliest else (now - timedelta(days=730))
         
-        # Query with monthly aggregation using date_trunc
-        # This is PostgreSQL-specific but very efficient
+        # Query with monthly aggregation using date_trunc — EXCLUDES soft-deleted leads
         monthly_data = db.query(
             func.date_trunc('month', Lead.created_at).label('month'),
             func.count(Lead.id).label('total_leads'),
@@ -482,7 +485,8 @@ async def get_monthly_trends(
                 case((Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE]), 1), else_=0)
             ).label('scheduled_count'),
         ).filter(
-            Lead.created_at >= start_date
+            Lead.created_at >= start_date,
+            Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
         ).group_by(
             func.date_trunc('month', Lead.created_at)
         ).order_by(
@@ -597,7 +601,7 @@ async def get_daily_trends(
     days = period_days.get(period, 30)
     start_date = today - timedelta(days=days - 1)  # Include today
     
-    # Query with daily aggregation using date_trunc
+    # Query with daily aggregation using date_trunc — EXCLUDES soft-deleted leads
     daily_data = db.query(
         func.date_trunc('day', Lead.created_at).label('day'),
         func.count(Lead.id).label('total_leads'),
@@ -614,7 +618,8 @@ async def get_daily_trends(
             case((Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE]), 1), else_=0)
         ).label('scheduled_count'),
     ).filter(
-        Lead.created_at >= start_date
+        Lead.created_at >= start_date,
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
     ).group_by(
         func.date_trunc('day', Lead.created_at)
     ).order_by(
@@ -835,12 +840,13 @@ async def get_dashboard_summary(
             ).label('scheduled'),
         ).first()
         
-        # Scheduled today (requires date filter on scheduled_callback_at)
+        # Scheduled today (requires date filter on scheduled_callback_at) — EXCLUDES soft-deleted
         tomorrow_start = today_start + timedelta(days=1)
         scheduled_today = db.query(func.count(Lead.id)).filter(
             Lead.status == LeadStatus.SCHEDULED,
             Lead.scheduled_callback_at >= today_start,
             Lead.scheduled_callback_at < tomorrow_start,
+            Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
         ).scalar() or 0
         
         total_leads = summary_query.total_leads or 0

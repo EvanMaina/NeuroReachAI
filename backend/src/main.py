@@ -41,77 +41,205 @@ logger = logging.getLogger(__name__)
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Rate limiting middleware using sliding window algorithm.
+    Rate limiting middleware using Redis-backed sliding window algorithm.
 
-    Limits requests per IP address to prevent abuse.
+    PRIMARY (Redis):
+      Uses a sorted set (ZSET) per IP keyed as ``rl:{ip}``.
+      A single pipelined command sequence atomically removes stale timestamps,
+      counts the window, records the new request, and sets a TTL — all in one
+      round-trip.  This works correctly across **multiple pods/replicas** (K8s,
+      docker-compose scale, etc.) because state lives in the shared Redis
+      instance rather than in-process memory.
+
+    FALLBACK (in-memory):
+      If Redis is unavailable (startup, transient failure, test environment),
+      the middleware transparently degrades to a per-process sliding window.
+      The fallback is self-healing: every request re-checks Redis availability
+      via the shared ``get_cache()`` singleton, so the primary path resumes
+      automatically once Redis recovers.
+
     Returns HTTP 429 when limit exceeded.
     """
 
     def __init__(self, app, requests_per_minute: int = 60):
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
+        # Authenticated coordinators fire 5-10 parallel requests per page load.
+        # Apply a higher ceiling for Bearer-token requests so the dashboard
+        # never returns 429 during normal use.
+        self.authenticated_limit: int = getattr(
+            settings, "rate_limit_authenticated", requests_per_minute * 5
+        )
         self.window_size = 60  # seconds
-        # Store request timestamps per IP: {ip: [timestamp1, timestamp2, ...]}
+        # In-memory fallback storage (used when Redis is unavailable)
         self.request_log: Dict[str, List[float]] = defaultdict(list)
 
+    # -------------------------------------------------------------------------
+    # Helpers
+    # -------------------------------------------------------------------------
+
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request."""
-        # Check X-Forwarded-For header (for proxied requests)
+        """Extract client IP, honouring X-Forwarded-For for proxied deployments."""
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()
-        # Fall back to direct client IP
         if request.client:
             return request.client.host
         return "unknown"
 
+    def _get_redis(self):
+        """
+        Return a live Redis client from the shared CacheService singleton,
+        or None if Redis is not connected.
+
+        Calling get_cache() on every request is cheap — it returns the module-
+        level singleton without IO.  This approach is intentionally stateless so
+        the middleware self-heals after a Redis reconnect without a process
+        restart.
+        """
+        try:
+            cache = get_cache()
+            if cache.is_connected and cache._redis is not None:
+                return cache._redis
+        except Exception:
+            pass
+        return None
+
+    # -------------------------------------------------------------------------
+    # Redis sliding window (ZSET per IP)
+    # -------------------------------------------------------------------------
+
+    def _is_rate_limited_redis(self, redis_client, ip: str, is_authenticated: bool) -> bool:
+        """
+        Distributed sliding window via Redis sorted set.
+
+        Pipeline (not MULTI/EXEC — pipelining is sufficient for rate limiting):
+          1. ZREMRANGEBYSCORE  Remove timestamps older than the window cutoff.
+          2. ZCARD             Count requests still in window *before* this one.
+          3. ZADD              Record this request's timestamp as both key+score.
+          4. EXPIRE            Guarantee TTL so ZSET keys never accumulate forever.
+
+        Evaluates ``ZCARD`` result (step 2) against the limit; if already at or
+        above limit the request is rejected (the ZADD still executes but that
+        single over-limit entry will be evicted by the next ZREMRANGEBYSCORE).
+        """
+        now = time.time()
+        cutoff = now - self.window_size
+        limit = self.authenticated_limit if is_authenticated else self.requests_per_minute
+        key = f"rl:{ip}"
+
+        pipe = redis_client.pipeline(transaction=False)
+        pipe.zremrangebyscore(key, 0, cutoff)
+        pipe.zcard(key)
+        pipe.zadd(key, {f"{now:.6f}": now})
+        pipe.expire(key, self.window_size + 5)
+        results = pipe.execute()
+
+        # results[1] is the ZCARD *before* our ZADD — correct basis for decision
+        count_before = results[1]
+        return count_before >= limit
+
+    def _get_remaining_redis(self, redis_client, ip: str, is_authenticated: bool) -> int:
+        """Count how many requests remain in the current window (Redis path)."""
+        limit = self.authenticated_limit if is_authenticated else self.requests_per_minute
+        try:
+            now = time.time()
+            cutoff = now - self.window_size
+            count = redis_client.zcount(f"rl:{ip}", cutoff, "+inf")
+            return max(0, limit - count)
+        except Exception:
+            return 0
+
+    # -------------------------------------------------------------------------
+    # In-memory fallback sliding window
+    # -------------------------------------------------------------------------
+
     def _clean_old_requests(self, ip: str, current_time: float) -> None:
-        """Remove requests outside the sliding window."""
+        """
+        Remove timestamps outside the sliding window and evict empty entries.
+
+        Evicting depleted keys prevents the dict from growing without bound as
+        unique IPs accumulate over the lifetime of the process.
+        """
         cutoff = current_time - self.window_size
-        self.request_log[ip] = [
-            ts for ts in self.request_log[ip] if ts > cutoff
-        ]
+        self.request_log[ip] = [ts for ts in self.request_log[ip] if ts > cutoff]
+        if not self.request_log[ip]:
+            del self.request_log[ip]
 
-    def _is_rate_limited(self, ip: str) -> bool:
-        """Check if IP has exceeded rate limit."""
-        current_time = time.time()
-        self._clean_old_requests(ip, current_time)
-
-        if len(self.request_log[ip]) >= self.requests_per_minute:
+    def _is_rate_limited_memory(self, ip: str, is_authenticated: bool) -> bool:
+        """Per-process sliding window fallback."""
+        now = time.time()
+        self._clean_old_requests(ip, now)
+        limit = self.authenticated_limit if is_authenticated else self.requests_per_minute
+        if len(self.request_log[ip]) >= limit:
             return True
-
-        # Log this request
-        self.request_log[ip].append(current_time)
+        self.request_log[ip].append(now)
         return False
+
+    # -------------------------------------------------------------------------
+    # Unified entry point
+    # -------------------------------------------------------------------------
+
+    def _is_rate_limited(self, ip: str, is_authenticated: bool = False) -> bool:
+        """
+        Route to Redis limiter (primary) or in-memory limiter (fallback).
+
+        Any Redis exception falls through to in-memory so a Redis blip never
+        results in a hard 500 for the user.
+        """
+        redis_client = self._get_redis()
+        if redis_client is not None:
+            try:
+                return self._is_rate_limited_redis(redis_client, ip, is_authenticated)
+            except Exception as _e:
+                logger.warning("Redis rate limiter error, falling back to in-memory: %s", _e)
+        return self._is_rate_limited_memory(ip, is_authenticated)
+
+    def _get_remaining(self, ip: str, is_authenticated: bool) -> int:
+        """Return remaining requests in the current window for the response header."""
+        limit = self.authenticated_limit if is_authenticated else self.requests_per_minute
+        redis_client = self._get_redis()
+        if redis_client is not None:
+            try:
+                return self._get_remaining_redis(redis_client, ip, is_authenticated)
+            except Exception:
+                pass
+        return max(0, limit - len(self.request_log.get(ip, [])))
 
     async def dispatch(self, request: Request, call_next):
         """Process request with rate limiting."""
-        # Skip rate limiting for health checks
+        # Health probes must never be rate-limited (liveness/readiness loops)
         if request.url.path in ["/health", "/health/ready", "/health/live"]:
             return await call_next(request)
 
         client_ip = self._get_client_ip(request)
+        # Detect authenticated requests by Bearer token presence.
+        # We intentionally skip JWT decoding here (too expensive per-request);
+        # the actual auth validation happens inside the route handler.
+        is_authenticated = bool(request.headers.get("Authorization", ""))
+        effective_limit = self.authenticated_limit if is_authenticated else self.requests_per_minute
 
-        if self._is_rate_limited(client_ip):
+        if self._is_rate_limited(client_ip, is_authenticated=is_authenticated):
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
                     "success": False,
                     "error": "rate_limit_exceeded",
-                    "message": f"Too many requests. Please try again later. Limit: {self.requests_per_minute} requests per minute.",
+                    "message": (
+                        f"Too many requests. Please try again later. "
+                        f"Limit: {effective_limit} requests per minute."
+                    ),
                 },
                 headers={
                     "Retry-After": "60",
-                    "X-RateLimit-Limit": str(self.requests_per_minute),
+                    "X-RateLimit-Limit": str(effective_limit),
                     "X-RateLimit-Remaining": "0",
                 },
             )
 
-        # Add rate limit headers to response
         response = await call_next(request)
-        remaining = max(0, self.requests_per_minute -
-                        len(self.request_log[client_ip]))
-        response.headers["X-RateLimit-Limit"] = str(self.requests_per_minute)
+        remaining = self._get_remaining(client_ip, is_authenticated)
+        response.headers["X-RateLimit-Limit"] = str(effective_limit)
         response.headers["X-RateLimit-Remaining"] = str(remaining)
 
         return response
@@ -176,14 +304,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"Environment: {settings.environment}")
 
     # =========================================================================
-    # PRODUCTION SECRET VALIDATION
-    # Refuse to start in production with insecure defaults
+    # PRODUCTION ENVIRONMENT VALIDATION
+    # Refuse to start in production with insecure defaults or missing config.
+    # In development, warn but allow startup.
     # =========================================================================
     _insecure_secrets = []
     if settings.secret_key == "dev-secret-key-change-in-production":
         _insecure_secrets.append("SECRET_KEY")
     if settings.encryption_key.rstrip("0") == "dev-encryption-key-32bytes!":
         _insecure_secrets.append("ENCRYPTION_KEY")
+    if "neuroreach_dev_password" in settings.database_url:
+        _insecure_secrets.append("DATABASE_URL")
+
+    _missing_services = []
+    if settings.is_production:
+        if not settings.redis_url or settings.redis_url == "redis://localhost:6379/0":
+            _missing_services.append("REDIS_URL (still pointing to localhost)")
+        if not settings.paubox_api_key and settings.email_mode == "paubox":
+            _missing_services.append("PAUBOX_API_KEY (email_mode=paubox but no key)")
+        if not settings.twilio_account_sid and settings.sms_mode == "twilio":
+            _missing_services.append("TWILIO_ACCOUNT_SID (sms_mode=twilio but no SID)")
 
     if _insecure_secrets and settings.is_production:
         print("=" * 60)
@@ -199,6 +339,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         print("  WARNING: Dev-default secrets in use:")
         print(f"     {', '.join(_insecure_secrets)}")
         print("  This is fine for development, but MUST be changed for production.")
+        print("=" * 60)
+
+    if _missing_services:
+        print("=" * 60)
+        print("  WARNING: Potentially missing production services:")
+        for svc in _missing_services:
+            print(f"     - {svc}")
+        print("  These services may not work correctly in production.")
         print("=" * 60)
 
     # Initialize cache service
@@ -346,6 +494,9 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 
     Returns user-friendly error response without exposing internals.
     """
+    import traceback
+    logger.error(f"ValueError on {request.method} {request.url.path}: {type(exc).__name__}: {exc}")
+    logger.error(traceback.format_exc())
     return JSONResponse(
         status_code=400,
         content={

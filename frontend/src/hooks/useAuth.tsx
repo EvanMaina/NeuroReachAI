@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const handleSessionExpired = (event: Event) => {
       const customEvent = event as CustomEvent;
       const reason = customEvent.detail?.reason || 'unknown';
-      console.warn(`🔐 Session expired: ${reason}`);
+      if (import.meta.env.DEV) console.warn(`🔐 Session expired: ${reason}`);
       
       // Clear user state
       setUser(null);
@@ -114,7 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Check token validity first before making API call
     if (!checkTokenValidity()) {
-      console.warn('🔐 Token expired on load - clearing');
+      if (import.meta.env.DEV) console.warn('🔐 Token expired on load - clearing');
       clearStoredToken();
       setIsLoading(false);
       setSessionExpired(true);
@@ -129,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })
       .catch((error) => {
         // Token expired or invalid — clear it
-        console.error('Failed to fetch user profile:', error);
+        if (import.meta.env.DEV) console.error('Failed to fetch user profile:', error);
         clearStoredToken();
         setSessionExpired(true);
       })
@@ -144,7 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const interval = setInterval(() => {
       if (!checkTokenValidity()) {
-        console.warn('🔐 Token expired during session - logging out');
+        if (import.meta.env.DEV) console.warn('🔐 Token expired during session - logging out');
         clearStoredToken();
         setUser(null);
         setPermissions([]);

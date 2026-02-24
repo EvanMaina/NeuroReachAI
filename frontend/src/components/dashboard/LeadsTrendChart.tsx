@@ -342,7 +342,7 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
           return;
         }
         
-        console.warn(`[LeadsTrendChart] Attempt ${attempt + 1}/${MAX_RETRIES} failed:`, err.message);
+        if (import.meta.env.DEV) console.warn(`[LeadsTrendChart] Attempt ${attempt + 1}/${MAX_RETRIES} failed:`, err.message);
         
         // Wait before retry (exponential backoff)
         if (attempt < MAX_RETRIES - 1) {
@@ -353,7 +353,7 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
     }
     
     // All retries exhausted
-    console.error('[LeadsTrendChart] All retry attempts failed:', lastError);
+    if (import.meta.env.DEV) console.error('[LeadsTrendChart] All retry attempts failed:', lastError);
     setError('Failed to load trend data. Please try refreshing.');
     setIsLoading(false);
   }, []);

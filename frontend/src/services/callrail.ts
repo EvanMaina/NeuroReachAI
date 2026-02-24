@@ -208,7 +208,7 @@ export function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-/** Time ago from ISO string */
+/** Time ago from ISO string (kept for tooltip use) */
 export function timeAgo(isoString: string): string {
   const now = new Date();
   const then = new Date(isoString);
@@ -222,6 +222,36 @@ export function timeAgo(isoString: string): string {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
   return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/** Format ISO string to absolute date/time — e.g., "Tue, Feb 18, 2026 at 6:00 PM" */
+export function formatAbsoluteDateTime(isoString: string): string {
+  const d = new Date(isoString);
+  const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+  const datePart = d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timePart = d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${weekday}, ${datePart} at ${timePart}`;
+}
+
+/** Compact absolute date/time — e.g., "Feb 18, 6:00 PM" (for tight spaces) */
+export function formatCompactDateTime(isoString: string): string {
+  const d = new Date(isoString);
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }) + ', ' + d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 /** Mask phone number for HIPAA (show last 4 digits) */

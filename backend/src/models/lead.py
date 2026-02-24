@@ -199,7 +199,7 @@ class Lead(Base):
     other_condition_text = Column(Text, nullable=True)  # Free text when 'other' selected
     
     # TMS Therapy Interest
-    tms_therapy_interest = Column(Text, nullable=True)  # daily_tms, accelerated_tms, saint_protocol, not_sure
+    tms_therapy_interest = Column(Text, nullable=True)  # daily_tms, accelerated_tms, not_sure
     
     # Preferred Contact Method
     preferred_contact_method = Column(Text, nullable=True)  # phone_call, text, email, any

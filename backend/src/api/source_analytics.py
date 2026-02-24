@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, case, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -29,10 +29,19 @@ from pydantic import BaseModel, Field
 from ..core.database import get_db
 from ..models.lead import Lead, PriorityType, LeadStatus
 from ..services.cache import get_cache
+from ..core.auth import get_current_user
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/analytics/sources", tags=["Source Analytics"])
+
+# Require authentication on all source-analytics endpoints.
+# Previously this router had NO auth, meaning these endpoints were publicly
+# accessible — a security gap and a vector for unauthenticated DB hammering.
+router = APIRouter(
+    prefix="/api/analytics/sources",
+    tags=["Source Analytics"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # =============================================================================
@@ -217,6 +226,7 @@ def handle_db_error(error: Exception, operation: str, request_id: str) -> None:
     description="Get comprehensive analytics broken down by lead source platform. Always returns all 4 platforms.",
 )
 async def get_source_analytics(
+    response: Response,
     db: Session = Depends(get_db),
     days_back: int = Query(default=30, ge=1, le=365, description="Days to analyze"),
 ) -> SourceAnalyticsResponse:
@@ -244,6 +254,7 @@ async def get_source_analytics(
         cached = cache.get(cache_key)
         if cached:
             logger.info(f"[{request_id}] Cache hit for source analytics")
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
             return SourceAnalyticsResponse(
                 **cached, 
                 cache_hit=True, 
@@ -404,6 +415,7 @@ async def get_source_analytics(
         query_time = round((time.time() - start_time) * 1000, 2)
         logger.info(f"[{request_id}] Source analytics completed in {query_time}ms")
         
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return SourceAnalyticsResponse(
             **result,
             cache_hit=False,
@@ -432,6 +444,7 @@ async def get_source_analytics(
     description="Get daily lead counts by platform over time.",
 )
 async def get_platform_trend(
+    response: Response,
     db: Session = Depends(get_db),
     period: int = Query(default=30, ge=7, le=90, description="Days to include"),
 ) -> PlatformTrendResponse:
@@ -445,6 +458,7 @@ async def get_platform_trend(
     try:
         cached = cache.get(cache_key)
         if cached:
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
             return PlatformTrendResponse(
                 **cached, 
                 cache_hit=True, 
@@ -515,6 +529,7 @@ async def get_platform_trend(
         except Exception as e:
             logger.warning(f"[{request_id}] Cache write failed: {e}")
         
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return PlatformTrendResponse(
             **result, 
             cache_hit=False, 
@@ -536,6 +551,7 @@ async def get_platform_trend(
     description="Get hot leads breakdown by source platform (all 4 platforms).",
 )
 async def get_hot_leads_by_platform(
+    response: Response,
     db: Session = Depends(get_db),
     days_back: int = Query(default=30, ge=1, le=365),
 ) -> HotLeadsByPlatformResponse:
@@ -549,6 +565,7 @@ async def get_hot_leads_by_platform(
     try:
         cached = cache.get(cache_key)
         if cached:
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
             return HotLeadsByPlatformResponse(
                 **cached, 
                 cache_hit=True, 
@@ -647,6 +664,7 @@ async def get_hot_leads_by_platform(
         except Exception as e:
             logger.warning(f"[{request_id}] Cache write failed: {e}")
         
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
         return HotLeadsByPlatformResponse(
             **result, 
             cache_hit=False, 
@@ -667,18 +685,40 @@ async def get_hot_leads_by_platform(
     description="Get performance breakdown by UTM campaign.",
 )
 async def get_campaign_performance(
+    response: Response,
     db: Session = Depends(get_db),
     days_back: int = Query(default=30, ge=1, le=365),
 ):
-    """Get performance metrics by campaign."""
+    """
+    Get performance metrics by UTM campaign.
+
+    Redis-cached for 60 s (same TTL as the other source-analytics endpoints).
+    Cache-Control: private, max-age=30, stale-while-revalidate=60 is sent on
+    every response so the browser can serve stale data while revalidating.
+    """
     start_time = time.time()
     request_id = str(uuid.uuid4())[:8]
-    
+    cache = get_cache()
+
+    # ── Try Redis cache first ──────────────────────────────────────────────
+    cache_key = f"campaign_performance:{days_back}"
+    try:
+        cached = cache.get(cache_key)
+        if cached:
+            logger.info(f"[{request_id}] Cache hit for campaign performance")
+            response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
+            return {
+                **cached,
+                "query_time_ms": round((time.time() - start_time) * 1000, 2),
+                "cache_hit": True,
+            }
+    except Exception as e:
+        logger.warning(f"[{request_id}] Cache read failed: {e}")
+
     try:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
-        
-        # Get campaign data
-        # Exclude soft-deleted leads for consistency
+
+        # Get campaign data — exclude soft-deleted leads for consistency
         campaigns = db.query(
             Lead.utm_campaign,
             Lead.utm_source,
@@ -692,7 +732,7 @@ async def get_campaign_performance(
             and_(
                 Lead.created_at >= cutoff_date,
                 Lead.utm_campaign.isnot(None),
-                Lead.deleted_at.is_(None)  # Exclude soft-deleted leads
+                Lead.deleted_at.is_(None),
             )
         ).group_by(
             Lead.utm_campaign,
@@ -700,14 +740,13 @@ async def get_campaign_performance(
         ).order_by(
             func.count(Lead.id).desc()
         ).limit(20).all()
-        
-        result = []
+
+        campaigns_list = []
         for campaign in campaigns:
             total = campaign.total or 0
             converted = campaign.converted or 0
             conversion_rate = round((converted / total * 100) if total > 0 else 0, 2)
-            
-            result.append({
+            campaigns_list.append({
                 "campaign": campaign.utm_campaign or "Direct",
                 "source": campaign.utm_source or "Direct",
                 "platform": get_platform_from_source(campaign.utm_source, None),
@@ -717,14 +756,26 @@ async def get_campaign_performance(
                 "conversion_rate": conversion_rate,
                 "avg_score": round(float(campaign.avg_score or 0), 1),
             })
-        
-        return {
-            "campaigns": result,
-            "total_campaigns": len(result),
-            "query_time_ms": round((time.time() - start_time) * 1000, 2),
+
+        result_to_cache = {
+            "campaigns": campaigns_list,
+            "total_campaigns": len(campaigns_list),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        
+
+        # ── Store in Redis for 60 s ────────────────────────────────────────
+        try:
+            cache.set(cache_key, result_to_cache, ttl=60)
+        except Exception as e:
+            logger.warning(f"[{request_id}] Cache write failed: {e}")
+
+        response.headers["Cache-Control"] = "private, max-age=30, stale-while-revalidate=60"
+        return {
+            **result_to_cache,
+            "query_time_ms": round((time.time() - start_time) * 1000, 2),
+            "cache_hit": False,
+        }
+
     except SQLAlchemyError as e:
         handle_db_error(e, "campaign_performance", request_id)
         raise HTTPException(status_code=503, detail="Database temporarily unavailable")

@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { PhoneIncoming, PhoneOutgoing, Play, Star, PhoneMissed, CheckCircle2, Inbox } from 'lucide-react';
 import type { CallsResponse, CallRailCall } from '../../services/callrail';
-import { formatDuration, timeAgo, maskPhone } from '../../services/callrail';
+import { formatDuration, timeAgo, formatCompactDateTime, maskPhone } from '../../services/callrail';
 
 interface Props {
   data: CallsResponse | undefined;
@@ -72,7 +72,7 @@ function CallCard({ call }: { call: CallRailCall }) {
             <Play size={12} />
           </button>
         )}
-        <span className="text-xs text-gray-400 w-16 text-right">{timeAgo(call.start_time)}</span>
+        <span className="text-xs text-gray-500 text-right whitespace-nowrap" title={timeAgo(call.start_time)}>{formatCompactDateTime(call.start_time)}</span>
       </div>
     </div>
   );
@@ -159,7 +159,7 @@ export const CallActivityTab: React.FC<Props> = ({ data, isLoading }) => {
                   <p className="text-sm font-medium text-gray-900 truncate">{call.caller_name || 'Unknown'}</p>
                   <p className="text-xs text-gray-500">{maskPhone(call.caller_number)}</p>
                 </div>
-                <span className="text-xs text-gray-400 whitespace-nowrap">{timeAgo(call.start_time)}</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap" title={timeAgo(call.start_time)}>{formatCompactDateTime(call.start_time)}</span>
               </div>
             ))}
           </div>

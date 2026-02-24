@@ -39,9 +39,8 @@ export function getUTMFromURL(): IUTMParams {
         params[param] = value;
       }
     }
-  } catch (error) {
+  } catch {
     // Silently fail if URL parsing fails
-    console.error('Failed to parse UTM parameters from URL');
   }
   
   return params;
@@ -59,9 +58,8 @@ export function saveUTMParams(params: IUTMParams): void {
     if (Object.keys(params).length > 0) {
       sessionStorage.setItem(UTM_STORAGE_KEY, JSON.stringify(params));
     }
-  } catch (error) {
+  } catch {
     // Silently fail if storage is unavailable
-    console.error('Failed to save UTM parameters to storage');
   }
 }
 
@@ -76,9 +74,8 @@ export function getStoredUTMParams(): IUTMParams {
     if (stored) {
       return JSON.parse(stored) as IUTMParams;
     }
-  } catch (error) {
+  } catch {
     // Silently fail if storage is unavailable
-    console.error('Failed to retrieve UTM parameters from storage');
   }
   return {};
 }

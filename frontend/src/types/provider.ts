@@ -210,10 +210,10 @@ export const STATUS_LABELS: Record<ProviderStatus, string> = {
 };
 
 export const STATUS_COLORS: Record<ProviderStatus, string> = {
-  active: 'bg-green-100 text-green-800',
-  pending: 'bg-yellow-100 text-yellow-800',
-  inactive: 'bg-gray-100 text-gray-800',
-  archived: 'bg-red-100 text-red-800',
+  active: 'bg-green-500 text-white',
+  pending: 'bg-amber-500 text-white',
+  inactive: 'bg-red-400 text-white',
+  archived: 'bg-gray-400 text-white',
 };
 
 export const CONTACT_METHOD_LABELS: Record<ProviderContactMethod, string> = {

@@ -538,6 +538,7 @@ class PlatformAnalyticsService:
             platform_condition = "AND source = :platform"
             params["platform"] = platform
         
+        # EXCLUDE soft-deleted leads — deleted_at IS NULL guard is mandatory
         query = f"""
             SELECT 
                 id,
@@ -550,7 +551,7 @@ class PlatformAnalyticsService:
                 updated_at,
                 contact_outcome
             FROM leads
-            WHERE 1=1 {cursor_condition} {platform_condition}
+            WHERE deleted_at IS NULL {cursor_condition} {platform_condition}
             ORDER BY created_at DESC, id DESC
             LIMIT :limit
         """

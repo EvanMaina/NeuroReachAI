@@ -21,6 +21,8 @@ import RequestInvitationPage from './pages/RequestInvitationPage';
 import { SessionExpiredModal } from './components/common/SessionExpiredModal';
 import { ConnectionStatusBanner } from './components/common/ConnectionStatusBanner';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import { ToastContainer } from './components/common/ToastContainer';
+import NewLeadWatcher from './components/common/NewLeadWatcher';
 
 // =============================================================================
 // Lazy-Loaded Pages (Code Splitting)
@@ -160,12 +162,12 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // Cache settings - Balanced for fresh data while preventing data loss
-      staleTime: 30 * 1000,               // Data fresh for 30 seconds (was 2 mins - too long)
-      gcTime: 5 * 60 * 1000,              // Keep in cache for 5 minutes
+      staleTime: 60 * 1000,               // Data fresh for 60 seconds — prevents refetch storms during rapid navigation
+      gcTime: 5 * 60 * 1000,              // Keep in cache for 5 minutes — data persists across page switches
       
-      // Refetch settings - Ensure fresh data
-      refetchOnMount: 'always',            // Always refetch fresh data on mount
-      refetchOnWindowFocus: true,          // Refetch when user returns to tab
+      // Refetch settings — conservative to prevent hanging during rapid navigation
+      refetchOnMount: true,                // Refetch only when data is stale (respects staleTime)
+      refetchOnWindowFocus: false,         // Don't refetch on tab switch — prevents unexpected loading states
       refetchOnReconnect: true,            // Refetch after network reconnection
       refetchInterval: false,              // No automatic polling (manual refresh instead)
       
@@ -177,12 +179,14 @@ const queryClient = new QueryClient({
       retry: 3,                            // 3 retries (was 2)
       retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 10000),
       
-      // Network mode
-      networkMode: 'online',
+      // CRITICAL FIX: Use 'always' to match useLeads hook.
+      // 'online' caused queries to pause during brief connectivity hiccups
+      // after Docker container rebuild, leaving dashboard stuck on "Loading leads..."
+      networkMode: 'always',
     },
     mutations: {
       retry: 2,
-      networkMode: 'online',
+      networkMode: 'always',
       // Invalidate relevant queries after mutations
       onSuccess: () => {
         // Queries will be invalidated by specific mutation handlers
@@ -254,9 +258,36 @@ const PageRenderer: React.FC<PageRendererProps> = memo(({ routeInfo }) => {
   }, [routeInfo.page, routeInfo.queueType]);
 
   return (
-    <Suspense fallback={<PageLoader />}>
-      {content}
-    </Suspense>
+    <ErrorBoundary
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 p-6">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
+            <div className="mx-auto w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mb-5">
+              <svg className="w-7 h-7 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">This page encountered an error</h2>
+            <p className="text-gray-500 text-sm mb-6">The rest of the application is still working. You can navigate to another page or reload this one.</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => { window.location.hash = 'dashboard'; window.location.reload(); }}
+                className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-medium">
+                Go to Dashboard
+              </button>
+              <button onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium">
+                Reload Page
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <Suspense fallback={<PageLoader />}>
+        {content}
+      </Suspense>
+    </ErrorBoundary>
   );
 });
 
@@ -390,6 +421,9 @@ const AuthGate: React.FC = () => {
         onLoginClick={dismissSessionExpired}
       />
       
+      {/* Background new-lead polling — invisible, fires toasts + cache invalidation */}
+      <NewLeadWatcher />
+      
       {/* Main App */}
       <AppRouter />
     </>
@@ -404,6 +438,8 @@ const App: React.FC = () => {
           <AuthGate />
         </AuthProvider>
       </QueryClientProvider>
+      {/* Global Toast Notification System — renders outside React Query/Auth for reliability */}
+      <ToastContainer />
     </ErrorBoundary>
   );
 };

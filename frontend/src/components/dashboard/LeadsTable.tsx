@@ -11,18 +11,19 @@
  * @version 2.0.0
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  Eye, Edit2, ChevronUp, ChevronDown,
+  Eye, ChevronUp, ChevronDown,
   Filter, Flame, Zap, CircleDot, Calendar, Users,
   Heart, Shield, Brain, Search, Mail, PhoneCall,
-  UserCheck, AlertTriangle, RefreshCw, MessageSquare, Trash2
+  UserCheck, AlertTriangle, RefreshCw, MessageSquare, Settings
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import type { LeadTableRow, LeadPriority } from '../../types/lead';
 import { EmailComposeDialog } from './EmailComposeDialog';
 import { SMSComposeDialog } from './SMSComposeDialog';
+import { PhoneDialModal } from './PhoneDialModal';
 import { formatRelativeTime } from '../../utils/dateFormatters';
 import { Tag } from 'lucide-react';
 
@@ -224,6 +225,28 @@ function formatPreferredContact(method: string | undefined): string {
 }
 
 // =============================================================================
+// Column Config
+// =============================================================================
+
+const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+  leadId: 140, patient: 200, condition: 150, priority: 120,
+  status: 170, scheduledFor: 180, submitted: 140, lastActivity: 150,
+  preferred: 130, actions: 170,
+};
+
+const COLUMN_LABELS: Record<string, string> = {
+  leadId: 'Lead ID', patient: 'Patient', condition: 'Condition',
+  priority: 'Priority', status: 'Status', scheduledFor: 'Scheduled For',
+  submitted: 'Submitted', lastActivity: 'Last Activity',
+  preferred: 'Preferred', actions: 'Actions',
+};
+
+const DEFAULT_VISIBLE: ReadonlyArray<string> = [
+  'leadId', 'patient', 'condition', 'priority', 'status',
+  'scheduledFor', 'submitted', 'lastActivity', 'preferred', 'actions',
+];
+
+// =============================================================================
 // Component
 // =============================================================================
 
@@ -233,8 +256,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   isLoading,
   error,
   onView,
-  onEdit,
-  onDelete,
+  onEdit: _onEdit,
+  onDelete: _onDelete,
   onRetry,
   resetFilterKey,
   onRefreshNeeded,
@@ -250,6 +273,15 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Resizable column widths
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...DEFAULT_COLUMN_WIDTHS });
+  // Column visibility toggle
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(DEFAULT_VISIBLE));
+  const [showColumnToggle, setShowColumnToggle] = useState(false);
+  const columnToggleRef = useRef<HTMLDivElement>(null);
+  // Resize tracking ref
+  const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+
   // ---------------------------------------------------------------------------
   // Reset quick filter when queue/page changes
   // ---------------------------------------------------------------------------
@@ -260,9 +292,48 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
     setSearchQuery('');
   }, [resetFilterKey]);
 
-  // Email and SMS dialog state
+  // Document-level mouse handlers for column resize — bulletproof
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      const drag = resizeRef.current;
+      if (!drag) return;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      const diff = e.clientX - drag.startX;
+      const newWidth = Math.max(60, Math.min(500, drag.startWidth + diff));
+      if (!Number.isFinite(newWidth)) return;
+      setColumnWidths(prev => ({ ...prev, [drag.col]: newWidth }));
+    };
+    const onMouseUp = () => {
+      resizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
+
+  // Close column toggle dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (columnToggleRef.current && !columnToggleRef.current.contains(e.target as Node)) {
+        setShowColumnToggle(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Email, SMS, and Phone dialog state
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [smsDialogOpen, setSmsDialogOpen] = useState(false);
+  const [phoneDialOpen, setPhoneDialOpen] = useState(false);
   const [selectedLeadForComm, setSelectedLeadForComm] = useState<LeadTableRow | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -488,10 +559,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.preventDefault();
-                  const phone = prompt('Enter phone number to call via 3CX:');
-                  if (phone && phone.trim()) {
-                    handleCallVia3CX(phone.trim());
-                  }
+                  setPhoneDialOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg
                          bg-green-50 text-green-700 hover:bg-green-100 border border-green-200
@@ -560,29 +628,75 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
             </div>
           </div>
 
-          {/* Search Input */}
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by phone, email, or name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="
-                pl-9 pr-4 py-2 w-72 text-sm
-                border border-gray-300 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                placeholder:text-gray-400
-              "
-            />
-            {searchQuery && (
+          {/* Search + Column Toggle */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by name, email, phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="
+                  pl-9 pr-4 py-2 w-64 text-sm
+                  border border-gray-300 rounded-lg
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                  placeholder:text-gray-400
+                "
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            {/* Column Visibility Toggle */}
+            <div className="relative" ref={columnToggleRef}>
               <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                type="button"
+                onClick={() => setShowColumnToggle(prev => !prev)}
+                className="p-2 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                title="Toggle column visibility"
               >
-                ×
+                <Settings size={16} />
               </button>
-            )}
+              {showColumnToggle && (
+                <div className="absolute right-0 top-10 z-50 w-52 bg-white border border-gray-200 rounded-xl shadow-xl py-2">
+                  <div className="flex items-center justify-between px-3 pb-2 mb-1 border-b border-gray-100">
+                    <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Columns</span>
+                    <button
+                      onClick={() => setVisibleColumns(new Set(DEFAULT_VISIBLE))}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                    >Reset</button>
+                  </div>
+                  {DEFAULT_VISIBLE.map(col => {
+                    const isLocked = col === 'leadId' || col === 'patient';
+                    return (
+                      <label key={col} className={`flex items-center gap-2.5 px-3 py-1.5 ${isLocked ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50 cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns.has(col)}
+                          disabled={isLocked}
+                          onChange={(e) => {
+                            if (isLocked) return;
+                            setVisibleColumns(prev => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(col); else next.delete(col);
+                              return next;
+                            });
+                          }}
+                          className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
+                        />
+                        <span className="text-xs text-gray-700">{COLUMN_LABELS[col]}{isLocked ? ' ✦' : ''}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -629,103 +743,107 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
           </p>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-auto">
-          <table className="w-full">
+        <div className="flex-1 min-h-0 overflow-auto premium-scrollbar">
+          <table className="w-full" style={{ tableLayout: 'fixed', minWidth: '1100px' }}>
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                {/* Lead ID - FROZEN column header (sticky left + top, z-4 for intersection) */}
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 left-0 z-[4] bg-gray-50"
-                  style={{ minWidth: '140px' }}
-                  onClick={() => handleSort('leadId')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Lead ID
-                    {getSortIcon('leadId')}
-                  </div>
-                </th>
-                {/* Patient - FROZEN column header (sticky left + top, z-4 for intersection) */}
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[4] bg-gray-50"
-                  style={{ minWidth: '180px', left: '140px', boxShadow: '4px 0 8px rgba(0, 0, 0, 0.06)' }}
-                  onClick={() => handleSort('firstName')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Patient
-                    {getSortIcon('firstName')}
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50"
-                  onClick={() => handleSort('condition')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Condition
-                    {getSortIcon('condition')}
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50"
-                  onClick={() => handleSort('priority')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Priority
-                    {getSortIcon('priority')}
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50"
-                  onClick={() => handleSort('status')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Status
-                    {getSortIcon('status')}
-                  </div>
-                </th>
-                {/* Scheduled For column - shows consultation date/time */}
-                <th className="px-6 py-3 text-left sticky top-0 z-[3] bg-gray-50">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    <Calendar size={12} />
-                    Scheduled For
-                  </div>
-                </th>
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50"
-                  onClick={() => handleSort('submittedAt')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Submitted
-                    {getSortIcon('submittedAt')}
-                  </div>
-                </th>
-                {/* Last Activity column header */}
-                <th
-                  className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50"
-                  onClick={() => handleSort('lastUpdatedAt')}
-                >
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Last Activity
-                    {getSortIcon('lastUpdatedAt')}
-                  </div>
-                </th>
-                {/* Email column header */}
-                <th className="px-4 py-3 text-left sticky top-0 z-[3] bg-gray-50">
-                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Email
-                  </div>
-                </th>
-                {/* Preferred Contact column header */}
-                <th className="px-4 py-3 text-left sticky top-0 z-[3] bg-gray-50">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    <PhoneCall size={12} />
-                    Preferred
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-right sticky top-0 z-[3] bg-gray-50">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </span>
-                </th>
+              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                {visibleColumns.has('leadId') && (
+                  <th
+                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 left-0 z-[4] bg-gray-50 relative select-none"
+                    style={{ width: columnWidths.leadId }}
+                    onClick={() => handleSort('leadId')}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      Lead ID {getSortIcon('leadId')}
+                    </div>
+                    <div
+                      className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'leadId', startX: e.clientX, startWidth: columnWidths.leadId }; }}
+                      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, leadId: DEFAULT_COLUMN_WIDTHS.leadId })); }}
+                    >
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('patient') && (
+                  <th
+                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[4] bg-gray-50 relative select-none"
+                    style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
+                    onClick={() => handleSort('firstName')}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      Patient {getSortIcon('firstName')}
+                    </div>
+                    <div
+                      className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
+                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'patient', startX: e.clientX, startWidth: columnWidths.patient }; }}
+                      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, patient: DEFAULT_COLUMN_WIDTHS.patient })); }}
+                    >
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('condition') && (
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.condition }} onClick={() => handleSort('condition')}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Condition {getSortIcon('condition')}</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'condition', startX: e.clientX, startWidth: columnWidths.condition }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, condition: DEFAULT_COLUMN_WIDTHS.condition })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('priority') && (
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.priority }} onClick={() => handleSort('priority')}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Priority {getSortIcon('priority')}</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'priority', startX: e.clientX, startWidth: columnWidths.priority }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, priority: DEFAULT_COLUMN_WIDTHS.priority })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('status') && (
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.status }} onClick={() => handleSort('status')}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Status {getSortIcon('status')}</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'status', startX: e.clientX, startWidth: columnWidths.status }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, status: DEFAULT_COLUMN_WIDTHS.status })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('scheduledFor') && (
+                  <th className="px-6 py-3 text-left sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.scheduledFor }}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><Calendar size={12} /> Scheduled For</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'scheduledFor', startX: e.clientX, startWidth: columnWidths.scheduledFor }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, scheduledFor: DEFAULT_COLUMN_WIDTHS.scheduledFor })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('submitted') && (
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.submitted }} onClick={() => handleSort('submittedAt')}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Submitted {getSortIcon('submittedAt')}</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'submitted', startX: e.clientX, startWidth: columnWidths.submitted }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, submitted: DEFAULT_COLUMN_WIDTHS.submitted })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('lastActivity') && (
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.lastActivity }} onClick={() => handleSort('lastUpdatedAt')}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Last Activity {getSortIcon('lastUpdatedAt')}</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'lastActivity', startX: e.clientX, startWidth: columnWidths.lastActivity }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, lastActivity: DEFAULT_COLUMN_WIDTHS.lastActivity })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('preferred') && (
+                  <th className="px-4 py-3 text-left sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.preferred }}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><PhoneCall size={12} /> Preferred</div>
+                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'preferred', startX: e.clientX, startWidth: columnWidths.preferred }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, preferred: DEFAULT_COLUMN_WIDTHS.preferred })); }}>
+                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.has('actions') && (
+                  <th className="px-6 py-3 text-right sticky top-0 z-[3] bg-gray-50 select-none" style={{ width: columnWidths.actions }}>
+                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -740,19 +858,20 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                     ${rowBg}
                   `}
                 >
-                  {/* Lead ID - FROZEN column (sticky left, opaque bg, group-hover) */}
+                  {visibleColumns.has('leadId') && (
                   <td
                     className={`px-6 py-4 whitespace-nowrap sticky left-0 z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
-                    style={{ minWidth: '140px' }}
+                    style={{ width: columnWidths.leadId }}
                   >
                     <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
                       {lead.leadId}
                     </span>
                   </td>
-                  {/* Patient - FROZEN column (sticky left, opaque bg, group-hover, shadow separator) */}
+                  )}
+                  {visibleColumns.has('patient') && (
                   <td
                     className={`px-6 py-4 whitespace-nowrap sticky z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
-                    style={{ minWidth: '180px', maxWidth: '220px', left: '140px', boxShadow: '4px 0 8px rgba(0, 0, 0, 0.06)' }}
+                    style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
@@ -790,6 +909,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                       </div>
                     </div>
                   </td>
+                  )}
+                  {visibleColumns.has('condition') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span 
                       className="text-sm text-gray-700"
@@ -800,9 +921,13 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                         : formatConditionDisplay(lead.condition)}
                     </span>
                   </td>
+                  )}
+                  {visibleColumns.has('priority') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Badge variant="priority" value={lead.priority} />
                   </td>
+                  )}
+                  {visibleColumns.has('status') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex flex-col gap-1">
                       <Badge variant="status" value={lead.status} />
@@ -815,7 +940,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                       )}
                     </div>
                   </td>
-                  {/* Scheduled For cell - shows consultation date/time with urgency */}
+                  )}
+                  {visibleColumns.has('scheduledFor') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     {lead.scheduledCallbackAt ? (
                       (() => {
@@ -841,12 +967,15 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                       <span className="text-xs text-gray-400">—</span>
                     )}
                   </td>
+                  )}
+                  {visibleColumns.has('submitted') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm text-gray-500">
                       {formatDate(lead.submittedAt)}
                     </span>
                   </td>
-                  {/* Last Activity cell - shows when lead was last modified */}
+                  )}
+                  {visibleColumns.has('lastActivity') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     {lead.lastUpdatedAt ? (
                       <span className="text-sm text-gray-700 font-medium">
@@ -859,20 +988,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                       </span>
                     )}
                   </td>
-                  {/* Email cell - plain text */}
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    {lead.email ? (
-                      <span
-                        className="text-sm text-gray-700 max-w-[180px] truncate block"
-                        title={lead.email}
-                      >
-                        {lead.email}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                  </td>
-                  {/* Preferred Contact cell */}
+                  )}
+                  {visibleColumns.has('preferred') && (
                   <td className="px-4 py-4 whitespace-nowrap">
                     {lead.preferredContactMethod ? (
                       (() => {
@@ -902,6 +1019,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                       <span className="text-xs text-gray-400">—</span>
                     )}
                   </td>
+                  )}
+                  {visibleColumns.has('actions') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center justify-end gap-1">
                       {/* CALL BUTTON - Triggers tel: link for 3CX Chrome extension */}
@@ -911,10 +1030,10 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                             e.stopPropagation();
                             handleCallVia3CX(lead.phone);
                           }}
-                          className="p-1.5 rounded-lg bg-green-100 text-green-600 hover:bg-green-200 transition-colors duration-200"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors duration-150"
                           title={`Call ${lead.firstName} via 3CX`}
                         >
-                          <PhoneCall size={16} />
+                          <PhoneCall size={15} />
                         </button>
                       )}
 
@@ -926,10 +1045,10 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                             setSelectedLeadForComm(lead);
                             setEmailDialogOpen(true);
                           }}
-                          className="p-1.5 rounded-lg bg-blue-100 text-blue-600 hover:bg-blue-200 transition-colors duration-200"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors duration-150"
                           title={`Email ${lead.firstName}`}
                         >
-                          <Mail size={16} />
+                          <Mail size={15} />
                         </button>
                       )}
 
@@ -941,57 +1060,25 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                             setSelectedLeadForComm(lead);
                             setSmsDialogOpen(true);
                           }}
-                          className="p-1.5 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition-colors duration-200"
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150"
                           title={`SMS ${lead.firstName}`}
                         >
-                          <MessageSquare size={16} />
+                          <MessageSquare size={15} />
                         </button>
                       )}
 
                       {/* VIEW BUTTON */}
                       <button
                         onClick={() => onView(lead.id)}
-                        className="
-                          inline-flex items-center gap-1.5 px-2 py-1.5
-                          text-sm font-medium text-blue-600 
-                          hover:bg-blue-100 rounded-lg transition-all duration-200
-                        "
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors duration-150"
                         title="View lead details"
                       >
                         <Eye size={15} />
                       </button>
 
-                      {/* EDIT BUTTON */}
-                      {onEdit && (
-                        <button
-                          onClick={() => onEdit(lead.id)}
-                          className="
-                            inline-flex items-center gap-1.5 px-2 py-1.5
-                            text-sm font-medium text-gray-600
-                            hover:bg-gray-100 rounded-lg transition-all duration-200
-                          "
-                          title="Edit lead"
-                        >
-                          <Edit2 size={15} />
-                        </button>
-                      )}
-
-                      {/* DELETE BUTTON */}
-                      {onDelete && (
-                        <button
-                          onClick={() => onDelete(lead.id, `${lead.firstName} ${lead.lastName || ''}`.trim())}
-                          className="
-                            inline-flex items-center gap-1.5 px-2 py-1.5
-                            text-sm font-medium text-red-600 
-                            hover:bg-red-50 rounded-lg transition-all duration-200
-                          "
-                          title="Delete lead"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      )}
                     </div>
                   </td>
+                  )}
                 </tr>
                 );
               })}
@@ -1048,6 +1135,13 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
         } : null}
         generalMode={!selectedLeadForComm}
         onSendSuccess={onRefreshNeeded}
+      />
+
+      {/* Phone Dial Modal (replaces native prompt) */}
+      <PhoneDialModal
+        isOpen={phoneDialOpen}
+        onClose={() => setPhoneDialOpen(false)}
+        onCall={handleCallVia3CX}
       />
 
     </div>

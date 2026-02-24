@@ -5,10 +5,13 @@ Provides high-level interface for encrypting and decrypting
 Protected Health Information (PHI) before database storage.
 """
 
+import logging
 from typing import Optional
 
 from ..core.security import encrypt_phi, decrypt_phi, hash_ip_address
 from ..schemas.lead import LeadCreate
+
+_logger = logging.getLogger(__name__)
 
 
 class EncryptionService:
@@ -52,16 +55,29 @@ class EncryptionService:
     def decrypt_field(value: Optional[bytes]) -> Optional[str]:
         """
         Decrypt a single field value.
-        
+
+        Returns None (instead of raising) if decryption fails so that a single
+        corrupted record never crashes the entire list endpoint for all
+        coordinators.  All failures are logged at ERROR level so ops can
+        investigate without the log ever containing the raw ciphertext.
+
         Args:
             value: Encrypted bytes to decrypt
-            
+
         Returns:
-            Decrypted string or None if value is None
+            Decrypted string or None if value is None or decryption fails
         """
         if value is None:
             return None
-        return decrypt_phi(value)
+        try:
+            return decrypt_phi(value)
+        except Exception:
+            _logger.error(
+                "PHI decryption failed for a field — data may be corrupted or "
+                "there is a key mismatch.  Returning None to prevent a single "
+                "bad record from aborting the full batch.  Investigate immediately."
+            )
+            return None
     
     @classmethod
     def encrypt_lead_phi(cls, lead_data: LeadCreate) -> dict:
@@ -92,11 +108,16 @@ class EncryptionService:
         Returns:
             Dictionary with decrypted PHI fields
         """
+        # first_name, email, phone are `str` (non-Optional) in LeadListResponse /
+        # LeadResponse Pydantic schemas — Pydantic v2 raises ValidationError if we
+        # pass None.  Coerce to "" so a single corrupted record never aborts the
+        # entire ThreadPoolExecutor batch and crashes the list endpoint.
+        # last_name is Optional[str] in the schema, so None is safe there.
         return {
-            "first_name": cls.decrypt_field(lead_model.first_name_encrypted),
-            "last_name": cls.decrypt_field(lead_model.last_name_encrypted),
-            "email": cls.decrypt_field(lead_model.email_encrypted),
-            "phone": cls.decrypt_field(lead_model.phone_encrypted),
+            "first_name": cls.decrypt_field(lead_model.first_name_encrypted) or "",
+            "last_name": cls.decrypt_field(lead_model.last_name_encrypted),  # Optional[str]
+            "email": cls.decrypt_field(lead_model.email_encrypted) or "",
+            "phone": cls.decrypt_field(lead_model.phone_encrypted) or "",
         }
     
     @staticmethod

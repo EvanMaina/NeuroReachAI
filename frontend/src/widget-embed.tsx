@@ -1,597 +1,499 @@
 /**
- * Premium Floating Assessment CTA Widget
+ * Premium Floating Card Widget — TMS Institute of Arizona
+ * v17.0.0 — 6-tier responsive, premium animations, WCAG accessible
  * 
- * High-converting, HIPAA-compliant floating button that navigates to the
- * TMS assessment page. Designed to be impossible to ignore yet elegant.
+ * Tier 1: Large Desktop ≥1440px  → 280px, right:140px
+ * Tier 2: Desktop 1280-1439px    → 260px, right:120px
+ * Tier 3: Small Laptop 1025-1279 → 240px, right:80px
+ * Tier 4: Tablet 769-1024px      → 200px, right:40px
+ * Tier 5: Mobile 376-768px       → 150px, right:8px
+ * Tier 6: Small Mobile ≤375px    → 130px, right:6px
  * 
- * FEATURES:
- * - 64px circle (desktop) / 56px (mobile), fixed bottom-right
- * - Teal gradient with subtle pulse glow every 4 seconds
- * - Floating speech-bubble tooltip ALWAYS visible to the LEFT: "Could TMS help me?" + "2-min confidential check"
- * - Tooltip is PERMANENT — never fades, never hides, visible on every page load
- * - At 8s: one-time attention animation on both circle and tooltip
- * - Hover: pill expansion with text inside circle button
- * - Mobile: tap to expand, second tap navigates
- * - Full accessibility: aria-label, focus ring, prefers-reduced-motion
- * - HIPAA: zero data collection, no cookies, no third-party scripts, no PII
- * - UTM tracking: ?utm_source=floating_widget&utm_medium=cta
- * - Hides on assessment page (URL contains /assessment)
- * - WordPress robust: duplicate prevention, WP Rocket compatible, full-page reload safe
- * - Robust error handling: full try-catch, never crashes host page
- * - Debug mode: add ?nr-debug=1 to any URL for verbose console logging
+ * Montserrat font, glassmorphism, premium 3D float, breathing glow,
+ * color wave brand bars, shadow depth pulse, arrow nudge
  * 
  * @module widget-embed
- * @version 5.0.0 — Always-visible tooltip + Robust error handling + Debug mode
  */
 
-// ========== Configuration ==========
 function getScriptConfig(): { apiUrl: string } {
   const scripts = document.querySelectorAll('script[src*="widget-embed"]');
-  const currentScript = scripts[scripts.length - 1] as HTMLScriptElement | null;
-
+  const s = scripts[scripts.length - 1] as HTMLScriptElement | null;
   let apiUrl = '';
-  if (currentScript) {
+  if (s) {
     try {
-      const scriptUrl = new URL(currentScript.src);
-      apiUrl =
-        currentScript.getAttribute('data-api-url') ||
-        `${scriptUrl.protocol}//${scriptUrl.host}`;
+      const u = new URL(s.src);
+      apiUrl = s.getAttribute('data-api-url') || `${u.protocol}//${u.host}`;
     } catch {
-      apiUrl = currentScript.getAttribute('data-api-url') || '';
+      apiUrl = s.getAttribute('data-api-url') || '';
     }
   }
-
-  return {
-    apiUrl: apiUrl || window.location.origin,
-  };
+  return { apiUrl: apiUrl || window.location.origin };
 }
 
-// ========== Styles ==========
+const C = {
+  dk: '#1B3A4B',
+  tl: '#1a6b5a',
+  tl2: '#2d8a7a',
+  wh: '#FFFFFF',
+  tx: '#1B3A4B',
+  mu: '#888',
+  hv: '#15584a',
+};
+
 function injectStyles(): void {
-  if (document.querySelector('style[data-nr-cta-widget]')) return;
-
+  if (document.querySelector('style[data-nr-card-widget]')) return;
+  if (!document.querySelector('link[href*="Montserrat"]')) {
+    const f = document.createElement('link');
+    f.rel = 'stylesheet';
+    f.href = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap';
+    document.head.appendChild(f);
+  }
   const style = document.createElement('style');
-  style.setAttribute('data-nr-cta-widget', '');
+  style.setAttribute('data-nr-card-widget', '');
   style.textContent = `
-    /* ========================================
-       Floating CTA Widget — Premium Styles
-       Brand teal: #0D9488 / rgb(13,148,136)
-       v4.0.0
-       ======================================== */
-
-    /* ---- Wrapper (contains tooltip + circle) ---- */
-    #nr-cta-wrapper {
+    /* ============================================================
+       BASE — Tier 2: Desktop/Laptop (1280-1439px) as default
+       ============================================================ */
+    #nr-card-widget {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 9999;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      pointer-events: none;
-    }
-
-    /* ---- Floating Tooltip (speech bubble to LEFT of circle) ---- */
-    #nr-cta-tooltip {
-      pointer-events: auto;
-      position: relative;
-      background: #FFFFFF;
+      top: 160px;
+      right: 120px;
+      z-index: 99999;
+      width: 260px;
       border-radius: 12px;
-      padding: 12px 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
-      cursor: pointer;
+      overflow: visible;
+      border: 1px solid rgba(26,107,90,0.1);
+      background: rgba(255,255,255,0.97);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      font-family: 'Montserrat', Arial, Helvetica, sans-serif;
+      /* entrance: hidden offscreen */
+      opacity: 0;
+      transform: translateX(60px) scale(0.9);
+      pointer-events: none;
+      /* shadow depth pulse applied after entrance */
+      box-shadow: 0 4px 8px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.08), 0 24px 48px rgba(0,0,0,0.12);
+    }
+
+    /* --- Premium Entrance --- */
+    #nr-card-widget.nr-card-visible {
       opacity: 1;
-      transform: translateX(0);
-      transition: opacity 0.4s ease, transform 0.4s ease;
-      white-space: nowrap;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+      animation:
+        nr-entrance 1s cubic-bezier(0.16,1,0.3,1) both,
+        nr-float 5s ease-in-out 1.8s infinite,
+        nr-shadow 4s ease-in-out 1.8s infinite;
     }
 
-    /* Right-pointing arrow on tooltip */
-    #nr-cta-tooltip::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      right: -7px;
-      transform: translateY(-50%);
-      width: 0;
-      height: 0;
-      border-top: 7px solid transparent;
-      border-bottom: 7px solid transparent;
-      border-left: 7px solid #FFFFFF;
-      filter: drop-shadow(2px 0 1px rgba(0,0,0,0.06));
+    @keyframes nr-entrance {
+      0% { opacity: 0; transform: translateX(60px) scale(0.9); }
+      100% { opacity: 1; transform: translateX(0) scale(1); }
     }
 
-    #nr-cta-tooltip-title {
-      font-size: 14px;
-      font-weight: 700;
+    /* --- Premium 3D Float --- */
+    @keyframes nr-float {
+      0%, 100% { transform: translateY(0px) rotate(0deg); }
+      25% { transform: translateY(-5px) rotate(0.3deg); }
+      50% { transform: translateY(-8px) rotate(0deg); }
+      75% { transform: translateY(-5px) rotate(-0.3deg); }
+    }
+
+    /* --- Shadow Depth Pulse --- */
+    @keyframes nr-shadow {
+      0%, 100% { box-shadow: 0 4px 8px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.08), 0 24px 48px rgba(0,0,0,0.12); }
+      50% { box-shadow: 0 6px 12px rgba(0,0,0,0.08), 0 16px 32px rgba(0,0,0,0.10), 0 32px 56px rgba(0,0,0,0.14); }
+    }
+
+    .nr-card-inner { border-radius: 12px; overflow: hidden; }
+
+    /* --- Brand Bar Color Wave --- */
+    .nr-card-bar-top, .nr-card-bar-bottom {
+      height: 3px;
+      background: linear-gradient(90deg, ${C.dk}, ${C.tl}, ${C.tl2}, ${C.tl}, ${C.dk});
+      background-size: 300% 100%;
+      animation: nr-wave 6s ease-in-out infinite;
+    }
+    @keyframes nr-wave {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* --- Card Body --- */
+    .nr-card-body {
+      padding: 40px 26px 36px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 36px;
+    }
+
+    /* --- Headline --- */
+    .nr-card-headline {
+      font-family: 'Montserrat', Arial, Helvetica, sans-serif;
+      font-size: 20px;
+      font-weight: 300;
+      color: ${C.tx};
+      text-align: center;
       line-height: 1.3;
-      color: #1a1a1a;
+      letter-spacing: -0.01em;
       margin: 0;
     }
 
-    #nr-cta-tooltip-sub {
-      font-size: 11.5px;
-      font-weight: 400;
-      line-height: 1.3;
-      color: #666666;
-      margin: 2px 0 0 0;
-    }
-
-    /* Tooltip attention flash at 8s */
-    @keyframes nr-tooltip-flash {
-      0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,0.12); }
-      50% { box-shadow: 0 2px 20px rgba(13,148,136,0.30); }
-    }
-
-    #nr-cta-tooltip.nr-tooltip-attention {
-      animation: nr-tooltip-flash 0.6s ease-in-out 2;
-    }
-
-    /* ---- Circle Button ---- */
-    #nr-cta-widget {
-      pointer-events: auto;
-      position: relative;
+    /* --- CTA Button --- */
+    .nr-card-cta {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
+      gap: 6px;
+      width: 100%;
+      min-height: 44px;
+      padding: 12px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: 'Montserrat', Arial, Helvetica, sans-serif;
+      color: ${C.wh};
+      background: linear-gradient(135deg, ${C.dk} 0%, ${C.tl} 100%);
       border: none;
-      padding: 0;
-      flex-shrink: 0;
-      background: linear-gradient(135deg, #0D9488 0%, #0F766E 50%, #0D9488 100%);
-      color: #FFFFFF;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      border-radius: 8px;
       cursor: pointer;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.18);
-      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                  height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                  border-radius 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                  background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                  box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-                  transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      will-change: transform, box-shadow, width, border-radius;
-      overflow: hidden;
       text-decoration: none;
-      outline: none;
-      animation: nr-pulse-glow 4s ease-in-out infinite;
-    }
-
-    /* Focus ring for keyboard nav */
-    #nr-cta-widget:focus-visible {
-      outline: 3px solid #5EEAD4;
-      outline-offset: 3px;
-    }
-
-    /* ---- Pulse Glow Animation (every 4s) ---- */
-    @keyframes nr-pulse-glow {
-      0%, 100% { box-shadow: 0 4px 24px rgba(0,0,0,0.18); }
-      50% { box-shadow: 0 4px 32px rgba(13,148,136,0.45); }
-    }
-
-    /* ---- Attention Scale (one-time at 8s) ---- */
-    @keyframes nr-attention-scale {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.12); }
-    }
-
-    #nr-cta-widget.nr-attention {
-      animation: nr-attention-scale 0.6s ease-in-out 1;
-    }
-
-    /* ---- Icon container ---- */
-    #nr-cta-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      width: 28px;
-      height: 28px;
-      transition: opacity 0.2s ease;
-    }
-
-    /* ---- Text container inside circle (hidden by default) ---- */
-    #nr-cta-text {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1px;
-      opacity: 0;
-      max-width: 0;
+      white-space: normal;
+      text-align: center;
+      letter-spacing: 0.02em;
+      position: relative;
       overflow: hidden;
-      white-space: nowrap;
-      transition: opacity 0.25s ease 0.05s, max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
+      animation: nr-breathe 3s ease-in-out infinite;
     }
 
-    #nr-cta-title {
-      font-size: 14.5px;
-      font-weight: 700;
-      line-height: 1.2;
-      letter-spacing: -0.01em;
-      color: #FFFFFF;
+    /* --- CTA Breathing Glow --- */
+    @keyframes nr-breathe {
+      0%, 100% { box-shadow: 0 0 8px rgba(26,107,90,0.2); }
+      50% { box-shadow: 0 0 20px rgba(26,107,90,0.4), 0 0 40px rgba(26,107,90,0.1); }
     }
 
-    #nr-cta-sub {
-      font-size: 11.5px;
-      font-weight: 500;
-      line-height: 1.2;
-      color: rgba(255,255,255,0.78);
+    /* --- CTA Shimmer --- */
+    .nr-card-cta::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      transition: left 0.5s ease;
     }
+    .nr-card-cta:hover::before { left: 100%; }
 
-    /* ---- Expanded (pill) state ---- */
-    #nr-cta-widget.nr-expanded {
-      width: auto;
-      height: auto;
-      min-height: 56px;
-      border-radius: 28px;
-      padding: 10px 22px 10px 18px;
-      gap: 12px;
-      background: linear-gradient(135deg, #0F9D93 0%, #0D9488 100%);
-      box-shadow: 0 6px 32px rgba(13,148,136,0.35);
+    /* --- CTA Hover (desktop) --- */
+    .nr-card-cta:hover {
+      background: linear-gradient(135deg, ${C.tl} 0%, ${C.dk} 100%);
+      box-shadow: 0 6px 20px rgba(26,107,90,0.35);
+      transform: translateY(-2px);
       animation: none;
     }
+    .nr-card-cta:focus-visible { outline: 3px solid ${C.tl}; outline-offset: 3px; }
+    .nr-card-cta:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(26,107,90,0.2); }
 
-    #nr-cta-widget.nr-expanded #nr-cta-text {
-      opacity: 1;
-      max-width: 220px;
+    /* --- Arrow Nudge --- */
+    .nr-card-cta-arrow {
+      font-size: 14px;
+      animation: nr-nudge 4s ease-in-out infinite;
+    }
+    @keyframes nr-nudge {
+      0%, 80%, 100% { transform: translateX(0); }
+      90% { transform: translateX(4px); }
     }
 
-    /* ---- Hover expansion (non-touch devices only) ---- */
+    /* --- Trust Line --- */
+    .nr-card-trust {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      flex-wrap: wrap;
+      font-size: 10px;
+      color: ${C.mu};
+      letter-spacing: 0.02em;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+    .nr-card-trust-sep { color: #ccc; }
+
+    /* --- Desktop hover glow --- */
     @media (hover: hover) and (pointer: fine) {
-      #nr-cta-widget:hover {
-        width: auto;
-        height: auto;
-        min-height: 56px;
-        border-radius: 28px;
-        padding: 10px 22px 10px 18px;
-        gap: 12px;
-        background: linear-gradient(135deg, #0F9D93 0%, #0D9488 100%);
-        box-shadow: 0 6px 32px rgba(13,148,136,0.35);
-        animation: none;
-      }
-
-      #nr-cta-widget:hover #nr-cta-text {
-        opacity: 1;
-        max-width: 220px;
+      #nr-card-widget:hover {
+        box-shadow: 0 8px 16px rgba(0,0,0,0.10), 0 20px 40px rgba(0,0,0,0.12), 0 36px 60px rgba(0,0,0,0.16);
       }
     }
 
-    /* ---- Mobile ---- */
-    @media (max-width: 640px) {
-      #nr-cta-wrapper {
-        bottom: 20px;
-        right: 20px;
-        gap: 8px;
-      }
+    /* ============================================================
+       Tier 1: Large Desktop (≥1440px)
+       ============================================================ */
+    @media (min-width: 1440px) {
+      #nr-card-widget { width: 280px; right: 140px; top: 160px; }
+      .nr-card-body { padding: 44px 28px 40px; gap: 40px; }
+      .nr-card-headline { font-size: 22px; }
+      .nr-card-cta { font-size: 15px; padding: 14px 20px; }
+      .nr-card-cta-arrow { font-size: 15px; }
+      .nr-card-trust { font-size: 11px; }
+    }
 
-      #nr-cta-widget {
-        width: 56px;
-        height: 56px;
-      }
+    /* ============================================================
+       Tier 3: Small Laptop (1025px - 1279px)
+       ============================================================ */
+    @media (min-width: 1025px) and (max-width: 1279px) {
+      #nr-card-widget { width: 240px; right: 80px; top: 155px; }
+      .nr-card-body { padding: 36px 22px 32px; gap: 32px; }
+      .nr-card-headline { font-size: 19px; }
+      .nr-card-cta { font-size: 14px; padding: 12px 16px; }
+      .nr-card-trust { font-size: 10px; }
+    }
 
-      #nr-cta-icon {
-        width: 24px;
-        height: 24px;
-      }
-
-      #nr-cta-icon svg {
-        width: 24px;
-        height: 24px;
-      }
-
-      #nr-cta-widget.nr-expanded {
-        min-height: 50px;
-        padding: 8px 18px 8px 14px;
-        gap: 10px;
-      }
-
-      #nr-cta-title {
-        font-size: 13.5px;
-      }
-
-      #nr-cta-sub {
-        font-size: 11px;
-      }
-
-      #nr-cta-tooltip {
-        padding: 10px 14px;
-      }
-
-      #nr-cta-tooltip-title {
-        font-size: 13px;
-      }
-
-      #nr-cta-tooltip-sub {
-        font-size: 10.5px;
+    /* ============================================================
+       Tier 4: Tablet (769px - 1024px)
+       ============================================================ */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      #nr-card-widget { width: 200px; right: 40px; top: 150px; border-radius: 10px; }
+      .nr-card-inner { border-radius: 10px; }
+      .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
+      .nr-card-body { padding: 28px 18px 24px; gap: 24px; }
+      .nr-card-headline { font-size: 16px; }
+      .nr-card-cta { font-size: 13px; padding: 10px 14px; border-radius: 7px; }
+      .nr-card-cta-arrow { font-size: 13px; }
+      .nr-card-trust { font-size: 9px; gap: 4px; }
+      #nr-card-widget.nr-card-visible {
+        animation:
+          nr-entrance 1s cubic-bezier(0.16,1,0.3,1) both,
+          nr-float 5s ease-in-out 1.8s infinite,
+          nr-shadow 4s ease-in-out 1.8s infinite;
       }
     }
 
-    /* ---- Reduced motion preference ---- */
+    /* ============================================================
+       Tier 5: Mobile (376px - 768px)
+       Small floating badge — non-intrusive
+       ============================================================ */
+    @media (max-width: 768px) {
+      #nr-card-widget {
+        width: 150px;
+        right: 8px;
+        top: 160px;
+        left: auto;
+        border-radius: 10px;
+        transform: translateX(30px) scale(0.95);
+        transform-origin: top right;
+      }
+      #nr-card-widget.nr-card-visible {
+        transform: translateX(0) scale(1);
+        animation:
+          nr-entrance-m 1s cubic-bezier(0.16,1,0.3,1) both,
+          nr-float-m 6s ease-in-out 1.8s infinite;
+      }
+      @keyframes nr-entrance-m {
+        0% { opacity: 0; transform: translateX(30px) scale(0.95); }
+        100% { opacity: 1; transform: translateX(0) scale(1); }
+      }
+      @keyframes nr-float-m {
+        0%, 100% { transform: translateY(0px) rotate(0deg); }
+        25% { transform: translateY(-3px) rotate(0.2deg); }
+        50% { transform: translateY(-4px) rotate(0deg); }
+        75% { transform: translateY(-3px) rotate(-0.2deg); }
+      }
+      .nr-card-inner { border-radius: 10px; }
+      .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
+      .nr-card-body { padding: 16px 12px 14px; gap: 14px; }
+      .nr-card-headline { font-size: 13px; line-height: 1.35; }
+      .nr-card-cta {
+        font-size: 11px; padding: 8px 10px; border-radius: 6px; min-height: 44px; gap: 4px;
+        animation: nr-breathe-m 3s ease-in-out infinite;
+      }
+      @keyframes nr-breathe-m {
+        0%, 100% { box-shadow: 0 0 4px rgba(26,107,90,0.15); }
+        50% { box-shadow: 0 0 10px rgba(26,107,90,0.25), 0 0 20px rgba(26,107,90,0.05); }
+      }
+      .nr-card-cta-arrow { font-size: 11px; animation: nr-nudge 5s ease-in-out infinite; }
+      .nr-card-trust { font-size: 8px; gap: 3px; }
+      /* Mobile shadow: lighter */
+      #nr-card-widget {
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04), 0 6px 12px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.08);
+      }
+    }
+
+    /* ============================================================
+       Tier 6: Small Mobile (≤375px)
+       Ultra compact
+       ============================================================ */
+    @media (max-width: 375px) {
+      #nr-card-widget {
+        width: 130px;
+        right: 6px;
+        top: 150px;
+        border-radius: 8px;
+      }
+      .nr-card-inner { border-radius: 8px; }
+      .nr-card-bar-top, .nr-card-bar-bottom { height: 1px; }
+      .nr-card-body { padding: 14px 10px 12px; gap: 12px; }
+      .nr-card-headline { font-size: 12px; }
+      .nr-card-cta { font-size: 10px; padding: 7px 8px; border-radius: 5px; min-height: 44px; }
+      .nr-card-cta-arrow { font-size: 10px; }
+      .nr-card-trust { font-size: 7px; gap: 2px; }
+    }
+
+    /* ============================================================
+       Reduced Motion — respect accessibility
+       ============================================================ */
     @media (prefers-reduced-motion: reduce) {
-      #nr-cta-widget {
+      #nr-card-widget,
+      #nr-card-widget *,
+      #nr-card-widget::before,
+      #nr-card-widget *::before {
         animation: none !important;
-        transition: background 0.1s ease, box-shadow 0.1s ease !important;
+        transition: none !important;
       }
-
-      #nr-cta-widget.nr-attention {
-        animation: none !important;
-      }
-
-      #nr-cta-text {
-        transition: opacity 0.1s ease !important;
-      }
-
-      #nr-cta-tooltip {
-        transition: opacity 0.1s ease !important;
-      }
-
-      #nr-cta-tooltip.nr-tooltip-attention {
-        animation: none !important;
+      #nr-card-widget.nr-card-visible {
+        opacity: 1;
+        transform: none !important;
+        pointer-events: auto;
       }
     }
   `;
   document.head.appendChild(style);
 }
 
-// ========== Brain/Pulse SVG Icon (inline, no dependencies) ==========
-function getBrainIcon(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2a4 4 0 0 0-4 4v1a3 3 0 0 0-3 3c0 1.1.6 2.1 1.5 2.6"/>
-    <path d="M12 2a4 4 0 0 1 4 4v1a3 3 0 0 1 3 3c0 1.1-.6 2.1-1.5 2.6"/>
-    <path d="M6.5 12.6C5.6 13.4 5 14.6 5 16a4 4 0 0 0 4 4h1.5"/>
-    <path d="M17.5 12.6c.9.8 1.5 2 1.5 3.4a4 4 0 0 1-4 4h-1.5"/>
-    <path d="M12 2v20"/>
-    <circle cx="12" cy="9" r="1.5" fill="currentColor" stroke="none" opacity="0.6"/>
-    <circle cx="12" cy="15" r="1" fill="currentColor" stroke="none" opacity="0.4"/>
-  </svg>`;
-}
-
-// ========== Assessment Page Detection ==========
 function isAssessmentPage(): boolean {
-  const url = window.location.href.toLowerCase();
-  return url.includes('/assessment');
+  return window.location.href.toLowerCase().includes('/assessment');
 }
 
-// ========== Widget Creation ==========
+function isMobile(): boolean {
+  return window.innerWidth <= 768;
+}
+
+function isSmallMobile(): boolean {
+  return window.innerWidth <= 375;
+}
+
 function createWidget(config: { apiUrl: string }): void {
-  const assessmentUrl = config.apiUrl + '/assessment?utm_source=floating_widget&utm_medium=cta';
+  const url = config.apiUrl + '/assessment?utm_source=floating_widget&utm_medium=cta';
 
-  // Detect touch device
-  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const card = document.createElement('div');
+  card.id = 'nr-card-widget';
+  card.setAttribute('role', 'complementary');
+  card.setAttribute('aria-label', 'TMS Assessment — free 2-minute confidential check');
 
-  // ---- Create wrapper ----
-  const wrapper = document.createElement('div');
-  wrapper.id = 'nr-cta-wrapper';
+  const inner = document.createElement('div');
+  inner.className = 'nr-card-inner';
 
-  // ---- Create tooltip (speech bubble to LEFT of circle) ----
-  const tooltip = document.createElement('div');
-  tooltip.id = 'nr-cta-tooltip';
-  tooltip.innerHTML = `
-    <div id="nr-cta-tooltip-title">Could TMS help me?</div>
-    <div id="nr-cta-tooltip-sub">2-min confidential check</div>
-  `;
-  // Clicking tooltip also navigates
-  tooltip.addEventListener('click', () => {
-    window.open(assessmentUrl, '_blank', 'noopener,noreferrer');
-  });
+  const barTop = document.createElement('div');
+  barTop.className = 'nr-card-bar-top';
 
-  // ---- Create circle button ----
-  const btn = document.createElement('a');
-  btn.id = 'nr-cta-widget';
-  btn.href = assessmentUrl;
-  btn.target = '_blank';
-  btn.rel = 'noopener noreferrer';
-  btn.setAttribute('aria-label', 'Take a free 2-minute TMS assessment');
+  const body = document.createElement('div');
+  body.className = 'nr-card-body';
 
-  // Inner HTML: icon + text (for pill expansion)
-  btn.innerHTML = `
-    <span id="nr-cta-icon">${getBrainIcon()}</span>
-    <span id="nr-cta-text">
-      <span id="nr-cta-title">Could TMS help me?</span>
-      <span id="nr-cta-sub">2-min confidential check</span>
-    </span>
-  `;
+  const headline = document.createElement('h2');
+  headline.className = 'nr-card-headline';
+  headline.textContent = 'Could TMS help me?';
 
-  // ---- Mobile tap behavior: first tap expands, second tap navigates ----
-  if (isTouchDevice) {
-    let isExpanded = false;
-    let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+  const cta = document.createElement('a');
+  cta.className = 'nr-card-cta';
+  cta.href = url;
+  cta.target = '_blank';
+  cta.rel = 'noopener noreferrer';
+  cta.setAttribute('aria-label', 'Take a free 2-minute TMS assessment (opens in new tab)');
+  cta.innerHTML = `<span>Take Free Assessment</span><span class="nr-card-cta-arrow">&rarr;</span>`;
 
-    btn.addEventListener('click', (e: Event) => {
-      if (!isExpanded) {
-        e.preventDefault();
-        e.stopPropagation();
-        btn.classList.add('nr-expanded');
-        isExpanded = true;
+  const trust = document.createElement('div');
+  trust.className = 'nr-card-trust';
 
-        // Tooltip stays visible always — no hide/show on mobile tap
-
-        // Auto-collapse after 4 seconds if not tapped again
-        if (collapseTimer) clearTimeout(collapseTimer);
-        collapseTimer = setTimeout(() => {
-          btn.classList.remove('nr-expanded');
-          isExpanded = false;
-        }, 4000);
-      }
-      // If already expanded, let the default <a> navigation happen
-    });
-
-    // Collapse if user taps elsewhere
-    document.addEventListener('touchstart', (e: TouchEvent) => {
-      if (!wrapper.contains(e.target as Node) && isExpanded) {
-        btn.classList.remove('nr-expanded');
-        isExpanded = false;
-        if (collapseTimer) clearTimeout(collapseTimer);
-      }
-    }, { passive: true });
+  // Adaptive trust text based on screen size
+  if (isSmallMobile()) {
+    trust.innerHTML = `<span>🔒 HIPAA</span>`;
+  } else if (isMobile()) {
+    trust.innerHTML = `<span>🔒 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>256-bit</span>`;
+  } else {
+    trust.innerHTML = `<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🛡️ HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>256-bit</span>`;
   }
 
-  // Assemble: tooltip (left) + circle (right)
-  wrapper.appendChild(tooltip);
-  wrapper.appendChild(btn);
-  document.body.appendChild(wrapper);
+  body.appendChild(headline);
+  body.appendChild(cta);
+  body.appendChild(trust);
 
-  // Tooltip is ALWAYS visible — no hide timer, no fade-out, ever.
+  const barBottom = document.createElement('div');
+  barBottom.className = 'nr-card-bar-bottom';
 
-  // ---- One-time attention grab after 8 seconds ----
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  inner.appendChild(barTop);
+  inner.appendChild(body);
+  inner.appendChild(barBottom);
+  card.appendChild(inner);
+  document.body.appendChild(card);
 
-  if (!prefersReduced) {
-    setTimeout(() => {
-      // Step 1: Circle scale-up animation (0.6s)
-      btn.classList.add('nr-attention');
-
-      // Step 2: Tooltip attention flash (simultaneously)
-      tooltip.classList.add('nr-tooltip-attention');
-
-      // Step 3: After scale animation, auto-expand circle to pill
-      setTimeout(() => {
-        btn.classList.remove('nr-attention');
-        tooltip.classList.remove('nr-tooltip-attention');
-        btn.classList.add('nr-expanded');
-
-        // Step 4: Hold expanded for 3 seconds, then collapse
-        setTimeout(() => {
-          // Only collapse if not being hovered (desktop)
-          if (!btn.matches(':hover')) {
-            btn.classList.remove('nr-expanded');
-          } else {
-            // If hovering, collapse when mouse leaves
-            const onLeave = () => {
-              btn.classList.remove('nr-expanded');
-              btn.removeEventListener('mouseleave', onLeave);
-            };
-            btn.addEventListener('mouseleave', onLeave);
-          }
-        }, 3000);
-      }, 650);
-    }, 8000);
-  }
+  // Trigger entrance after 1.5s delay
+  setTimeout(() => {
+    card.classList.add('nr-card-visible');
+  }, 1500);
 }
 
-// ========== Cleanup (for re-initialization) ==========
 function cleanupWidget(): void {
-  const existingWrapper = document.getElementById('nr-cta-wrapper');
-  if (existingWrapper) {
-    existingWrapper.remove();
-  }
-
-  // Also clean up legacy widget elements from v3 or earlier
-  const oldWidget = document.getElementById('nr-cta-widget');
-  if (oldWidget && !document.getElementById('nr-cta-wrapper')) {
-    oldWidget.remove();
-  }
-  const oldBtn = document.getElementById('nr-assessment-btn');
-  const oldPulse = document.getElementById('nr-assessment-btn-pulse');
-  const oldStyle = document.querySelector('style[data-nr-widget]');
-  if (oldBtn) oldBtn.remove();
-  if (oldPulse) oldPulse.remove();
-  if (oldStyle) oldStyle.remove();
+  const e = document.getElementById('nr-card-widget');
+  if (e) e.remove();
+  // Clean up any legacy widget elements
+  ['nr-banner-widget', 'nr-cta-wrapper', 'nr-cta-widget', 'nr-assessment-btn',
+   'nr-assessment-btn-pulse', 'nr-cta-tooltip', 'nr-cta-icon', 'nr-cta-text'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
+  ['style[data-nr-banner-widget]', 'style[data-nr-cta-widget]', 'style[data-nr-widget]'
+  ].forEach(s => {
+    document.querySelectorAll(s).forEach(el => el.remove());
+  });
+  document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(el => el.remove());
 }
 
-// ========== Debug Mode ==========
-// Add ?nr-debug=1 to any page URL to enable verbose console logging
-function isDebugMode(): boolean {
-  try {
-    return new URLSearchParams(window.location.search).get('nr-debug') === '1';
-  } catch {
-    return false;
-  }
+function scheduleCleanup(): void {
+  [500, 1000, 2000, 3000, 5000, 8000].forEach(d => {
+    setTimeout(() => {
+      try {
+        document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(el => el.remove());
+        document.querySelectorAll('style[data-nr-cta-widget],style[data-nr-widget]').forEach(el => el.remove());
+      } catch {}
+    }, d);
+  });
 }
 
-const NR_DEBUG = isDebugMode();
-const LOG_PREFIX = '[NR Widget]';
+const NR_DEBUG = (() => {
+  try { return new URLSearchParams(window.location.search).get('nr-debug') === '1'; }
+  catch { return false; }
+})();
+const P = '[NR Widget]';
 
-function debugLog(...args: unknown[]): void {
-  if (NR_DEBUG) {
-    console.log(LOG_PREFIX, ...args);
-  }
-}
-
-// ========== Initialize ==========
 function initWidget(): void {
-  debugLog('initWidget() called, readyState:', document.readyState);
-
-  // Prevent double-initialization
-  if (document.getElementById('nr-cta-wrapper')) {
-    debugLog('Widget already present, skipping init.');
-    return;
-  }
-
-  // Hide on assessment page
-  const onAssessment = isAssessmentPage();
-  debugLog('Checking assessment page:', onAssessment);
-  if (onAssessment) {
-    debugLog('Assessment page detected, widget hidden.');
-    // Clean up in case widget was injected before navigation
-    cleanupWidget();
-    return;
-  }
-
-  // Clean up any legacy elements
+  if (document.getElementById('nr-card-widget')) return;
+  if (isAssessmentPage()) { cleanupWidget(); return; }
   cleanupWidget();
-  debugLog('Legacy cleanup done.');
-
-  const config = getScriptConfig();
-  debugLog('Config resolved, apiUrl:', config.apiUrl);
-
+  const c = getScriptConfig();
   injectStyles();
-  debugLog('Styles injected.');
-
-  createWidget(config);
-  debugLog('Widget created and injected into DOM.');
-  debugLog('Tooltip created (permanently visible).');
-  debugLog('Attention animation scheduled for 8s.');
-
-  console.log(LOG_PREFIX, 'v5.0.0 initialized →', config.apiUrl + '/assessment');
+  createWidget(c);
+  scheduleCleanup();
+  if (NR_DEBUG) console.log(P, 'v17.0.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
 }
 
-// ========== Boot ==========
-// Entire boot sequence wrapped in try-catch — widget must NEVER crash the host page
 (function () {
   try {
-    debugLog('Script loaded on:', window.location.href);
-
-    // Robust boot: handles DOMContentLoaded, already-loaded, and WP Rocket deferred scripts
     if (document.readyState === 'loading') {
-      debugLog('DOM loading — deferring to DOMContentLoaded.');
-      document.addEventListener('DOMContentLoaded', function () {
-        try {
-          debugLog('DOM ready (DOMContentLoaded fired).');
-          initWidget();
-        } catch (error) {
-          console.error(LOG_PREFIX, 'Failed to initialize on DOMContentLoaded:', error);
-        }
+      document.addEventListener('DOMContentLoaded', () => {
+        try { initWidget(); } catch (e) { console.error(P, e); }
       });
     } else {
-      // DOM already ready (deferred script, WP Rocket, etc.)
-      debugLog('DOM already ready (readyState:', document.readyState + ').');
       initWidget();
     }
-
-    // Handle SPA-like navigation or WordPress AJAX page transitions
-    // Re-check on popstate (back/forward navigation)
-    window.addEventListener('popstate', function () {
-      setTimeout(function () {
+    window.addEventListener('popstate', () => {
+      setTimeout(() => {
         try {
-          debugLog('popstate detected, re-evaluating widget visibility.');
-          if (isAssessmentPage()) {
-            cleanupWidget();
-          } else if (!document.getElementById('nr-cta-wrapper')) {
-            initWidget();
-          }
-        } catch (error) {
-          console.error(LOG_PREFIX, 'Failed on popstate handler:', error);
-        }
+          if (isAssessmentPage()) cleanupWidget();
+          else if (!document.getElementById('nr-card-widget')) initWidget();
+        } catch (e) { console.error(P, e); }
       }, 100);
     });
-
-    debugLog('Boot sequence complete — popstate listener attached.');
-  } catch (error) {
-    console.error(LOG_PREFIX, 'Failed to initialize:', error);
-  }
+  } catch (e) { console.error(P, e); }
 })();

@@ -105,6 +105,23 @@ export function formatUrgency(value: string | null | undefined): string {
   return label || formatEnumValue(value);
 }
 
+/**
+ * TMS Therapy Interest labels for display
+ */
+const TMS_INTEREST_LABELS: Record<string, string> = {
+  daily_tms: 'Daily TMS',
+  accelerated_tms: 'Accelerated TMS',
+  not_sure: 'Not Sure',
+};
+
+/**
+ * Format TMS therapy interest value to display label.
+ */
+export function formatTMSInterest(value: string | null | undefined): string {
+  if (!value) return '—';
+  return TMS_INTEREST_LABELS[value] || formatEnumValue(value);
+}
+
 // =============================================================================
 // Lead Score Color Coding
 // =============================================================================

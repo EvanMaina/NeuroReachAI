@@ -129,7 +129,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
         }
       }, 1500);
     } catch (err) {
-      console.error('Error scheduling callback:', err);
+      if (import.meta.env.DEV) console.error('Error scheduling callback:', err);
       setError('Failed to schedule callback. Please try again.');
     } finally {
       setIsSubmitting(false);

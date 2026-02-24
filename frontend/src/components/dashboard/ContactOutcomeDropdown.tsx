@@ -114,7 +114,7 @@ export const ContactOutcomeDropdown: React.FC<ContactOutcomeDropdownProps> = ({
         setOutcome(newOutcome);
         onOutcomeChange?.(newOutcome);
       } catch (error) {
-        console.error('Failed to update contact outcome:', error);
+        if (import.meta.env.DEV) console.error('Failed to update contact outcome:', error);
       } finally {
         setIsUpdating(false);
       }

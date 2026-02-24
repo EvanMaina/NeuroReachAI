@@ -17,11 +17,13 @@ import {
   getConditionsDistribution,
   getCohortRetention,
   getLeadsCursor,
+  getTMSInterestDistribution,
   type IDashboardSummary,
   type ILeadsTrendResponse,
   type IConditionsDistributionResponse,
   type ICohortRetentionResponse,
   type ICursorPaginatedResponse,
+  type ITMSInterestDistributionResponse,
 } from '../services/analytics';
 
 // =============================================================================
@@ -38,6 +40,7 @@ export const analyticsKeys = {
   conditionsDistribution: () => [...analyticsKeys.conditions(), 'distribution'] as const,
   cohort: () => [...analyticsKeys.all, 'cohort'] as const,
   cohortRetention: (months: number) => [...analyticsKeys.cohort(), 'retention', months] as const,
+  tmsDistribution: () => [...analyticsKeys.all, 'tms-distribution'] as const,
   leads: () => [...analyticsKeys.all, 'leads'] as const,
   leadsCursor: (priority?: string, status?: string) => 
     [...analyticsKeys.leads(), 'cursor', { priority, status }] as const,
@@ -214,6 +217,49 @@ export function useCohortRetention(options: UseCohortRetentionOptions = {}) {
     staleTime: 2 * 60 * 1000, // Consider stale after 2 minutes
     gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
     refetchInterval: 60000, // Refetch every 60 seconds
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    // CRITICAL: Keep previous data while fetching new data
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+// =============================================================================
+// TMS Interest Distribution Hook
+// =============================================================================
+
+interface UseTMSInterestDistributionOptions {
+  enabled?: boolean;
+}
+
+/**
+ * Hook for fetching TMS therapy interest distribution.
+ * 
+ * Caches for 120 seconds, matching backend cache TTL.
+ * CRITICAL: Uses placeholderData to prevent data disappearing during navigation.
+ * 
+ * @param options - Query options
+ * @returns Query result with TMS interest distribution data
+ */
+export function useTMSInterestDistribution(options: UseTMSInterestDistributionOptions = {}) {
+  const { enabled = true } = options;
+  
+  return useQuery<ITMSInterestDistributionResponse, Error>({
+    queryKey: analyticsKeys.tmsDistribution(),
+    queryFn: async () => {
+      if (import.meta.env.DEV) {
+        console.log('🔍 Fetching TMS interest distribution...');
+      }
+      const data = await getTMSInterestDistribution();
+      if (import.meta.env.DEV) {
+        console.log('✅ TMS interest distribution loaded:', data);
+      }
+      return data;
+    },
+    enabled,
+    staleTime: 2 * 60 * 1000, // Consider stale after 2 minutes
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    refetchInterval: 120000, // Refetch every 120 seconds
     refetchOnWindowFocus: true,
     refetchOnMount: 'always',
     // CRITICAL: Keep previous data while fetching new data

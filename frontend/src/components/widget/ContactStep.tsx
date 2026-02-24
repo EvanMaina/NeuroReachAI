@@ -184,7 +184,10 @@ export const ContactStep: React.FC<ContactStepProps> = ({
               className={`w-full px-3 py-2 border rounded-lg text-sm transition-colors ${
                 errors.firstName ? 'border-red-400' : 'border-gray-300'
               }`}
-              autoComplete="given-name"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              name={`nr_fn_${Math.random().toString(36).substr(2, 9)}`}
             />
             {errors.firstName && (
               <p className="mt-1 text-xs text-red-500">{errors.firstName}</p>
@@ -204,7 +207,10 @@ export const ContactStep: React.FC<ContactStepProps> = ({
               className={`w-full px-3 py-2 border rounded-lg text-sm transition-colors ${
                 errors.lastName ? 'border-red-400' : 'border-gray-300'
               }`}
-              autoComplete="family-name"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              name={`nr_ln_${Math.random().toString(36).substr(2, 9)}`}
             />
             {errors.lastName && (
               <p className="mt-1 text-xs text-red-500">{errors.lastName}</p>
@@ -227,7 +233,10 @@ export const ContactStep: React.FC<ContactStepProps> = ({
             className={`w-full px-3 py-2 border rounded-lg text-sm transition-colors ${
               errors.email ? 'border-red-400' : 'border-gray-300'
             }`}
-            autoComplete="email"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
+            name={`nr_em_${Math.random().toString(36).substr(2, 9)}`}
           />
           {errors.email && (
             <p className="mt-1 text-xs text-red-500">{errors.email}</p>
@@ -249,7 +258,10 @@ export const ContactStep: React.FC<ContactStepProps> = ({
             className={`w-full px-3 py-2 border rounded-lg text-sm transition-colors ${
               errors.phone ? 'border-red-400' : 'border-gray-300'
             }`}
-            autoComplete="tel"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
+            name={`nr_ph_${Math.random().toString(36).substr(2, 9)}`}
           />
           {errors.phone && (
             <p className="mt-1 text-xs text-red-500">{errors.phone}</p>
@@ -269,7 +281,10 @@ export const ContactStep: React.FC<ContactStepProps> = ({
             min={minDate}
             max={maxDate}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm transition-colors"
-            autoComplete="bday"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
+            name={`nr_dob_${Math.random().toString(36).substr(2, 9)}`}
           />
         </div>
 

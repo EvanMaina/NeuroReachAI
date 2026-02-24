@@ -92,6 +92,10 @@ export const InsuranceStep: React.FC<InsuranceStepProps> = ({
             onChange={(e) => onProviderChange(e.target.value)}
             placeholder="Insurance provider"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
+            name={`nr_ins_${Math.random().toString(36).substr(2, 9)}`}
           />
         </div>
       )}

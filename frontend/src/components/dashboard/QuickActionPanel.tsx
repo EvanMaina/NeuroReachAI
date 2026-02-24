@@ -251,7 +251,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
             note_type: 'manual',
           });
         } catch (err) {
-          console.warn('Note save failed (non-blocking):', err);
+          if (import.meta.env.DEV) console.warn('Note save failed (non-blocking):', err);
         }
       }
 
@@ -268,7 +268,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
       onScheduleSuccess();
       onClose();
     } catch (error: any) {
-      console.error(`Failed to schedule ${scheduleType}:`, error);
+      if (import.meta.env.DEV) console.error(`Failed to schedule ${scheduleType}:`, error);
       const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to schedule. Please try again.';
       setScheduleError(errorMsg);
       window.dispatchEvent(new CustomEvent('neuroreach:toast', {
@@ -300,7 +300,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
             note_type: 'manual',
           });
         } catch (err) {
-          console.warn('Note save failed (non-blocking):', err);
+          if (import.meta.env.DEV) console.warn('Note save failed (non-blocking):', err);
         }
       }
 
@@ -333,7 +333,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
       onOutcomeChange(lead.id, outcome);
       onClose();
     } catch (error: any) {
-      console.error('Failed to update outcome:', error);
+      if (import.meta.env.DEV) console.error('Failed to update outcome:', error);
       const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to update outcome. Please try again.';
       window.dispatchEvent(new CustomEvent('neuroreach:toast', {
         detail: { message: errorMsg, type: 'error' },

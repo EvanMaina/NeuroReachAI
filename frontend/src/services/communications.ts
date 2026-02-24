@@ -53,7 +53,7 @@ export async function sendEmail(data: SendEmailRequest): Promise<CommunicationRe
     const response = await apiClient.post<CommunicationResponse>('/api/communications/email/send', data);
     return response.data;
   } catch (error: any) {
-    console.error('Failed to send email:', error);
+    if (import.meta.env.DEV) console.error('Failed to send email:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to send email. Please try again.',
@@ -69,7 +69,7 @@ export async function sendSMS(data: SendSMSRequest): Promise<CommunicationRespon
     const response = await apiClient.post<CommunicationResponse>('/api/communications/sms/send', data);
     return response.data;
   } catch (error: any) {
-    console.error('Failed to send SMS:', error);
+    if (import.meta.env.DEV) console.error('Failed to send SMS:', error);
     return {
       success: false,
       message: error.response?.data?.detail || 'Failed to send SMS. Please try again.',
@@ -85,7 +85,7 @@ export async function getTemplates(): Promise<TemplatesResponse | null> {
     const response = await apiClient.get<TemplatesResponse>('/api/communications/templates');
     return response.data;
   } catch (error) {
-    console.error('Failed to fetch templates:', error);
+    if (import.meta.env.DEV) console.error('Failed to fetch templates:', error);
     return null;
   }
 }

@@ -10,7 +10,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { 
-  Bell, BellOff, Volume2, VolumeX, RefreshCw, 
+  Bell, BellOff, Volume2, VolumeX,
   Flame, Users, Calendar, Clock, CheckCircle2,
   X, ChevronRight, PlusCircle, MessageCircle, Target
 } from 'lucide-react';
@@ -22,11 +22,13 @@ import { ScheduleModal } from '../components/dashboard/ScheduleModal';
 import { QuickActionPanel } from '../components/dashboard/QuickActionPanel';
 import { ConsultationPanel } from '../components/dashboard/ConsultationPanel';
 import { DeleteConfirmDialog } from '../components/common/DeleteConfirmDialog';
+import { RefreshButton } from '../components/common/RefreshButton';
 import { filterLeadsByQueue, type QueueType } from '../components/dashboard/QueueSidebar';
 import { useNotifications } from '../hooks/useNotifications';
 import { useLeads, useDashboardSummary } from '../hooks/useLeads';
 import { useAuth } from '../hooks/useAuth';
 import { getLeadById, deleteLead } from '../services/leads';
+import { mapApiResponseToLead } from '../utils/leadMapper';
 import type { Lead, LeadTableRow, LeadStatus, ContactOutcome } from '../types/lead';
 
 // Queue configuration for titles and colors
@@ -176,17 +178,23 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
            date.getDate() === today.getDate();
   };
   
-  // Helper: Calculate Response Rate for a set of leads
-  // Response Rate = (ANSWERED + CALLBACK_REQUESTED) / (Leads with any contact attempt) × 100%
+  // Helper: Calculate Answer Rate for a set of leads.
+  // Answer Rate = ANSWERED / (Leads with any contact attempt) × 100%
+  //
+  // WHY NOT CALLBACK_REQUESTED: CALLBACK_REQUESTED means the patient left a
+  // voicemail or a message asking to be called back — the coordinator never
+  // actually spoke with them. Counting it as a "successful contact" inflates
+  // the metric and misleads management on real voice-connection performance.
+  // Standard call-center "contact rate" uses live-answer only.
   const calculateResponseRate = (leadsSet: LeadTableRow[]): number => {
-    const withContactAttempt = leadsSet.filter(l => 
+    const withContactAttempt = leadsSet.filter(l =>
       l.contactOutcome && l.contactOutcome !== 'NEW'
     );
-    const successfulContacts = leadsSet.filter(l => 
-      l.contactOutcome === 'ANSWERED' || l.contactOutcome === 'CALLBACK_REQUESTED'
+    const answeredContacts = leadsSet.filter(l =>
+      l.contactOutcome === 'ANSWERED'
     );
-    return withContactAttempt.length > 0 
-      ? Math.round((successfulContacts.length / withContactAttempt.length) * 100)
+    return withContactAttempt.length > 0
+      ? Math.round((answeredContacts.length / withContactAttempt.length) * 100)
       : 0;
   };
   
@@ -292,37 +300,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     
     try {
       const response = await getLeadById(id) as any;
-      
-      const leadData: Lead = {
-        id: response.id || id,
-        leadId: response.lead_number || 'TMS-2026-XXX',
-        firstName: response.first_name || 'Unknown',
-        lastName: response.last_name || '',
-        email: response.email || '',
-        phone: response.phone || '',
-        primaryCondition: (response.condition || 'DEPRESSION') as Lead['primaryCondition'],
-        symptomDuration: response.symptom_duration || 'Unknown',
-        priorTreatments: response.prior_treatments || [],
-        currentMedications: false,
-        hasInsurance: response.has_insurance ?? false,
-        insuranceProvider: response.insurance_provider || '',
-        zipCode: response.zip_code || '',
-        isInServiceArea: response.in_service_area ?? false,
-        desiredStart: (response.urgency?.toLowerCase() || 'exploring') as Lead['desiredStart'],
-        preferredContactMethod: 'phone',
-        leadScore: response.score || 0,
-        priority: (response.priority?.toLowerCase() || 'low') as Lead['priority'],
-        status: (response.status?.toLowerCase() || 'new') as Lead['status'],
-        utmSource: response.utm_source,
-        utmMedium: response.utm_medium,
-        utmCampaign: response.utm_campaign,
-        createdAt: response.created_at || new Date().toISOString(),
-        updatedAt: response.updated_at || new Date().toISOString(),
-      };
-      
+      const leadData = mapApiResponseToLead(response as Record<string, unknown>, id);
       setSelectedLead(leadData);
-    } catch (error) {
-      console.error('Error fetching lead:', error);
+    } catch (_error) {
       setSelectedLead(null);
     } finally {
       setIsLoadingDetail(false);
@@ -387,59 +367,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     
     try {
       const response = await getLeadById(leadId) as any;
-      
-      // Safely extract string values — handles null, undefined, "null", "undefined" as empty
-      const safe = (val: unknown): string => {
-        if (val == null) return '';
-        const s = String(val).trim();
-        if (['null', 'undefined', 'none', 'NULL', 'UNDEFINED', 'NONE'].includes(s)) return '';
-        return s;
-      };
-      
-      // Normalize status: backend returns UPPER_CASE, frontend expects "lower case" with spaces
-      const rawStatus = safe(response.status || response.Status);
-      const normalizedStatus = rawStatus.toLowerCase().replace(/_/g, ' ') || 'new';
-      
-      // Normalize priority: backend returns UPPER_CASE, frontend expects lowercase
-      const normalizedPriority = safe(response.priority).toLowerCase() || 'low';
-      
-      // Convert API response (snake_case) to Lead type (camelCase)
-      // CRITICAL: Every field must have null-safe fallbacks for Google Ads leads
-      // which have many empty/null fields (no condition, no zip, no insurance, etc.)
-      const leadData: Lead = {
-        id: safe(response.id) || leadId,
-        leadId: safe(response.lead_number) || safe(response.id) || leadId,
-        firstName: safe(response.first_name || response.firstName),
-        lastName: safe(response.last_name || response.lastName),
-        email: safe(response.email),
-        phone: safe(response.phone),
-        condition: safe(response.condition),
-        primaryCondition: (safe(response.condition) || 'OTHER') as Lead['primaryCondition'],
-        symptomDuration: safe(response.symptom_duration || response.symptomDuration),
-        priorTreatments: Array.isArray(response.prior_treatments) ? response.prior_treatments 
-                       : Array.isArray(response.priorTreatments) ? response.priorTreatments : [],
-        currentMedications: false,
-        hasInsurance: response.has_insurance ?? response.hasInsurance ?? false,
-        insuranceProvider: safe(response.insurance_provider || response.insuranceProvider),
-        zipCode: safe(response.zip_code || response.zipCode),
-        isInServiceArea: response.in_service_area ?? response.isInServiceArea ?? false,
-        desiredStart: (safe(response.urgency).toLowerCase() || 'exploring') as Lead['desiredStart'],
-        urgency: safe(response.urgency),
-        preferredContactMethod: 'phone',
-        leadScore: response.score || response.leadScore || 0,
-        priority: normalizedPriority as Lead['priority'],
-        status: normalizedStatus as Lead['status'],
-        notes: safe(response.notes),
-        utmSource: safe(response.utm_source || response.utmSource) || undefined,
-        utmMedium: safe(response.utm_medium || response.utmMedium) || undefined,
-        utmCampaign: safe(response.utm_campaign || response.utmCampaign) || undefined,
-        createdAt: safe(response.created_at || response.createdAt) || new Date().toISOString(),
-        updatedAt: safe(response.updated_at || response.updatedAt) || new Date().toISOString(),
-      };
-      
+      const leadData = mapApiResponseToLead(response as Record<string, unknown>, leadId);
       setEditLead(leadData);
-    } catch (error) {
-      console.error('Error fetching lead for edit:', error);
+    } catch (_error) {
       setEditLead(null);
       setIsEditModalOpen(false);
     } finally {
@@ -531,14 +461,12 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             </span>
             
             {/* Refresh button */}
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+            <RefreshButton
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              size="sm"
               title="Refresh leads"
-            >
-              <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
-            </button>
+            />
 
             {/* Sound toggle */}
             <button
@@ -620,7 +548,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             {/* Response Rate — Amber accent */}
             <div
               className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-amber-500"
-              title="Response Rate = (Answered + Callback Requested) / Total Contacted in this queue × 100%"
+            title="Answer Rate = Leads answered (live voice) / Total with contact attempt in this queue × 100%"
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
@@ -710,7 +638,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             {/* Response Rate — Amber accent */}
             <div
               className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-amber-500"
-              title="Response Rate = (Answered + Callback Requested) / Total Contacted × 100%"
+              title="Answer Rate = Leads answered (live voice) / Total with contact attempt × 100%"
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
@@ -864,12 +792,21 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
         </>
       )}
 
-      {/* Lead Detail Modal — read-only (scheduling moved to QuickActionPanel) */}
+      {/* Lead Detail Modal — with Edit & Delete CTAs (admin-gated) */}
       <LeadDetailModal
         isOpen={isDetailOpen}
         onClose={handleCloseDetail}
         lead={selectedLead}
         isLoading={isLoadingDetail}
+        onEdit={hasPermission('edit_leads') ? (leadId) => {
+          handleCloseDetail();
+          handleEditLead(leadId);
+        } : undefined}
+        onDelete={hasPermission('delete_leads') ? (leadId, leadName) => {
+          handleCloseDetail();
+          handleOpenDelete(leadId, leadName);
+        } : undefined}
+        canDelete={hasPermission('delete_leads')}
       />
 
       {/* Schedule Modal */}

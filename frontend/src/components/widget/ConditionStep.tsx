@@ -125,6 +125,10 @@ export const ConditionStep: React.FC<ConditionStepProps> = ({
               transition-colors
               ${conditionOther.trim() ? 'border-indigo-300' : 'border-gray-300'}
             `}
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
+            name={`nr_co_${Math.random().toString(36).substr(2, 9)}`}
           />
         </div>
       )}

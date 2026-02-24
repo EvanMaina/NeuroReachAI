@@ -423,9 +423,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
       // Notify parent of successful status change
       onStatusChange(draggedLead.id, newStatus);
       
-      console.log(`Lead ${draggedLead.id} status changed to ${newStatus}`);
+      if (import.meta.env.DEV) console.log(`Lead ${draggedLead.id} status changed to ${newStatus}`);
     } catch (error) {
-      console.error('Failed to update lead status:', error);
+      if (import.meta.env.DEV) console.error('Failed to update lead status:', error);
     } finally {
       setUpdatingLeads(prev => {
         const next = new Set(prev);

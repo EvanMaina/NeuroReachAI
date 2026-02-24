@@ -278,7 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
 
       {/* User profile + logout */}
       <div className="border-t border-gray-200 p-4 flex-shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
             <User size={20} className="text-blue-600" />
           </div>
@@ -294,14 +294,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
               )}
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
-            title="Log out"
-          >
-            <LogOut size={18} />
-          </button>
         </div>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-gray-100 text-gray-600 hover:text-red-600 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-lg transition-all duration-200"
+        >
+          <LogOut size={16} />
+          <span>Sign Out</span>
+        </button>
       </div>
     </aside>
   );

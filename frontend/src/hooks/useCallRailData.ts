@@ -17,6 +17,8 @@ export function useSummary(dateRange: DateRangeType, startDate?: string, endDate
     queryFn: () => getCallRailSummary(dateRange, startDate, endDate),
     staleTime: 3 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+    retry: 2,
   });
 }
 
@@ -30,6 +32,8 @@ export function useCalls(params: {
     queryFn: () => getCallRailCalls(params),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+    retry: 2,
   });
 }
 
@@ -38,6 +42,9 @@ export function useTimeseries(dateRange: DateRangeType, startDate?: string, endD
     queryKey: ['callrail', 'timeseries', dateRange, startDate, endDate],
     queryFn: () => getCallRailTimeseries(dateRange, startDate, endDate),
     staleTime: 3 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+    retry: 2,
   });
 }
 
@@ -46,6 +53,9 @@ export function useSources(dateRange: DateRangeType = '90days') {
     queryKey: ['callrail', 'sources', dateRange],
     queryFn: () => getCallRailSources(dateRange),
     staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+    retry: 2,
   });
 }
 
@@ -54,5 +64,8 @@ export function useAttribution(dateRange: DateRangeType, startDate?: string, end
     queryKey: ['callrail', 'attribution', dateRange, startDate, endDate],
     queryFn: () => getCallRailAttribution(dateRange, startDate, endDate),
     staleTime: 3 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
+    retry: 2,
   });
 }

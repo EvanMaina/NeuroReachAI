@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { Search, ChevronLeft, ChevronRight, Play, MoreHorizontal, Inbox } from 'lucide-react';
 import { useCalls, useSources } from '../../hooks/useCallRailData';
 import type { DateRangeType } from '../../services/callrail';
-import { formatDuration, formatCallDate } from '../../services/callrail';
+import { formatDuration, formatAbsoluteDateTime, timeAgo } from '../../services/callrail';
 
 interface Props { dateRange: DateRangeType; startDate?: string; endDate?: string; }
 
@@ -122,7 +122,7 @@ export const CallsTableTab: React.FC<Props> = ({ dateRange, startDate, endDate }
                 const loc = [call.city, call.state].filter(Boolean).join(', ');
                 return (
                   <tr key={`${call.start_time}-${i}`} className="border-t border-gray-50 hover:bg-blue-50/30 transition-colors">
-                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{formatCallDate(call.start_time)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap" title={timeAgo(call.start_time)}>{formatAbsoluteDateTime(call.start_time)}</td>
                     <td className="px-4 py-3">
                       <p className="text-sm font-medium text-gray-900">{call.caller_name || 'Unknown'}</p>
                       {loc && <p className="text-xs text-gray-400">{loc}</p>}

@@ -6,38 +6,30 @@
  * Options:
  * - Daily TMS
  * - Accelerated TMS  
- * - SAINT Protocol (ONLY shows when Depression is selected)
  * - Not sure
  * 
- * This matches the Jotform intake question exactly.
- * 
  * @module components/widget/TMSInterestStep
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 import React from 'react';
-import { type ConditionType } from '../../types/lead';
-import { Zap, Clock, Sparkles, HelpCircle } from 'lucide-react';
+import { Zap, Clock, HelpCircle } from 'lucide-react';
 
 export type TMSInterestType = 
   | 'daily_tms' 
   | 'accelerated_tms' 
-  | 'saint_protocol' 
   | 'not_sure';
 
 interface TMSInterestStepProps {
-  conditions: ConditionType[];
   tmsInterest: TMSInterestType | null;
   onTmsInterestChange: (value: TMSInterestType) => void;
 }
 
-// TMS therapy options - SAINT only shows for Depression
 const TMS_OPTIONS: Array<{
   value: TMSInterestType;
   label: string;
   description: string;
   icon: React.ReactNode;
-  depressionOnly?: boolean;
 }> = [
   {
     value: 'daily_tms',
@@ -48,15 +40,8 @@ const TMS_OPTIONS: Array<{
   {
     value: 'accelerated_tms',
     label: 'Accelerated TMS',
-    description: 'Compressed schedule with multiple sessions per day',
+    description: 'Compressed schedule with multiple sessions per day for faster results',
     icon: <Zap size={20} className="text-amber-500" />,
-  },
-  {
-    value: 'saint_protocol',
-    label: 'SAINT Protocol',
-    description: 'Stanford accelerated protocol - rapid results for depression',
-    icon: <Sparkles size={20} className="text-purple-500" />,
-    depressionOnly: true, // Only show when Depression is selected
   },
   {
     value: 'not_sure',
@@ -68,23 +53,11 @@ const TMS_OPTIONS: Array<{
 
 /**
  * TMS Therapy Interest selection step.
- * SAINT Protocol only appears when Depression is in selected conditions.
  */
 export const TMSInterestStep: React.FC<TMSInterestStepProps> = ({
-  conditions,
   tmsInterest,
   onTmsInterestChange,
 }) => {
-  // Check if Depression is selected - SAINT Protocol only shows for Depression
-  const hasDepression = conditions.some(c => 
-    c.toLowerCase() === 'depression'
-  );
-
-  // Filter options - include SAINT only if Depression selected
-  const visibleOptions = TMS_OPTIONS.filter(opt => 
-    !opt.depressionOnly || hasDepression
-  );
-
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -97,7 +70,7 @@ export const TMSInterestStep: React.FC<TMSInterestStepProps> = ({
       </div>
 
       <div className="space-y-2">
-        {visibleOptions.map((option) => {
+        {TMS_OPTIONS.map((option) => {
           const isSelected = tmsInterest === option.value;
           
           return (
@@ -129,11 +102,6 @@ export const TMSInterestStep: React.FC<TMSInterestStepProps> = ({
                   ${isSelected ? 'text-indigo-900' : 'text-gray-900'}
                 `}>
                   {option.label}
-                  {option.depressionOnly && (
-                    <span className="ml-2 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700">
-                      Depression
-                    </span>
-                  )}
                 </p>
                 <p className={`
                   text-xs mt-0.5
@@ -159,16 +127,6 @@ export const TMSInterestStep: React.FC<TMSInterestStepProps> = ({
           );
         })}
       </div>
-
-      {/* Info note about SAINT */}
-      {hasDepression && (
-        <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-          <p className="text-xs text-purple-800">
-            <strong>SAINT Protocol</strong> is specifically designed for treatment-resistant depression 
-            and has shown rapid results in clinical studies. Our team can help determine if you're a candidate.
-          </p>
-        </div>
-      )}
     </div>
   );
 };

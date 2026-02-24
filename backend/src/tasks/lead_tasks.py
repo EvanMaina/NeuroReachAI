@@ -27,7 +27,7 @@ from ..core.database import SessionLocal
 from ..models.lead import Lead, LeadStatus, PriorityType
 from ..services.encryption import EncryptionService
 from ..services.lead_scoring import calculate_lead_score
-from ..services.lead_number import generate_lead_number
+from ..services.lead_number import generate_unique_lead_number
 from ..services.cache import get_cache
 
 
@@ -161,7 +161,7 @@ def process_lead_async(
         encrypted_phi = EncryptionService.encrypt_lead_phi(lead_create)
 
         # Generate lead number
-        lead_number = generate_lead_number(db)
+        lead_number = generate_unique_lead_number(db)
 
         # Get current timestamp for consent tracking
         consent_timestamp = datetime.now(timezone.utc)
@@ -298,7 +298,7 @@ def process_lead_batch(
                 encrypted_phi = EncryptionService.encrypt_lead_phi(lead_create)
 
                 # Generate lead number
-                lead_number = generate_lead_number(db)
+                lead_number = generate_unique_lead_number(db)
 
                 consent_timestamp = datetime.now(timezone.utc)
 
@@ -1134,11 +1134,10 @@ def send_coordinator_email(
         success = result.get("success", False)
         
         logger.info(
-            f"Coordinator email sent to lead {lead_id} ({category}) via {provider}: {success}")
+            f"Coordinator email sent for lead {lead_id} ({category}) via {provider}: {success}")
         
         return {
             "status": "success" if success else "failed",
-            "to_email": to_email,
             "category": category,
             "lead_id": lead_id,
             "provider": provider,
@@ -1147,7 +1146,7 @@ def send_coordinator_email(
         }
 
     except Exception as e:
-        logger.error(f"Failed to send coordinator email to {to_email}: {e}")
+        logger.error(f"Failed to send coordinator email for lead {lead_id} ({category}): {e}")
         raise
 
 
@@ -1192,13 +1191,12 @@ def send_coordinator_sms(
         message_sid = result.get("message_sid")
         
         logger.info(
-            f"Coordinator SMS sent to lead {lead_id} ({category}): "
+            f"Coordinator SMS sent for lead {lead_id} ({category}): "
             f"Success={success}, SID={message_sid}"
         )
         
         return {
             "status": "success" if success else "failed",
-            "to_phone": to_phone,
             "category": category,
             "lead_id": lead_id,
             "message_sid": message_sid,
@@ -1207,7 +1205,7 @@ def send_coordinator_sms(
         }
 
     except Exception as e:
-        logger.error(f"Failed to send coordinator SMS to {to_phone}: {e}")
+        logger.error(f"Failed to send coordinator SMS for lead {lead_id} ({category}): {e}")
         raise
 
 

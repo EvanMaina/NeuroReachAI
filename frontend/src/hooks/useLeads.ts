@@ -1,24 +1,36 @@
 /**
  * Production-Grade Global Leads Hook
- * 
+ *
  * This hook provides centralized lead state management using React Query.
  * Designed for 1M+ concurrent users with:
  * - Global caching (data persists across navigation)
  * - Request deduplication (no duplicate API calls)
- * - Abort controller support (cancel in-flight requests)
  * - Optimistic updates
  * - Automatic retry with exponential backoff
  * - Stale-while-revalidate pattern
- * 
+ *
+ * BUG FIX v1.1.0 — Navigation data-loss:
+ * The previous version had a broken AbortController pattern:
+ *   1. `new AbortController()` was created INSIDE queryFn but never passed to
+ *      listLeads() — it cancelled nothing and was effectively a no-op.
+ *   2. The cleanup useEffect aborted this unused ref on unmount — also a no-op.
+ *   3. `return []` on signal.aborted was the CRITICAL bug: when React Query
+ *      cancelled an in-flight query during navigation it set the cache to [],
+ *      WIPING ALL LEAD DATA visible across every dashboard tab.
+ *
+ * Fix: removed the broken ref/useEffect entirely. In the catch block we now
+ * always re-throw so React Query keeps the previous cached data intact
+ * (React Query discards results/errors from cancelled queries automatically).
+ *
  * @module hooks/useLeads
- * @version 1.0.0 - Production Grade
+ * @version 1.1.0 - Navigation data-loss fix
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useRef, useEffect } from 'react';
-import { 
-  listLeads, 
-  getQueueMetrics, 
+import { useCallback } from 'react';
+import {
+  listLeads,
+  getQueueMetrics,
   getDashboardSummary,
   updateLeadStatus,
   updateContactOutcome,
@@ -107,7 +119,7 @@ export function transformLeadToTableRow(item: TransformedLeadItem, index: number
     scheduledCallbackAt: item.scheduledCallbackAt || undefined,
     // Next follow-up / requested callback time
     nextFollowUpAt: item.nextFollowUpAt || undefined,
-    // CRITICAL FIX: Last activity timestamp - was missing!
+    // Last activity timestamp - when lead was last modified
     lastUpdatedAt: item.lastUpdatedAt || undefined,
     // Referral fields
     isReferral: item.isReferral || false,
@@ -158,10 +170,10 @@ interface UseLeadsReturn {
 
 /**
  * Global leads hook with production-grade caching and state management.
- * 
+ *
  * This hook maintains a global cache of leads that persists across navigation.
  * Uses React Query's stale-while-revalidate pattern for optimal UX.
- * 
+ *
  * @example
  * ```tsx
  * const { leads, isLoading, refresh } = useLeads();
@@ -171,22 +183,15 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
   const {
     refetchInterval = 30000,
     autoRefresh = true,
-    pageSize = 100,
+    // Increased from 100 → 500 to fetch ALL leads in one request.
+    // Previously the backend cap was 100 which meant only 100/188 leads were visible
+    // to the coordinator, causing queue counts (Scheduled: 13, Completed: 3) to diverge
+    // from analytics (Scheduled: 23, Completed: 7) which queries the full DB.
+    // Backend page_size cap was also raised to 1000 in leads.py.
+    pageSize = 500,
   } = options;
 
   const queryClient = useQueryClient();
-  
-  // Abort controller for canceling in-flight requests
-  const abortControllerRef = useRef<AbortController | null>(null);
-  
-  // Cleanup abort controller on unmount
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
 
   // Main leads query - globally cached
   const {
@@ -199,99 +204,86 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
     refetch,
   } = useQuery({
     queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }),
-    queryFn: async ({ signal }) => {
-      // Create new abort controller
-      abortControllerRef.current = new AbortController();
-      
-      try {
-        const response = await listLeads({ page: 1, page_size: pageSize });
-        
-        if (!response?.items) {
-          return [];
-        }
-        
-        // Transform to table row format
-        const transformedLeads = response.items.map((item: any, index: number) => 
-          transformLeadToTableRow(item, index)
-        );
-        
-        return transformedLeads;
-      } catch (err) {
-        // Don't throw if aborted
-        if (signal?.aborted) {
-          return [];
-        }
-        throw err;
+    queryFn: async ({ signal: _signal }) => {
+      // NOTE: _signal is React Query's cancellation signal.
+      // We intentionally do NOT use it to suppress errors (the old `return []`
+      // on abort was the data-loss bug — it overwrote the cache with empty data).
+      // React Query automatically discards the result of a cancelled query, so
+      // we just let any error propagate and RQ handles it correctly.
+      const response = await listLeads({ page: 1, page_size: pageSize });
+
+      if (!response?.items) {
+        return [];
       }
+
+      // Transform to table row format
+      return response.items.map((item: any, index: number) =>
+        transformLeadToTableRow(item, index)
+      );
     },
-    // CRITICAL: Keep previous data while fetching new data
-    // This prevents data from disappearing during refetch
+    // CRITICAL: Keep previous data while fetching new data.
+    // This prevents data from disappearing during background refetch.
     placeholderData: (previousData) => previousData,
-    
-    // OPTIMIZED: Reduced stale time for faster UI updates after mutations
-    // Data is considered fresh for only 5 seconds to ensure quick refresh
-    staleTime: 5 * 1000,
-    
-    // Cache time - keep in memory for 10 minutes
-    gcTime: 10 * 60 * 1000,
-    
+
+    // Stale time: 15 seconds — fresh enough for quick post-mutation updates
+    // but long enough to prevent refetch storms during rapid navigation.
+    staleTime: 15 * 1000,
+
+    // Cache time: 30 minutes — data survives navigation and brief idle periods.
+    // Previously 10 min; extended so rapid navigators always see cached data.
+    gcTime: 30 * 60 * 1000,
+
     // Refetch settings
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     refetchInterval: autoRefresh ? refetchInterval : false,
-    
-    // CRITICAL: Retry but with smart error handling
-    retry: (failureCount, error: any) => {
-      // Don't retry on auth errors (401/403) - these need user intervention
-      if (error?.response?.status === 401 || error?.response?.status === 403) {
+
+    // Smart retry: skip retrying on auth/validation errors
+    retry: (failureCount, err: any) => {
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
         return false;
       }
-      // Don't retry on validation errors (422)
-      if (error?.response?.status === 422) {
+      if (err?.response?.status === 422) {
         return false;
       }
-      // Retry up to 3 times for other errors
       return failureCount < 3;
     },
     retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 5000),
-    
-    // CRITICAL: Use 'always' network mode to ensure stale data is kept on error
-    // With 'always', queries will return stale data even if a refetch fails
+
+    // 'always' ensures stale data is kept even if a refetch fails (no blank page).
     networkMode: 'always',
   });
-  
-  // Log errors without breaking data flow
-  useEffect(() => {
-    if (error) {
-      console.error('❌ [useLeads] Query error - keeping previous data:', error);
-    }
-  }, [error]);
 
   // Status update mutation with optimistic update
-  const statusMutation = useMutation<any, Error, { leadId: string; newStatus: LeadStatus }, { previousLeads?: LeadTableRow[] }>({
+  const statusMutation = useMutation<
+    any,
+    Error,
+    { leadId: string; newStatus: LeadStatus },
+    { previousLeads?: LeadTableRow[] }
+  >({
     mutationFn: async ({ leadId, newStatus }) => {
       return updateLeadStatus(leadId, newStatus);
     },
     onMutate: async ({ leadId, newStatus }) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: LEADS_QUERY_KEYS.all });
-      
-      // Snapshot previous value
+
+      // Snapshot previous value for rollback
       const previousLeads = queryClient.getQueryData<LeadTableRow[]>(
         LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize })
       );
-      
+
       // Optimistically update
       if (previousLeads) {
         queryClient.setQueryData(
           LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }),
-          previousLeads.map(lead => 
+          previousLeads.map((lead) =>
             lead.id === leadId ? { ...lead, status: newStatus } : lead
           )
         );
       }
-      
+
       return { previousLeads };
     },
     onError: (_err, _variables, context) => {
@@ -304,43 +296,45 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
       }
     },
     onSettled: () => {
-      // Refetch all lead-related data after mutation settles
-      // This ensures all dashboards show consistent data immediately
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
-      // Force refetch to bypass any stale data
       queryClient.refetchQueries({ queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }) });
     },
   });
 
   // Outcome update mutation with optimistic update
-  const outcomeMutation = useMutation<any, Error, { leadId: string; newOutcome: ContactOutcome }, { previousLeads?: LeadTableRow[] }>({
+  const outcomeMutation = useMutation<
+    any,
+    Error,
+    { leadId: string; newOutcome: ContactOutcome },
+    { previousLeads?: LeadTableRow[] }
+  >({
     mutationFn: async ({ leadId, newOutcome }) => {
       return updateContactOutcome(leadId, { contact_outcome: newOutcome });
     },
     onMutate: async ({ leadId, newOutcome }) => {
       await queryClient.cancelQueries({ queryKey: LEADS_QUERY_KEYS.all });
-      
+
       const previousLeads = queryClient.getQueryData<LeadTableRow[]>(
         LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize })
       );
-      
+
       if (previousLeads) {
         queryClient.setQueryData(
           LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }),
-          previousLeads.map(lead => 
-            lead.id === leadId 
-              ? { 
-                  ...lead, 
+          previousLeads.map((lead) =>
+            lead.id === leadId
+              ? {
+                  ...lead,
                   contactOutcome: newOutcome,
                   contactAttempts: (lead.contactAttempts || 0) + 1,
                   lastContactAttempt: new Date().toISOString(),
-                } 
+                }
               : lead
           )
         );
       }
-      
+
       return { previousLeads };
     },
     onError: (_err, _variables, context) => {
@@ -352,11 +346,8 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
       }
     },
     onSettled: () => {
-      // Refetch all lead-related data after mutation settles
-      // This ensures all dashboards show consistent data immediately
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
-      // Force refetch to bypass any stale data
       queryClient.refetchQueries({ queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }) });
     },
   });
@@ -367,14 +358,20 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
   }, [refetch]);
 
   // Update status function
-  const updateStatus = useCallback((leadId: string, newStatus: LeadStatus) => {
-    statusMutation.mutate({ leadId, newStatus });
-  }, [statusMutation]);
+  const updateStatus = useCallback(
+    (leadId: string, newStatus: LeadStatus) => {
+      statusMutation.mutate({ leadId, newStatus });
+    },
+    [statusMutation]
+  );
 
   // Update outcome function
-  const updateOutcome = useCallback((leadId: string, newOutcome: ContactOutcome) => {
-    outcomeMutation.mutate({ leadId, newOutcome });
-  }, [outcomeMutation]);
+  const updateOutcome = useCallback(
+    (leadId: string, newOutcome: ContactOutcome) => {
+      outcomeMutation.mutate({ leadId, newOutcome });
+    },
+    [outcomeMutation]
+  );
 
   return {
     leads: data || [],
@@ -405,23 +402,18 @@ interface UseDashboardSummaryReturn {
  * Globally cached and persists across navigation.
  */
 export function useDashboardSummary(): UseDashboardSummaryReturn {
-  const {
-    data,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: LEADS_QUERY_KEYS.dashboardSummary(),
     queryFn: async () => {
-      const summary = await getDashboardSummary();
-      return summary;
+      return getDashboardSummary();
     },
     placeholderData: (previousData) => previousData,
     staleTime: 30 * 1000,
-    gcTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     retry: 3,
+    networkMode: 'always',
   });
 
   const refresh = useCallback(async () => {
@@ -452,23 +444,18 @@ interface UseQueueMetricsReturn {
  * Each queue type has its own cache entry.
  */
 export function useQueueMetrics(queueType: QueueTypeFilter = 'all'): UseQueueMetricsReturn {
-  const {
-    data,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: LEADS_QUERY_KEYS.metrics(queueType),
     queryFn: async () => {
-      const metrics = await getQueueMetrics(queueType);
-      return metrics;
+      return getQueueMetrics(queueType);
     },
     placeholderData: (previousData) => previousData,
     staleTime: 30 * 1000,
-    gcTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     retry: 3,
+    networkMode: 'always',
   });
 
   const refresh = useCallback(async () => {
@@ -493,21 +480,21 @@ export function useQueueMetrics(queueType: QueueTypeFilter = 'all'): UseQueueMet
  */
 export function usePrefetchLeads() {
   const queryClient = useQueryClient();
-  
+
   const prefetch = useCallback(async () => {
     await queryClient.prefetchQuery({
       queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: 100 }),
       queryFn: async () => {
         const response = await listLeads({ page: 1, page_size: 100 });
         if (!response?.items) return [];
-        return response.items.map((item: any, index: number) => 
+        return response.items.map((item: any, index: number) =>
           transformLeadToTableRow(item, index)
         );
       },
       staleTime: 30 * 1000,
     });
   }, [queryClient]);
-  
+
   return prefetch;
 }
 
