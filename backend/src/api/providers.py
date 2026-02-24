@@ -68,7 +68,7 @@ def provider_to_response(provider: ReferringProvider) -> ProviderResponse:
         practice_city=provider.practice_city,
         practice_state=provider.practice_state,
         practice_zip=provider.practice_zip,
-        specialty=provider.specialty,
+        specialty=provider.specialty or "",
         credentials=provider.credentials,
         status=provider.status,
         preferred_contact=provider.preferred_contact,
@@ -92,7 +92,7 @@ def provider_to_list_response(provider: ReferringProvider) -> ProviderListRespon
         name=provider.name,
         email=provider.email,  # Added: Include email in list response
         practice_name=provider.practice_name,
-        specialty=provider.specialty,
+        specialty=provider.specialty or "",
         status=provider.status,
         total_referrals=provider.total_referrals,
         converted_referrals=provider.converted_referrals,

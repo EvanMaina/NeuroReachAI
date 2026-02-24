@@ -181,6 +181,9 @@ export interface Lead {
   priority: LeadPriority;
   status: LeadStatus;
   
+  // TMS Therapy Interest
+  tmsTherapyInterest?: string;
+  
   // Edit modal compatibility fields (populated from raw API response)
   condition?: string;
   urgency?: string;
@@ -315,6 +318,9 @@ export interface LeadSubmitData {
   // UTM tracking
   utm_params?: IUTMParams;
   referrer_url?: string;
+  
+  // Idempotency key — generated on widget load, prevents duplicate submissions
+  submission_id?: string;
 }
 
 /**
@@ -406,12 +412,10 @@ export type UrgencyType =
 
 /**
  * TMS Therapy Interest options
- * SAINT Protocol only available for Depression
  */
 export type TMSInterestType = 
   | 'daily_tms' 
   | 'accelerated_tms' 
-  | 'saint_protocol'  // Depression only
   | 'not_sure';
 
 /**

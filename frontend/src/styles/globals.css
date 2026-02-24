@@ -111,6 +111,34 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply bg-gray-300 rounded hover:bg-gray-400;
   }
+
+  /* Premium table scrollbar — thin, subtle, rounded */
+  .premium-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .premium-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .premium-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .premium-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 999px;
+  }
+
+  .premium-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  .premium-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   
   /* Text truncation */
   .truncate-2 {

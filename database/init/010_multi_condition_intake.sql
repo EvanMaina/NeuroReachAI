@@ -67,7 +67,6 @@ DO $$ BEGIN
     CREATE TYPE tms_therapy_interest_type AS ENUM (
         'daily_tms',
         'accelerated_tms',
-        'saint_protocol',
         'not_sure'
     );
 EXCEPTION WHEN duplicate_object THEN NULL;
@@ -234,7 +233,7 @@ ALTER TABLE leads ADD CONSTRAINT check_anxiety_score_range
 
 COMMENT ON COLUMN leads.conditions IS 'Array of condition keys (lowercase): depression, anxiety, ocd, ptsd, other';
 COMMENT ON COLUMN leads.other_condition_text IS 'Free text description when "other" condition is selected';
-COMMENT ON COLUMN leads.tms_therapy_interest IS 'TMS therapy type interest: daily_tms, accelerated_tms, saint_protocol, not_sure';
+COMMENT ON COLUMN leads.tms_therapy_interest IS 'TMS therapy type interest: daily_tms, accelerated_tms, not_sure';
 COMMENT ON COLUMN leads.preferred_contact_method IS 'Preferred contact method: phone_call, text, email, any';
 
 COMMENT ON COLUMN leads.phq2_interest IS 'PHQ-2 Q1: Little interest/pleasure (0-3)';

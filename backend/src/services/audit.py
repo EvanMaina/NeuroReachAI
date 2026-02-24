@@ -239,10 +239,12 @@ class AuditService:
         endpoint: Optional[str] = None,
         request_method: Optional[str] = None,
         user_agent: Optional[str] = None,
+        new_values: Optional[dict[str, Any]] = None,
+        deleted_data: Optional[dict[str, Any]] = None,
     ) -> AuditLog:
         """
         Log a DELETE action (record removed).
-        
+
         Args:
             table_name: Name of table where record was deleted
             record_id: UUID of record that was deleted
@@ -252,10 +254,15 @@ class AuditService:
             endpoint: Optional API endpoint
             request_method: Optional HTTP method
             user_agent: Optional user agent string
-            
+            new_values: Optional dict of deletion metadata (NO PHI!)
+            deleted_data: Alias for new_values (backward compat — callers may pass either)
+
         Returns:
             Created AuditLog instance
         """
+        # Accept either `new_values` or the legacy `deleted_data` kwarg so
+        # existing callers don't need to be changed simultaneously.
+        _new_values = new_values or deleted_data
         return self._create_log_entry(
             table_name=table_name,
             record_id=record_id,
@@ -266,6 +273,7 @@ class AuditService:
             endpoint=endpoint,
             request_method=request_method,
             user_agent=user_agent,
+            new_values=_new_values,
         )
     
     def log_export(

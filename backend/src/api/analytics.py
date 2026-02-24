@@ -170,14 +170,17 @@ async def get_dashboard_summary(
             query_time_ms=round((time.time() - start_time) * 1000, 2)
         )
     
-    # Calculate cutoff date
-    cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+    # Current date helpers
     today = datetime.utcnow().date()
-    yesterday = today - timedelta(days=1)
     last_week = today - timedelta(days=7)
-    
-    # Efficient single-query aggregation
-    stats_query = db.query(
+
+    # -------------------------------------------------------------------------
+    # Query 1: CURRENT-STATE KPIs — NO date filter, only exclude soft-deleted.
+    # These counts reflect the live state of ALL leads in the system.
+    # Applying a created_at date filter here would under-count any lead that
+    # was created outside the window but is still active/scheduled today.
+    # -------------------------------------------------------------------------
+    current_state_query = db.query(
         func.count(Lead.id).label('total_leads'),
         func.count(Lead.id).filter(
             Lead.status.in_([LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED])
@@ -194,45 +197,106 @@ async def get_dashboard_summary(
         func.count(Lead.id).filter(
             Lead.priority == PriorityType.LOW
         ).label('low_leads'),
+    ).filter(
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
+    ).first()
+
+    # -------------------------------------------------------------------------
+    # Query 2: TODAY-SPECIFIC counts — date filter is appropriate here because
+    # we genuinely want "created today" and "contacted today" numbers.
+    # -------------------------------------------------------------------------
+    today_query = db.query(
         func.count(Lead.id).filter(
             func.date(Lead.created_at) == today
         ).label('new_today'),
         func.count(Lead.id).filter(
             func.date(Lead.contacted_at) == today
         ).label('contacted_today'),
-    ).filter(Lead.created_at >= cutoff_date).first()
-    
-    # Calculate trend (compare this week vs last week)
+    ).filter(
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
+    ).first()
+
+    # Alias for readability below
+    stats_query = current_state_query
+
+    # Calculate trend (compare this week vs last week) — EXCLUDES soft-deleted leads
     this_week_count = db.query(func.count(Lead.id)).filter(
-        Lead.created_at >= last_week
+        Lead.created_at >= last_week,
+        Lead.deleted_at.is_(None),
     ).scalar() or 0
-    
+
     last_week_count = db.query(func.count(Lead.id)).filter(
         and_(
             Lead.created_at >= last_week - timedelta(days=7),
-            Lead.created_at < last_week
-        )
+            Lead.created_at < last_week,
+        ),
+        Lead.deleted_at.is_(None),
     ).scalar() or 0
-    
+
+    # Real trend for converted leads (this week vs last week)
+    this_week_converted = db.query(func.count(Lead.id)).filter(
+        Lead.created_at >= last_week,
+        Lead.status.in_([LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED]),
+        Lead.deleted_at.is_(None),
+    ).scalar() or 0
+
+    last_week_converted = db.query(func.count(Lead.id)).filter(
+        and_(
+            Lead.created_at >= last_week - timedelta(days=7),
+            Lead.created_at < last_week,
+        ),
+        Lead.status.in_([LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED]),
+        Lead.deleted_at.is_(None),
+    ).scalar() or 0
+
+    # Real trend for scheduled appointments (this week vs last week)
+    this_week_scheduled = db.query(func.count(Lead.id)).filter(
+        Lead.created_at >= last_week,
+        Lead.status == LeadStatus.SCHEDULED,
+        Lead.deleted_at.is_(None),
+    ).scalar() or 0
+
+    last_week_scheduled = db.query(func.count(Lead.id)).filter(
+        and_(
+            Lead.created_at >= last_week - timedelta(days=7),
+            Lead.created_at < last_week,
+        ),
+        Lead.status == LeadStatus.SCHEDULED,
+        Lead.deleted_at.is_(None),
+    ).scalar() or 0
+
     total_leads = stats_query.total_leads or 0
     converted_leads = stats_query.converted_leads or 0
     conversion_rate = round((converted_leads / total_leads * 100) if total_leads > 0 else 0, 2)
-    
+
+    # Last-week conversion rate for trend calculation
+    last_week_total = last_week_count or 0
+    last_week_conv_rate = round(
+        (last_week_converted / last_week_total * 100) if last_week_total > 0 else 0, 2
+    )
+    this_week_total = this_week_count or 0
+    this_week_conv_rate = round(
+        (this_week_converted / this_week_total * 100) if this_week_total > 0 else 0, 2
+    )
+
     result = {
         "total_leads": total_leads,
         "converted_leads": converted_leads,
         "conversion_rate": conversion_rate,
-        "scheduled_appointments": stats_query.scheduled_appointments or 0,
-        "hot_leads": stats_query.hot_leads or 0,
-        "medium_leads": stats_query.medium_leads or 0,
-        "low_leads": stats_query.low_leads or 0,
-        "new_today": stats_query.new_today or 0,
-        "contacted_today": stats_query.contacted_today or 0,
+        "scheduled_appointments": current_state_query.scheduled_appointments or 0,
+        "hot_leads": current_state_query.hot_leads or 0,
+        "medium_leads": current_state_query.medium_leads or 0,
+        "low_leads": current_state_query.low_leads or 0,
+        # today_query is a separate query scoped to today only
+        "new_today": today_query.new_today or 0,
+        "contacted_today": today_query.contacted_today or 0,
         "trends": {
             "total_leads": calculate_trend_percentage(this_week_count, last_week_count),
-            "converted_leads": 8.5,  # Placeholder - would need historical conversion data
-            "conversion_rate": 5.2,
-            "scheduled_appointments": 12.0,
+            "converted_leads": calculate_trend_percentage(this_week_converted, last_week_converted),
+            "conversion_rate": calculate_trend_percentage(
+                int(this_week_conv_rate * 10), int(last_week_conv_rate * 10)
+            ),
+            "scheduled_appointments": calculate_trend_percentage(this_week_scheduled, last_week_scheduled),
         },
     }
     
@@ -293,7 +357,7 @@ async def get_leads_trend(
     end_date = datetime.utcnow().date()
     start_date = end_date - timedelta(days=period)
     
-    # Efficient date-grouped aggregation
+    # Efficient date-grouped aggregation — EXCLUDES soft-deleted leads
     daily_counts = db.query(
         func.date(Lead.created_at).label('date'),
         func.count(Lead.id).label('new_leads'),
@@ -301,7 +365,8 @@ async def get_leads_trend(
             Lead.status.in_([LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED])
         ).label('converted_leads'),
     ).filter(
-        func.date(Lead.created_at) >= start_date
+        func.date(Lead.created_at) >= start_date,
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
     ).group_by(
         func.date(Lead.created_at)
     ).order_by(
@@ -396,8 +461,10 @@ async def get_conditions_distribution(
         logger.warning(f"Conditions cache format invalid, recomputing: {e}")
         cache.delete(f"{cache.PREFIX_CONDITIONS}:distribution")
     
-    # Get total lead count
-    total_leads = db.query(func.count(Lead.id)).scalar() or 0
+    # Get total lead count — EXCLUDES soft-deleted leads
+    total_leads = db.query(func.count(Lead.id)).filter(
+        Lead.deleted_at.is_(None)
+    ).scalar() or 0
     
     if total_leads == 0:
         # Clean empty state
@@ -429,10 +496,12 @@ async def get_conditions_distribution(
         "OTHER": "OTHER",
     }
     
-    # Start with single-condition field counts
+    # Start with single-condition field counts — EXCLUDES soft-deleted leads
     distribution = db.query(
         Lead.condition,
         func.count(Lead.id).label('count'),
+    ).filter(
+        Lead.deleted_at.is_(None),
     ).group_by(
         Lead.condition
     ).order_by(
@@ -452,7 +521,8 @@ async def get_conditions_distribution(
     try:
         multi_condition_leads = db.query(Lead.condition, Lead.conditions).filter(
             Lead.conditions.isnot(None),
-            func.array_length(Lead.conditions, 1) > 1
+            func.array_length(Lead.conditions, 1) > 1,
+            Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
         ).all()
         
         for lead_row in multi_condition_leads:
@@ -475,12 +545,13 @@ async def get_conditions_distribution(
     last_week = today - timedelta(days=7)
     two_weeks_ago = today - timedelta(days=14)
     
-    # This week counts by condition
+    # This week counts by condition — EXCLUDES soft-deleted leads
     this_week = db.query(
         Lead.condition,
         func.count(Lead.id).label('count'),
     ).filter(
-        Lead.created_at >= last_week
+        Lead.created_at >= last_week,
+        Lead.deleted_at.is_(None),
     ).group_by(Lead.condition).all()
     this_week_map: dict[str, int] = {}
     for row in this_week:
@@ -488,12 +559,13 @@ async def get_conditions_distribution(
         canonical = CONDITION_NORMALIZE.get(cond_value, cond_value.upper())
         this_week_map[canonical] = this_week_map.get(canonical, 0) + row.count
     
-    # Last week counts by condition
+    # Last week counts by condition — EXCLUDES soft-deleted leads
     last_week_q = db.query(
         Lead.condition,
         func.count(Lead.id).label('count'),
     ).filter(
-        and_(Lead.created_at >= two_weeks_ago, Lead.created_at < last_week)
+        and_(Lead.created_at >= two_weeks_ago, Lead.created_at < last_week),
+        Lead.deleted_at.is_(None),
     ).group_by(Lead.condition).all()
     last_week_map: dict[str, int] = {}
     for row in last_week_q:
@@ -520,6 +592,144 @@ async def get_conditions_distribution(
     
     return ConditionsDistributionResponse(
         conditions=[ConditionDistribution(**c) for c in conditions],
+        total_leads=total_leads,
+        cache_hit=False,
+        query_time_ms=round((time.time() - start_time) * 1000, 2)
+    )
+
+
+# =============================================================================
+# TMS Therapy Interest Distribution Endpoint
+# =============================================================================
+
+class TMSInterestDistribution(BaseModel):
+    """TMS therapy interest distribution data."""
+    interest_type: str = Field(..., description="TMS interest type")
+    count: int = Field(..., description="Number of leads with this interest")
+    percentage: float = Field(..., description="Percentage of leads with TMS interest set")
+    trend: float = Field(default=0, description="Week-over-week trend percentage")
+
+
+class TMSInterestDistributionResponse(BaseModel):
+    """TMS therapy interest distribution response."""
+    interests: List[TMSInterestDistribution] = Field(..., description="Distribution by TMS interest type")
+    total_with_interest: int = Field(..., description="Leads with TMS interest set")
+    total_leads: int = Field(..., description="Total leads counted")
+    cache_hit: bool = Field(default=False, description="Whether data came from cache")
+    query_time_ms: float = Field(default=0, description="Query execution time in milliseconds")
+
+
+@router.get(
+    "/tms-therapy-distribution",
+    response_model=TMSInterestDistributionResponse,
+    summary="Get TMS Therapy Interest Distribution",
+    description="Get distribution of leads by TMS therapy interest type.",
+)
+async def get_tms_therapy_distribution(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> TMSInterestDistributionResponse:
+    """
+    Get TMS therapy interest distribution with percentage breakdown.
+    
+    Queries Lead.tms_therapy_interest (text column), counts by value,
+    calculates percentages and week-over-week trends.
+    Cached for 120 seconds.
+    """
+    start_time = time.time()
+    cache = get_cache()
+    
+    # Try cache first
+    cache_key = f"{cache.PREFIX_CONDITIONS}:tms_distribution"
+    try:
+        cached_data = cache.get(cache_key)
+        if cached_data and isinstance(cached_data, dict) and "interests" in cached_data:
+            return TMSInterestDistributionResponse(
+                interests=[TMSInterestDistribution(**i) for i in cached_data["interests"]],
+                total_with_interest=cached_data.get("total_with_interest", 0),
+                total_leads=cached_data.get("total_leads", 0),
+                cache_hit=True,
+                query_time_ms=round((time.time() - start_time) * 1000, 2)
+            )
+    except (TypeError, KeyError, ValueError):
+        pass
+    
+    # Get total lead count — EXCLUDES soft-deleted leads
+    total_leads = db.query(func.count(Lead.id)).filter(
+        Lead.deleted_at.is_(None)
+    ).scalar() or 0
+    
+    # Count by tms_therapy_interest value — EXCLUDES soft-deleted leads
+    distribution = db.query(
+        Lead.tms_therapy_interest,
+        func.count(Lead.id).label('count'),
+    ).filter(
+        Lead.tms_therapy_interest.isnot(None),
+        Lead.tms_therapy_interest != '',
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
+    ).group_by(
+        Lead.tms_therapy_interest
+    ).order_by(
+        func.count(Lead.id).desc()
+    ).all()
+    
+    total_with_interest = sum(row.count for row in distribution)
+    
+    # Calculate trends (this week vs last week)
+    today = datetime.utcnow().date()
+    last_week = today - timedelta(days=7)
+    two_weeks_ago = today - timedelta(days=14)
+    
+    this_week_q = db.query(
+        Lead.tms_therapy_interest,
+        func.count(Lead.id).label('count'),
+    ).filter(
+        Lead.created_at >= last_week,
+        Lead.tms_therapy_interest.isnot(None),
+        Lead.tms_therapy_interest != '',
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
+    ).group_by(Lead.tms_therapy_interest).all()
+    this_week_map = {row.tms_therapy_interest: row.count for row in this_week_q}
+    
+    last_week_q = db.query(
+        Lead.tms_therapy_interest,
+        func.count(Lead.id).label('count'),
+    ).filter(
+        and_(Lead.created_at >= two_weeks_ago, Lead.created_at < last_week),
+        Lead.tms_therapy_interest.isnot(None),
+        Lead.tms_therapy_interest != '',
+        Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
+    ).group_by(Lead.tms_therapy_interest).all()
+    last_week_map = {row.tms_therapy_interest: row.count for row in last_week_q}
+    
+    # Build result
+    interests = []
+    for row in distribution:
+        interest_type = row.tms_therapy_interest
+        count = row.count
+        this_wk = this_week_map.get(interest_type, 0)
+        last_wk = last_week_map.get(interest_type, 0)
+        trend = calculate_trend_percentage(this_wk, last_wk)
+        
+        interests.append({
+            "interest_type": interest_type,
+            "count": count,
+            "percentage": round((count / total_with_interest * 100) if total_with_interest > 0 else 0, 2),
+            "trend": trend,
+        })
+    
+    result = {
+        "interests": interests,
+        "total_with_interest": total_with_interest,
+        "total_leads": total_leads,
+    }
+    
+    # Cache result for 120 seconds
+    cache.set(cache_key, result, ttl=120)
+    
+    return TMSInterestDistributionResponse(
+        interests=[TMSInterestDistribution(**i) for i in interests],
+        total_with_interest=total_with_interest,
         total_leads=total_leads,
         cache_hit=False,
         query_time_ms=round((time.time() - start_time) * 1000, 2)
@@ -585,7 +795,7 @@ async def get_cohort_retention(
         
         cohort_name = month_start.strftime("%b %Y")
         
-        # Get cohort statistics
+        # Get cohort statistics — EXCLUDES soft-deleted leads
         cohort_stats = db.query(
             func.count(Lead.id).label('total'),
             func.count(Lead.id).filter(
@@ -606,7 +816,8 @@ async def get_cohort_retention(
         ).filter(
             and_(
                 Lead.created_at >= month_start,
-                Lead.created_at < month_end
+                Lead.created_at < month_end,
+                Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
             )
         ).first()
         
@@ -678,8 +889,8 @@ async def get_leads_cursor(
     Returns:
         Paginated leads with cursor
     """
-    # Build base query
-    query = db.query(Lead)
+    # Build base query — EXCLUDES soft-deleted leads
+    query = db.query(Lead).filter(Lead.deleted_at.is_(None))
     
     # Apply filters
     if priority:
@@ -712,9 +923,10 @@ async def get_leads_cursor(
         except (ValueError, IndexError):
             pass  # Invalid cursor, ignore
     
-    # Get total estimate (use approximate count for performance)
-    # For exact count with filters, this would need adjustment
-    total_estimate = db.query(func.count(Lead.id)).scalar() or 0
+    # Get total estimate — EXCLUDES soft-deleted leads
+    total_estimate = db.query(func.count(Lead.id)).filter(
+        Lead.deleted_at.is_(None)
+    ).scalar() or 0
     
     # Order by created_at DESC, id DESC for stable cursor pagination
     leads = query.order_by(

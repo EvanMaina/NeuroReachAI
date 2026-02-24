@@ -75,6 +75,21 @@ export interface ICohortRetentionResponse {
   query_time_ms: number;
 }
 
+export interface ITMSInterestDistribution {
+  interest_type: string;
+  count: number;
+  percentage: number;
+  trend: number;
+}
+
+export interface ITMSInterestDistributionResponse {
+  interests: ITMSInterestDistribution[];
+  total_with_interest: number;
+  total_leads: number;
+  cache_hit: boolean;
+  query_time_ms: number;
+}
+
 export interface ICursorPaginatedLead {
   id: string;
   lead_number: string;
@@ -162,6 +177,20 @@ export async function getCohortRetention(
   const response = await apiClient.get<ICohortRetentionResponse>(
     '/api/analytics/cohort-retention',
     { params: { months } }
+  );
+  return response.data;
+}
+
+/**
+ * Get TMS therapy interest distribution.
+ * 
+ * Returns TMS interest breakdown with 120-second cache TTL on backend.
+ * 
+ * @returns TMS interest distribution data
+ */
+export async function getTMSInterestDistribution(): Promise<ITMSInterestDistributionResponse> {
+  const response = await apiClient.get<ITMSInterestDistributionResponse>(
+    '/api/analytics/tms-therapy-distribution'
   );
   return response.data;
 }

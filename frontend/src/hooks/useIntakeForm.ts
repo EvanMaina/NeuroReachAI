@@ -6,7 +6,7 @@
  * UPDATED v4.0: Now matches Jotform intake with:
  * - Multi-condition selection
  * - Conditional severity assessments (PHQ-2, GAD-2, OCD, PTSD)
- * - TMS Therapy Interest (with SAINT Protocol for Depression only)
+ * - TMS Therapy Interest (Daily TMS, Accelerated TMS, Not Sure)
  * - Preferred contact method
  * - REFERRAL QUESTIONS (NEW) - matches Jotform exactly
  * 
@@ -14,7 +14,7 @@
  * @version 4.0.0
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import type {
   ILeadCreate,
   ConditionType,
@@ -37,7 +37,7 @@ export type PreferredContactMethod = 'phone_call' | 'text' | 'email' | 'any';
  * 1. Consent
  * 2. Condition (multi-select)
  * 3. Severity (conditional: PHQ-2, GAD-2, OCD, PTSD)
- * 4. TMS Interest (Daily TMS, Accelerated TMS, SAINT Protocol, Not sure)
+ * 4. TMS Interest (Daily TMS, Accelerated TMS, Not sure)
  * 5. Duration
  * 6. Treatment
  * 7. Insurance
@@ -139,6 +139,22 @@ export interface IIntakeFormData {
 }
 
 /**
+ * Generate a unique submission ID for deduplication.
+ * Uses crypto.randomUUID() when available (all modern browsers), falls back to
+ * a timestamp+random string that is sufficiently unique for our 24h TTL window.
+ */
+function generateSubmissionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback: timestamp + 16 random hex chars
+  const rand = Array.from({ length: 16 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join('');
+  return `widget-${Date.now()}-${rand}`;
+}
+
+/**
  * Initial form data state.
  */
 const initialFormData: IIntakeFormData = {
@@ -214,6 +230,10 @@ export interface IUseIntakeFormReturn {
 export function useIntakeForm(): IUseIntakeFormReturn {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<IIntakeFormData>(initialFormData);
+
+  // Stable UUID generated once per widget session (regenerated on resetForm).
+  // Sent with every submission so the backend can deduplicate double-taps.
+  const submissionIdRef = useRef<string>(generateSubmissionId());
   
   // Navigation helpers
   const isFirstStep = currentStep === 1;
@@ -293,19 +313,28 @@ export function useIntakeForm(): IUseIntakeFormReturn {
         // If Yes, all provider fields are OPTIONAL — user can continue without filling them
         return true;
         
-      case 11: // Contact (includes preferred contact method)
+      case 11: { // Contact (includes preferred contact method)
         const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
         const phoneDigits = formData.phone.replace(/\D/g, '');
         
-        // International phone validation
-        const isValidUSPhone = phoneDigits.length === 10 && 
+        // Phone validation — minimum 10 digits to prevent short garbage numbers
+        // reaching the backend and causing a 422 "[object Object]" error.
+        //
+        // Accepted formats:
+        //   US:           10 digits, not starting with 0 or 1  (e.g. 6025551234)
+        //   Kenyan:       12 digits starting with 254          (e.g. 254712345678)
+        //                 10 digits starting with 0             (e.g. 0712345678)
+        //                  9 digits starting with 7 or 1        (e.g. 712345678)
+        //   International: 10–15 digits                         (e.g. +447911123456)
+        const isValidUSPhone = phoneDigits.length === 10 &&
           phoneDigits[0] !== '0' && phoneDigits[0] !== '1';
         const isValidKenyanPhone = (
           (phoneDigits.startsWith('254') && phoneDigits.length === 12) ||
           (phoneDigits.startsWith('0') && phoneDigits.length === 10) ||
           (phoneDigits.length === 9 && (phoneDigits[0] === '7' || phoneDigits[0] === '1'))
         );
-        const isValidInternationalPhone = phoneDigits.length >= 7 && phoneDigits.length <= 15;
+        // True international: must be 10–15 digits (ITU-T E.164 max is 15)
+        const isValidInternationalPhone = phoneDigits.length >= 10 && phoneDigits.length <= 15;
         const isValidPhone = isValidUSPhone || isValidKenyanPhone || isValidInternationalPhone;
         
         return (
@@ -315,6 +344,7 @@ export function useIntakeForm(): IUseIntakeFormReturn {
           isValidPhone &&
           formData.preferredContactMethod !== null // REQUIRED: Preferred contact method
         );
+      }
         
       case 12: // Confirmation (always valid)
         return true;
@@ -386,10 +416,12 @@ export function useIntakeForm(): IUseIntakeFormReturn {
   
   /**
    * Reset form to initial state.
+   * Also regenerates the submission ID so a fresh attempt gets its own key.
    */
   const resetForm = useCallback(() => {
     setCurrentStep(1);
     setFormData(initialFormData);
+    submissionIdRef.current = generateSubmissionId();
   }, []);
   
   /**
@@ -466,6 +498,9 @@ export function useIntakeForm(): IUseIntakeFormReturn {
       // UTM tracking
       utm_params: attribution.utm_params,
       referrer_url: attribution.referrer_url,
+
+      // Idempotency key — prevents duplicate submissions on double-tap/retry
+      submission_id: submissionIdRef.current,
     };
   }, [formData]);
   

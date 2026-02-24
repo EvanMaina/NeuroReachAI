@@ -10,9 +10,9 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from ..core.config import settings
 from ..core.database import get_db
@@ -38,6 +38,7 @@ from ..services.lead_scoring import (
 # NEW: Use v2 scoring and canonical mapping for widget submissions
 from ..services.lead_scoring_v2 import (
     calculate_lead_score as calculate_lead_score_v2,
+    calculate_score_from_lead_data,
     get_estimated_response_time,
     get_confirmation_message,
     ScoreBreakdown,
@@ -45,7 +46,7 @@ from ..services.lead_scoring_v2 import (
 from ..services.intake_mapping import map_widget_submission_to_lead_input, LeadInput
 from ..services.encryption import EncryptionService
 from ..services.audit import AuditService
-from ..services.lead_number import generate_lead_number
+from ..services.lead_number import generate_unique_lead_number
 from ..services.cache import get_cache
 from ..core.auth import get_current_user, require_role
 
@@ -143,6 +144,67 @@ def get_user_agent(request: Request) -> Optional[str]:
 
 
 # =============================================================================
+# Lightweight New-Lead Check Endpoint (for frontend polling)
+# =============================================================================
+
+@router.get(
+    "/latest-check",
+    summary="Check for new leads",
+    description="Lightweight endpoint for frontend polling. Returns latest lead count and timestamp.",
+    dependencies=[Depends(get_current_user)],
+)
+async def latest_check(
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Ultra-lightweight endpoint for the NewLeadWatcher frontend component.
+    
+    Returns the total count of active (non-deleted) leads and the
+    created_at timestamp of the newest lead. The frontend compares
+    the count to its previous value to detect new arrivals.
+    
+    Redis-cached for 5 seconds to ensure <50ms response under load.
+    """
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    try:
+        # Try Redis cache first (5-second TTL)
+        try:
+            cache = get_cache()
+            cached = cache.get("leads:latest_check")
+            if cached:
+                return cached
+        except Exception:
+            pass  # Redis down — fall through to DB
+
+        # Single lightweight query: COUNT + MAX(created_at) in one pass
+        result = db.execute(
+            __import__("sqlalchemy").text(
+                "SELECT COUNT(*), MAX(created_at) FROM leads WHERE deleted_at IS NULL"
+            )
+        ).first()
+
+        total = result[0] or 0 if result else 0
+        latest_at = result[1].isoformat() if result and result[1] else None
+
+        payload = {"total": total, "latest_at": latest_at}
+
+        # Cache for 5 seconds
+        try:
+            cache = get_cache()
+            cache.set("leads:latest_check", payload, ttl=5)
+        except Exception:
+            pass
+
+        return payload
+
+    except Exception as e:
+        _logger.error(f"latest-check error: {e}")
+        return {"total": 0, "latest_at": None}
+
+
+# =============================================================================
 # Widget Submission Endpoint
 # =============================================================================
 
@@ -186,6 +248,44 @@ async def submit_lead(
         HTTPException: If validation or storage fails
     """
     try:
+        # =====================================================================
+        # Step 0: Duplicate submission check (idempotency + content hash)
+        # =====================================================================
+        import hashlib
+        import logging as _logging
+        _dedup_logger = _logging.getLogger(__name__)
+
+        # --- Primary check: client-provided submission_id (UUID, 24h TTL) ---
+        sub_id = (lead_data.submission_id or "").strip()
+        if sub_id:
+            _redis_key = f"widget:dedup:{sub_id}"
+            try:
+                _cache = get_cache()
+                _cached_resp = _cache.get(_redis_key)
+                if _cached_resp:
+                    _dedup_logger.info("Duplicate widget submission blocked (submission_id=%s)", sub_id)
+                    return LeadSubmitResponse(**_cached_resp)
+            except Exception:
+                pass  # Redis down — proceed normally (fail open)
+
+        # --- Fallback check: content hash of email+phone within 5-minute window ---
+        _email_raw = (lead_data.email or "").lower().strip()
+        _phone_raw = (lead_data.phone or "").strip()
+        _content_hash = hashlib.sha256(
+            f"{_email_raw}:{_phone_raw}".encode()
+        ).hexdigest()[:32]
+        _content_key = f"widget:dedup:content:{_content_hash}"
+        try:
+            _cache = get_cache()
+            _cached_content = _cache.get(_content_key)
+            if _cached_content:
+                _dedup_logger.info(
+                    "Duplicate widget submission blocked (content hash=%s)", _content_hash
+                )
+                return LeadSubmitResponse(**_cached_content)
+        except Exception:
+            pass  # Redis down — proceed normally
+
         # =====================================================================
         # Step 1: Map widget submission to canonical LeadInput format
         # =====================================================================
@@ -274,8 +374,8 @@ async def submit_lead(
                 "utm_content": lead_data.utm_params.utm_content,
             }
 
-        # Generate unique lead number (NR-YYYY-XXX format)
-        lead_number = generate_lead_number(db)
+        # Generate unique lead number (TMS-YYYY-XXX format) with retry logic
+        lead_number = generate_unique_lead_number(db)
 
         # Get current timestamp for consent tracking
         consent_timestamp = datetime.now(timezone.utc)
@@ -311,8 +411,7 @@ async def submit_lead(
                 ).first()
             
             if existing_provider:
-                # Update existing provider's referral count
-                existing_provider.total_referrals = (existing_provider.total_referrals or 0) + 1
+                # Update existing provider's missing fields (don't touch total_referrals here)
                 if lead_input.referring_clinic and not existing_provider.practice_name:
                     existing_provider.practice_name = lead_input.referring_clinic
                 if provider_email_lookup and not existing_provider.email:
@@ -322,16 +421,17 @@ async def submit_lead(
                 if provider_specialty_raw and not existing_provider.specialty:
                     existing_provider.specialty = provider_specialty_raw.strip()
                 referring_provider_id = existing_provider.id
-                db.commit()
+                db.flush()
             else:
                 # Create new referring provider with specialty
                 # RULE: Store exact user input - no mapping, no transformation
+                # NOTE: total_referrals=0 here; will be set via COUNT after lead commit
                 new_provider = ReferringProvider(
                     name=provider_name_lookup,
                     email=provider_email_lookup,
                     practice_name=lead_input.referring_clinic if lead_input.referring_clinic else None,
                     specialty=provider_specialty_raw.strip() if provider_specialty_raw else None,
-                    total_referrals=1,
+                    total_referrals=0,
                     converted_referrals=0,
                 )
                 db.add(new_provider)
@@ -426,6 +526,22 @@ async def submit_lead(
         db.commit()
         db.refresh(lead)
 
+        # IDEMPOTENT FIX: Recalculate provider total_referrals from actual lead COUNT
+        # This runs AFTER lead commit so the new lead is included in the count.
+        # Using COUNT instead of increment ensures correctness even with retries/races.
+        if is_referral and referring_provider_id:
+            actual_count = db.query(func.count(Lead.id)).filter(
+                Lead.referring_provider_id == referring_provider_id,
+                Lead.deleted_at.is_(None),
+            ).scalar() or 0
+            provider = db.query(ReferringProvider).filter(
+                ReferringProvider.id == referring_provider_id
+            ).first()
+            if provider:
+                provider.total_referrals = actual_count
+                provider.last_referral_at = datetime.now(timezone.utc)
+                db.commit()
+
         # Invalidate cache to ensure dashboard metrics include new lead
         try:
             cache = get_cache()
@@ -480,13 +596,29 @@ async def submit_lead(
             },
         )
 
-        return LeadSubmitResponse(
+        _submit_response = LeadSubmitResponse(
             success=True,
             message=message,
             lead_id=lead.id,
             priority=priority,
             estimated_response_time=estimated_time,
         )
+
+        # =====================================================================
+        # Store dedup keys in Redis AFTER successful creation
+        # submission_id key: 24h TTL (covers re-sends on flaky connections)
+        # content hash key: 5-minute TTL (covers rapid-fire duplicate forms)
+        # =====================================================================
+        _response_payload = _submit_response.model_dump(mode="json")
+        try:
+            _cache = get_cache()
+            if sub_id:
+                _cache.set(_redis_key, _response_payload, ttl=86400)  # 24 hours
+            _cache.set(_content_key, _response_payload, ttl=300)  # 5 minutes
+        except Exception:
+            pass  # Non-fatal — worst case we get a duplicate, which is handled at DB level
+
+        return _submit_response
 
     except ValueError as e:
         # Validation error
@@ -555,7 +687,12 @@ async def list_leads(
     
     try:
         # Validate and cap page_size
-        page_size = min(page_size, 100)
+        # NOTE: Raised to 1000 so the coordinator dashboard can fetch all leads in
+        # one request (currently 188 leads). The previous cap of 100 caused the
+        # coordinator to see only the first 100/188 leads, making scheduled-queue
+        # and completed-queue counts (13, 3) diverge from analytics (23, 7).
+        # Analytics queries the full DB and was correct; the coordinator was wrong.
+        page_size = min(page_size, 1000)
         
         # Validate pagination params
         if page < 1:
@@ -563,10 +700,10 @@ async def list_leads(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Page number must be at least 1"
             )
-        if page_size < 1 or page_size > 100:
+        if page_size < 1 or page_size > 1000:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Page size must be between 1 and 100"
+                detail="Page size must be between 1 and 1000"
             )
 
         # Build base query - exclude soft-deleted leads
@@ -752,6 +889,7 @@ async def search_leads_phi(
     while len(matching_leads) < max_results:
         batch = (
             db.query(Lead)
+            .filter(Lead.deleted_at.is_(None))  # GAP 2 FIX: exclude soft-deleted leads from PHI search
             .order_by(desc(Lead.created_at))
             .offset(offset)
             .limit(batch_size)
@@ -839,18 +977,43 @@ async def search_leads_phi(
 )
 async def list_deleted_leads(
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     page: int = 1,
     page_size: int = 50,
 ) -> PaginatedResponse:
     """
     List soft-deleted leads for the admin Deleted Leads recovery view.
+
+    Redis-cached for 15 s per page so rapid navigation doesn't hammer the
+    DB with repeated decryption work.  The HTTP response carries
+    Cache-Control: private, no-store so the *browser* never caches PHI,
+    while the server-side Redis cache absorbs repeated requests within the
+    same 15-second window.
+
+    Cache is automatically invalidated whenever a lead is soft-deleted or
+    restored (both callers invoke cache.invalidate_on_lead_change()).
     """
     import logging
-    logger = logging.getLogger(__name__)
+    _logger = logging.getLogger(__name__)
 
     try:
         page_size = min(page_size, 100)
+
+        # ── Server-side Redis cache (15 s TTL) ────────────────────────────
+        # Key includes page+size so each page has its own slot.
+        _cache_key = f"deleted_leads:page:{page}:size:{page_size}"
+        try:
+            _cache = get_cache()
+            _cached = _cache.get(_cache_key)
+            if _cached:
+                # PHI must NEVER be stored in a client-visible cache.
+                response.headers["Cache-Control"] = "private, no-store"
+                return PaginatedResponse(**_cached)
+        except Exception:
+            pass  # Redis unavailable — fall through to DB
+
+        # ── DB query ──────────────────────────────────────────────────────
         query = db.query(Lead).filter(Lead.deleted_at.isnot(None))
         total = query.count()
         total_pages = (total + page_size - 1) // page_size if total > 0 else 1
@@ -887,7 +1050,7 @@ async def list_deleted_leads(
         with ThreadPoolExecutor(max_workers=8) as executor:
             items = list(executor.map(decrypt_deleted_lead, paginated_leads))
 
-        return PaginatedResponse(
+        _payload = dict(
             items=items,
             total=total,
             page=page,
@@ -896,8 +1059,21 @@ async def list_deleted_leads(
             has_next=page < total_pages,
             has_previous=page > 1,
         )
+
+        # Store in Redis for 15 s — this result contains decrypted PHI
+        # which is acceptable in a server-side cache.
+        try:
+            _cache = get_cache()
+            _cache.set(_cache_key, _payload, ttl=15)
+        except Exception:
+            pass  # Non-fatal — cache miss on next request is fine
+
+        # PHI must NEVER be stored in a client-visible cache.
+        response.headers["Cache-Control"] = "private, no-store"
+        return PaginatedResponse(**_payload)
+
     except Exception as e:
-        logger.error(f"Error in list_deleted_leads: {str(e)}", exc_info=True)
+        _logger.error(f"Error in list_deleted_leads: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while loading deleted leads.",
@@ -994,6 +1170,7 @@ async def get_lead(
         last_contact_attempt=lead.last_contact_attempt,
         contact_attempts=lead.contact_attempts,
         next_follow_up_at=lead.next_follow_up_at,
+        tms_therapy_interest=lead.tms_therapy_interest,
     )
 
 
@@ -2050,6 +2227,95 @@ async def update_lead(
             old_values["priority"] = lead.priority.value if lead.priority else None
             lead.priority = update_data.priority
             new_values["priority"] = update_data.priority.value
+
+        if update_data.tms_therapy_interest is not None:
+            old_values["tms_therapy_interest"] = lead.tms_therapy_interest
+            lead.tms_therapy_interest = update_data.tms_therapy_interest if update_data.tms_therapy_interest != '' else None
+            new_values["tms_therapy_interest"] = lead.tms_therapy_interest
+
+        # =====================================================================
+        # SCORE RECALCULATION: Re-score when any scoring-relevant field changes.
+        # Scoring fields: condition, has_insurance, insurance_provider, zip_code,
+        #                 urgency, symptom_duration, prior_treatments, tms_therapy_interest
+        #
+        # Without this, a lead that changes insurance from "none" (−20) to BlueCross
+        # in-network (+30) would still show the old stale priority and score.
+        # =====================================================================
+        _SCORING_FIELDS = {
+            'condition', 'has_insurance', 'insurance_provider', 'zip_code',
+            'urgency', 'symptom_duration', 'prior_treatments', 'tms_therapy_interest',
+        }
+        if set(new_values.keys()) & _SCORING_FIELDS:
+            try:
+                # Build current lead state from post-update field values
+                _conditions = lead.conditions if lead.conditions else (
+                    [lead.condition.value] if lead.condition else []
+                )
+                _treatments = (
+                    [t.value for t in lead.prior_treatments]
+                    if lead.prior_treatments else []
+                )
+                # insurance_provider may be an enum or a plain string
+                _ins_provider = (
+                    lead.insurance_provider.value
+                    if hasattr(lead.insurance_provider, 'value')
+                    else (lead.insurance_provider or "")
+                )
+                _new_breakdown = calculate_score_from_lead_data(
+                    conditions=_conditions,
+                    tms_therapy_interest=lead.tms_therapy_interest or "",
+                    phq2_interest=lead.phq2_interest,
+                    phq2_mood=lead.phq2_mood,
+                    gad2_nervous=lead.gad2_nervous,
+                    gad2_worry=lead.gad2_worry,
+                    ocd_time_occupied=lead.ocd_time_occupied,
+                    ptsd_intrusion=lead.ptsd_intrusion,
+                    has_insurance=bool(lead.has_insurance),
+                    insurance_provider=_ins_provider,
+                    other_insurance_provider=lead.other_insurance_provider or "",
+                    symptom_duration=(
+                        lead.symptom_duration.value
+                        if lead.symptom_duration else ""
+                    ),
+                    prior_treatments=_treatments,
+                    zip_code=lead.zip_code or "",
+                    urgency=lead.urgency.value if lead.urgency else "",
+                    date_of_birth=lead.date_of_birth,
+                    referred_by_provider=bool(lead.is_referral),
+                )
+                _priority_map = {
+                    "hot": PriorityType.HOT,
+                    "medium": PriorityType.MEDIUM,
+                    "low": PriorityType.LOW,
+                    "disqualified": PriorityType.DISQUALIFIED,
+                }
+                lead.score = _new_breakdown.lead_score
+                lead.lead_score = _new_breakdown.lead_score
+                lead.priority = _priority_map.get(
+                    _new_breakdown.priority.lower(), PriorityType.LOW
+                )
+                lead.in_service_area = _new_breakdown.in_service_area
+                # Persist score breakdown columns
+                lead.condition_score = _new_breakdown.condition_score
+                lead.therapy_interest_score = _new_breakdown.therapy_interest_score
+                lead.severity_score = _new_breakdown.severity_score
+                lead.insurance_score = _new_breakdown.insurance_score
+                lead.duration_score = _new_breakdown.duration_score
+                lead.treatment_score = _new_breakdown.treatment_score
+                lead.location_score = _new_breakdown.location_score
+                lead.urgency_score = _new_breakdown.urgency_score
+                # Reflect updated score/priority in the audit trail
+                new_values["score"] = _new_breakdown.lead_score
+                new_values["priority"] = lead.priority.value
+                logger.info(
+                    f"Lead {lead_id} rescored after edit: "
+                    f"score={_new_breakdown.lead_score} priority={_new_breakdown.priority}"
+                )
+            except Exception as _score_err:
+                # Non-fatal: continue with the edit even if rescoring fails
+                logger.warning(
+                    f"Score recalculation failed for lead {lead_id}: {_score_err}"
+                )
 
         # Mark activity timestamp (any update to lead should mark activity)
         mark_lead_activity(lead)

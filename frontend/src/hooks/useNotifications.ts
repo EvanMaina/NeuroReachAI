@@ -5,8 +5,10 @@
  * Uses browser Notification API + audio alerts.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { LeadTableRow } from '../types/lead';
+import { playNotificationChime } from '../utils/notificationSound';
+import { showToast } from '../components/common/ToastContainer';
 
 interface NotificationState {
   permission: NotificationPermission;
@@ -34,23 +36,10 @@ export const useNotifications = () => {
   
   const [notifications, setNotifications] = useState<HotLeadNotification[]>([]);
   const previousLeadsRef = useRef<Set<string>>(new Set());
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Initialize audio element
-  useEffect(() => {
-    // Create notification sound (using a simple beep)
-    audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleRgAYJrl0I9cDACBnOPReXgAAIar5OiSdBQAgrHu9oRaAAB4jN/qql4AAHqX6/N+WgAAe5jn76BoJgB0luf0gGAEAHqT5fKGWxIAf5rn9IpeBgCFme/uhFkRAIia6PKNWQsAhJju8I5TBQCKmO3vkVcHAI2Z7PKPUQQAjJfs8pFUBgCOmOvykVACAJKZ6vKTUQIAkpjq8ZRQAQCUmOnxlE8AAJaY6fGWTwAAlpfp8ZZNAACYl+nxlkwAAJqX6PGXSwAAmZbo8ZhLAACbl+jxmEoAAJyW6PKZSgAAnJbm8ppJAACelubymiYRAJ6W5vKbJwkAoJbm8pwlCACglubyKw8AAJmV5fMsDwAAnJXl8y0NAACaleTzLg0AAJuV5fMvCgAAnJXk8zALAACcleT0MQgAAJ2V5PQyBwAAn5Xk9DQGAQD//w==');
-    audioRef.current.volume = 0.5;
-    
-    return () => {
-      audioRef.current = null;
-    };
-  }, []);
 
   // Request notification permission
   const requestPermission = useCallback(async () => {
     if (!('Notification' in window)) {
-      console.warn('This browser does not support notifications');
       return false;
     }
 
@@ -62,8 +51,7 @@ export const useNotifications = () => {
         enabled: permission === 'granted',
       }));
       return permission === 'granted';
-    } catch (error) {
-      console.error('Error requesting notification permission:', error);
+    } catch (_error) {
       return false;
     }
   }, []);
@@ -81,13 +69,10 @@ export const useNotifications = () => {
     setState(prev => ({ ...prev, soundEnabled: !prev.soundEnabled }));
   }, []);
 
-  // Play notification sound
+  // Play notification sound using Web Audio chime
   const playSound = useCallback(() => {
-    if (state.soundEnabled && audioRef.current) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {
-        // Ignore autoplay errors
-      });
+    if (state.soundEnabled) {
+      playNotificationChime(0.35);
     }
   }, [state.soundEnabled]);
 
@@ -144,6 +129,14 @@ export const useNotifications = () => {
 
       // Play sound once for all new leads
       playSound();
+
+      // Dispatch app-shell toast for visibility on ALL pages
+      if (newHotLeads.length === 1) {
+        const lead = newHotLeads[0];
+        showToast('new-lead', '🔥 New Hot Lead', `${lead.firstName} ${lead.lastName} — ${lead.condition}`);
+      } else {
+        showToast('new-lead', '🔥 New Hot Leads', `${newHotLeads.length} new hot leads just arrived`);
+      }
     }
 
     // Update previous leads reference

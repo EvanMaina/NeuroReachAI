@@ -48,6 +48,10 @@ export const LocationStep: React.FC<LocationStepProps> = ({
           maxLength={5}
           className="w-full px-4 py-2.5 text-base tracking-wider border border-gray-300
                      rounded-lg text-center font-mono"
+          autoComplete="new-password"
+          data-lpignore="true"
+          data-form-type="other"
+          name={`nr_zip_${Math.random().toString(36).substr(2, 9)}`}
         />
       </div>
 

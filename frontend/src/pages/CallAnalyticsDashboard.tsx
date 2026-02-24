@@ -4,7 +4,7 @@
  * Features:
  * - Header with date range selector and refresh button
  * - 5 metric cards with count-up animations
- * - 3 tabs: Activity, All Calls, Attribution Reports
+ * - 2 tabs: Activity, Attribution Reports
  * - Sidebar navigation integration
  * - HIPAA compliance badge
  * - Skeleton loading states throughout
@@ -14,12 +14,12 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { Phone, RefreshCw, Calendar, Shield, ChevronDown } from 'lucide-react';
+import { Phone, Calendar, Shield, ChevronDown } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '../components/dashboard/Sidebar';
+import { RefreshButton } from '../components/common/RefreshButton';
 import { CallMetricsCards } from '../components/call-analytics/CallMetricsCards';
 import { CallActivityTab } from '../components/call-analytics/CallActivityTab';
-import { CallsTableTab } from '../components/call-analytics/CallsTableTab';
 import { CallAttributionTab } from '../components/call-analytics/CallAttributionTab';
 import { useSummary, useCalls, useTimeseries, useAttribution } from '../hooks/useCallRailData';
 import type { DateRangeType } from '../services/callrail';
@@ -28,7 +28,7 @@ import type { DateRangeType } from '../services/callrail';
 // Types
 // =============================================================================
 
-type TabType = 'activity' | 'calls' | 'attribution';
+type TabType = 'activity' | 'attribution';
 
 const DATE_RANGE_OPTIONS: { value: DateRangeType; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -39,7 +39,6 @@ const DATE_RANGE_OPTIONS: { value: DateRangeType; label: string }[] = [
 
 const TAB_ITEMS: { key: TabType; label: string }[] = [
   { key: 'activity', label: 'Activity' },
-  { key: 'calls', label: 'All Calls' },
   { key: 'attribution', label: 'Attribution Reports' },
 ];
 
@@ -116,14 +115,11 @@ const CallAnalyticsDashboard: React.FC = () => {
             </div>
 
             {/* Refresh Button */}
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
-              Refresh
-            </button>
+            <RefreshButton
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              label="Refresh"
+            />
           </div>
         </div>
 
@@ -156,10 +152,6 @@ const CallAnalyticsDashboard: React.FC = () => {
               data={callsQuery.data}
               isLoading={callsQuery.isLoading}
             />
-          )}
-
-          {activeTab === 'calls' && (
-            <CallsTableTab dateRange={dateRange} />
           )}
 
           {activeTab === 'attribution' && (

@@ -670,3 +670,19 @@
 .nr-widget-root input[type="radio"] {
   accent-color: #7c3aed;
 }
+
+/* ============================================
+   ★ ANTI-AUTOFILL — HIPAA Compliance
+   Prevents Chrome/Safari autofill from exposing
+   previous user data on shared devices.
+   ============================================ */
+
+.nr-widget-root input:-webkit-autofill,
+.nr-widget-root input:-webkit-autofill:hover,
+.nr-widget-root input:-webkit-autofill:focus,
+.nr-widget-root input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px white inset !important;
+  -webkit-text-fill-color: inherit !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+  caret-color: inherit !important;
+}

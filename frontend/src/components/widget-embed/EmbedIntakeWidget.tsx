@@ -203,7 +203,6 @@ export const EmbedIntakeWidget: React.FC<EmbedIntakeWidgetProps> = ({
       case 4:
         return (
           <TMSInterestStep
-            conditions={form.formData.conditions}
             tmsInterest={form.formData.tmsTherapyInterest}
             onTmsInterestChange={(value) => form.updateFormData('tmsTherapyInterest', value)}
           />

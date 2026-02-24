@@ -33,5 +33,7 @@ if (rootEl) {
     </React.StrictMode>
   );
 } else {
-  console.error('[Assessment] #assessment-root element not found');
+  if (import.meta.env.DEV) {
+    console.error('[Assessment] #assessment-root element not found');
+  }
 }

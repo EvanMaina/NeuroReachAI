@@ -6,19 +6,25 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Phone, Mail, MapPin, Calendar, FileText, Send, Clock, User } from 'lucide-react';
+import { Phone, Mail, MapPin, Calendar, FileText, Send, Clock, User, Edit2, Trash2, X } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import type { Lead } from '../../types/lead';
 import { getLeadNotes, createLeadNote, type ILeadNote } from '../../services/leads';
-import { formatCondition, formatDuration, formatTreatments, formatUrgency, getScoreColor, getScoreTier } from '../../utils/enumFormatters';
+import { formatCondition, formatDuration, formatTreatments, formatUrgency, formatTMSInterest, getScoreColor, getScoreTier } from '../../utils/enumFormatters';
 
 interface LeadDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   lead: Lead | null;
   isLoading: boolean;
+  /** Called when the user clicks "Edit Lead" — parent should open LeadEditModal */
+  onEdit?: (leadId: string) => void;
+  /** Called when the user clicks "Delete Lead" — parent should open delete confirmation */
+  onDelete?: (leadId: string, leadName: string) => void;
+  /** Whether the current user has permission to delete leads (admin/primary_admin only) */
+  canDelete?: boolean;
 }
 
 export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
@@ -26,6 +32,9 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onClose,
   lead,
   isLoading,
+  onEdit,
+  onDelete,
+  canDelete = false,
 }) => {
   const [notes, setNotes] = useState<ILeadNote[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -43,10 +52,14 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     setNotesLoading(true);
     try {
       const data = await getLeadNotes(leadId);
-      // Fix 5: Only show manual notes in Lead Details — system/outcome notes are internal
-      setNotes(data.filter((n: ILeadNote) => n.note_type === 'manual'));
+      // Show ALL note types so coordinators see the full contact history.
+      // Manual notes → blue user avatar
+      // Outcome notes → indigo badge (e.g. "NO_ANSWER", "CALLBACK_REQUESTED")
+      // System notes  → gray "Auto" badge
+      // The UI already renders per-type badges below — no filtering needed.
+      setNotes(data);
     } catch (err) {
-      console.error('Failed to load notes:', err);
+      if (import.meta.env.DEV) console.error('Failed to load notes:', err);
       setNotes([]);
     } finally {
       setNotesLoading(false);
@@ -65,7 +78,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setNotes(prev => [created, ...prev]);
       setNewNoteText('');
     } catch (err) {
-      console.error('Failed to create note:', err);
+      if (import.meta.env.DEV) console.error('Failed to create note:', err);
     } finally {
       setIsSubmittingNote(false);
     }
@@ -197,6 +210,14 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               <div>
                 <span className="text-gray-500">Duration:</span>
                 <span className="ml-2 text-gray-900">{formatDuration(lead.symptomDuration)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">TMS Therapy Interest:</span>
+                {lead.tmsTherapyInterest ? (
+                  <span className="ml-2 text-gray-900">{formatTMSInterest(lead.tmsTherapyInterest)}</span>
+                ) : (
+                  <span className="ml-2 text-gray-400 italic">Not captured</span>
+                )}
               </div>
               {lead.urgency && (
                 <div>
@@ -335,6 +356,44 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       ) : (
         <div className="text-center py-8 text-gray-500">
           Lead not found
+        </div>
+      )}
+
+      {/* ─── Footer CTAs ────────────────────────────────────────────────── */}
+      {lead && !isLoading && (
+        <div className="flex items-center justify-between pt-4 mt-2 border-t border-gray-200">
+          {/* Left: Close */}
+          <button
+            onClick={onClose}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <X size={15} />
+            Close
+          </button>
+
+          {/* Right: Edit + Delete */}
+          <div className="flex items-center gap-2">
+            {onEdit && (
+              <button
+                onClick={() => onEdit(lead.id)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+              >
+                <Edit2 size={15} />
+                Edit Lead
+              </button>
+            )}
+
+            {onDelete && canDelete && (
+              <button
+                onClick={() => onDelete(lead.id, `${lead.firstName} ${lead.lastName || ''}`.trim())}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 transition-colors"
+                title="Admin only — soft-deletes this lead"
+              >
+                <Trash2 size={15} />
+                Delete Lead
+              </button>
+            )}
+          </div>
         </div>
       )}
     </Modal>

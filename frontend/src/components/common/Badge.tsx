@@ -14,20 +14,20 @@ interface BadgeProps {
 }
 
 const priorityStyles: Record<LeadPriority, string> = {
-  hot: 'bg-red-100 text-red-700 border-red-200',
-  medium: 'bg-amber-100 text-amber-700 border-amber-200',
-  low: 'bg-gray-100 text-gray-600 border-gray-200',
-  disqualified: 'bg-gray-200 text-gray-500 border-gray-300',
+  hot: 'bg-red-500 text-white',
+  medium: 'bg-amber-500 text-white',
+  low: 'bg-gray-400 text-white',
+  disqualified: 'bg-gray-300 text-gray-600',
 };
 
 const statusStyles: Record<LeadStatus, string> = {
-  new: 'bg-blue-100 text-blue-700 border-blue-200',
-  contacted: 'bg-purple-100 text-purple-700 border-purple-200',
-  scheduled: 'bg-green-100 text-green-700 border-green-200',
-  'consultation complete': 'bg-teal-100 text-teal-700 border-teal-200',
-  'treatment started': 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  lost: 'bg-orange-100 text-orange-700 border-orange-200',
-  disqualified: 'bg-gray-100 text-gray-600 border-gray-200',
+  new: 'bg-emerald-500 text-white',
+  contacted: 'bg-blue-500 text-white',
+  scheduled: 'bg-purple-500 text-white',
+  'consultation complete': 'bg-teal-500 text-white',
+  'treatment started': 'bg-indigo-500 text-white',
+  lost: 'bg-orange-500 text-white',
+  disqualified: 'bg-gray-400 text-white',
 };
 
 const formatLabel = (value: string): string => {
@@ -51,13 +51,13 @@ export const Badge: React.FC<BadgeProps> = ({ variant, value, size = 'sm' }) => 
     : (statusStyles[safeValue as LeadStatus] || fallbackStyle);
   
   const sizeStyles = size === 'sm' 
-    ? 'px-2 py-0.5 text-xs' 
+    ? 'px-2.5 py-0.5 text-xs' 
     : 'px-3 py-1 text-sm';
 
   return (
     <span
       className={`
-        inline-flex items-center font-medium rounded-full border
+        inline-flex items-center font-semibold rounded-md border-0
         ${styles} ${sizeStyles}
       `}
     >

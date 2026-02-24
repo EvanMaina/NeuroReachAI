@@ -110,6 +110,10 @@ export const ReferralStep: React.FC<ReferralStepProps> = ({
               className={`w-full px-3 py-2 text-sm border rounded-lg transition-colors
                 ${referringProviderName.trim() ? 'border-green-300' : 'border-gray-300'}
               `}
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              name={`nr_rpn_${Math.random().toString(36).substr(2, 9)}`}
             />
           </div>
 
@@ -127,6 +131,10 @@ export const ReferralStep: React.FC<ReferralStepProps> = ({
               className={`w-full px-3 py-2 text-sm border rounded-lg transition-colors
                 ${referringProviderSpecialty.trim() ? 'border-green-300' : 'border-gray-300'}
               `}
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              name={`nr_rps_${Math.random().toString(36).substr(2, 9)}`}
             />
           </div>
 
@@ -142,6 +150,10 @@ export const ReferralStep: React.FC<ReferralStepProps> = ({
               onChange={(e) => onClinicChange(e.target.value)}
               placeholder="Clinic name"
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg transition-colors"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              name={`nr_rcn_${Math.random().toString(36).substr(2, 9)}`}
             />
           </div>
 
@@ -163,6 +175,10 @@ export const ReferralStep: React.FC<ReferralStepProps> = ({
                   ? 'border-red-300'
                   : 'border-gray-300'}
               `}
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
+              name={`nr_rpe_${Math.random().toString(36).substr(2, 9)}`}
             />
             {referringProviderEmail.trim() && !isValidEmail(referringProviderEmail) && (
               <p className="text-xs text-red-500 mt-1">Please enter a valid email</p>

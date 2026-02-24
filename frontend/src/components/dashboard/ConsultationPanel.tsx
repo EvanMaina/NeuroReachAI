@@ -343,7 +343,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
             note_type: 'manual',
           });
         } catch (err) {
-          console.warn('Note save failed (non-blocking):', err);
+          if (import.meta.env.DEV) console.warn('Note save failed (non-blocking):', err);
         }
       }
 
@@ -390,7 +390,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
       // Close panel — onClose handler in CoordinatorDashboard refreshes leads
       onClose();
     } catch (error: any) {
-      console.error('Failed to update consultation outcome:', error);
+      if (import.meta.env.DEV) console.error('Failed to update consultation outcome:', error);
       // Show error toast
       const errorMsg = error?.response?.data?.detail || error?.message || 'Failed to update outcome. Please try again.';
       window.dispatchEvent(new CustomEvent('neuroreach:toast', {

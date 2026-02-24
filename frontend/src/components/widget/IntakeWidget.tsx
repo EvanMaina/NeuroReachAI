@@ -14,8 +14,8 @@
  * 
  * UPDATED v3.0: Now includes TMS Therapy Interest step (matches Jotform)
  * - 11 total steps (10 input + 1 confirmation)
- * - SAINT Protocol only shows for Depression
- * 
+ * - TMS Options: Daily TMS, Accelerated TMS, Not Sure
+ *
  * @module components/widget/IntakeWidget
  * @version 3.0.0
  */
@@ -159,7 +159,6 @@ export const IntakeWidget: React.FC<IntakeWidgetProps> = ({ onClose }) => {
         // TMS Therapy Interest Step (NEW - matches Jotform)
         return (
           <TMSInterestStep
-            conditions={form.formData.conditions}
             tmsInterest={form.formData.tmsTherapyInterest}
             onTmsInterestChange={(value) => form.updateFormData('tmsTherapyInterest', value)}
           />

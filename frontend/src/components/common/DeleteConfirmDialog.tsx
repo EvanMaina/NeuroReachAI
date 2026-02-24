@@ -41,7 +41,7 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
       await onConfirm();
       onClose();
     } catch (err) {
-      console.error('Delete failed:', err);
+      if (import.meta.env.DEV) console.error('Delete failed:', err);
       setError('Failed to delete. Please try again.');
     } finally {
       setIsDeleting(false);

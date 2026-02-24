@@ -199,7 +199,7 @@ apiClient.interceptors.response.use(
           
           isRefreshing = false;
           
-          console.log('✅ Token refreshed successfully');
+          if (import.meta.env.DEV) console.log('✅ Token refreshed successfully');
           
           // Retry the original request
           return apiClient(originalRequest);
@@ -209,7 +209,7 @@ apiClient.interceptors.response.use(
         }
       } catch (refreshError) {
         // Token refresh failed - clear auth state
-        console.error('❌ Token refresh failed - session expired');
+        if (import.meta.env.DEV) console.error('❌ Token refresh failed - session expired');
         processQueue(refreshError as Error, null);
         isRefreshing = false;
         clearStoredTokens();
@@ -225,7 +225,7 @@ apiClient.interceptors.response.use(
     
     // Handle 403 Forbidden - Insufficient permissions or session expired
     if (error.response?.status === 403) {
-      console.warn('⛔ Access forbidden - may indicate session expiry or insufficient permissions');
+      if (import.meta.env.DEV) console.warn('⛔ Access forbidden - may indicate session expiry or insufficient permissions');
       // Check if it's a session-related 403
       const responseData = error.response.data as any;
       if (responseData?.detail?.toLowerCase().includes('deactivated') || 
@@ -243,7 +243,7 @@ apiClient.interceptors.response.use(
       originalRequest._retry++;
       
       const delay = getRetryDelay(originalRequest._retry);
-      console.log(`Retrying request (attempt ${originalRequest._retry}/${MAX_RETRIES}) after ${delay}ms`);
+      if (import.meta.env.DEV) console.log(`Retrying request (attempt ${originalRequest._retry}/${MAX_RETRIES}) after ${delay}ms`);
       
       await sleep(delay);
       
@@ -255,14 +255,13 @@ apiClient.interceptors.response.use(
       const status = error.response.status;
       
       if (status === 401) {
-        console.error('❌ Unauthorized access - session expired');
+        if (import.meta.env.DEV) console.error('❌ Unauthorized access - session expired');
       } else if (status === 403) {
-        console.error('⛔ Access forbidden - insufficient permissions');
+        if (import.meta.env.DEV) console.error('⛔ Access forbidden - insufficient permissions');
       } else if (status === 422) {
-        // Validation error - log details for debugging
-        console.error('⚠️ Validation error:', error.response.data);
+        if (import.meta.env.DEV) console.error('⚠️ Validation error:', error.response.data);
       } else if (status >= 500) {
-        console.error('🔥 Server error occurred');
+        if (import.meta.env.DEV) console.error('🔥 Server error occurred');
         // Dispatch server error event
         window.dispatchEvent(new CustomEvent('api:server-error', {
           detail: { status, url: originalRequest.url }
@@ -270,12 +269,12 @@ apiClient.interceptors.response.use(
       }
     } else if (error.request) {
       // Request made but no response received - network error
-      console.error('📡 Network error - no response received');
+      if (import.meta.env.DEV) console.error('📡 Network error - no response received');
       // Dispatch network error event
       window.dispatchEvent(new CustomEvent('api:network-error'));
     } else {
       // Error setting up request
-      console.error('⚙️ Request configuration error');
+      if (import.meta.env.DEV) console.error('⚙️ Request configuration error');
     }
     
     return Promise.reject(error);
@@ -300,7 +299,7 @@ export function checkTokenValidity(): boolean {
     const buffer = 5 * 60 * 1000;
     return exp > (now + buffer);
   } catch (error) {
-    console.error('Failed to validate token:', error);
+    if (import.meta.env.DEV) console.error('Failed to validate token:', error);
     return false;
   }
 }
@@ -397,7 +396,7 @@ export async function requestWithRetry<T>(
       
       if (axios.isAxiosError(error) && isRetryableError(error) && attempt < maxRetries) {
         const delay = getRetryDelay(attempt);
-        console.log(`Request failed, retrying (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms`);
+        if (import.meta.env.DEV) console.log(`Request failed, retrying (attempt ${attempt + 1}/${maxRetries}) after ${delay}ms`);
         await sleep(delay);
         continue;
       }

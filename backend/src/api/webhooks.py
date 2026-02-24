@@ -66,6 +66,10 @@ router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
 
 JOTFORM_FORM_ID = "260267308720050"
 
+# Idempotency window: reject duplicate submissions within this many seconds.
+# Jotform / Google Ads may retry on timeout — this prevents duplicate leads.
+IDEMPOTENCY_WINDOW_SECONDS = 300  # 5 minutes
+
 
 # =============================================================================
 # Field Mapping Configuration
@@ -574,7 +578,7 @@ def extract_provider_email(data: Dict[str, Any]) -> str:
     if email_fields_found:
         logger.warning(f"Fields containing 'email': {email_fields_found}")
         for f in email_fields_found:
-            logger.warning(f"  {f} = {data.get(f)}")
+            logger.warning(f"  Field: {f} (has_value={'yes' if data.get(f) else 'no'})")
     
     return ""
 
@@ -760,17 +764,19 @@ async def jotform_webhook(
         logger.info("=" * 60)
         logger.info(f"Total fields received: {len(data)}")
         
-        # Log all fields, especially those related to provider/referral
+        # Log field names (NOT values) for debugging — values may contain PHI
+        # Only log provider-related field VALUES (provider info is not patient PHI)
+        PATIENT_PHI_FIELDS = {'q38', 'q39', 'q40', 'name', 'email', 'phone', 'contact'}
         provider_related_fields = []
         for key, value in sorted(data.items()):
             key_lower = key.lower()
-            # Log provider-related fields in detail
-            if any(term in key_lower for term in ['provider', 'referr', 'email', 'specialty', 'clinic', 'practice']):
+            # Log provider-related fields in detail (provider info is NOT patient PHI)
+            if any(term in key_lower for term in ['provider', 'referr', 'specialty', 'clinic', 'practice']):
                 provider_related_fields.append((key, value))
                 logger.info(f"[PROVIDER FIELD] {key} = {repr(value)}")
             else:
-                # Log other fields at debug level
-                logger.debug(f"[FIELD] {key} = {repr(value)[:100]}...")  # Truncate long values
+                # Log field NAMES only (not values) to avoid PHI in logs
+                logger.debug(f"[FIELD] {key} (value_present={'yes' if value else 'no'})")
         
         if provider_related_fields:
             logger.info(f"Found {len(provider_related_fields)} provider-related fields")
@@ -779,6 +785,74 @@ async def jotform_webhook(
             logger.info(f"All available field names: {sorted(data.keys())}")
         logger.info("=" * 60)
         
+        # =====================================================================
+        # IDEMPOTENCY CHECK: Detect duplicate Jotform retries.
+        # Jotform retries the webhook with exponential back-off if the first
+        # request times out or returns non-2xx.
+        #
+        # Two-layer defence:
+        #   1. submissionID check (PRIMARY) — Jotform posts a globally-unique
+        #      submissionID per submission as a top-level form field (separate
+        #      from rawRequest JSON).  Matching on this is exact and handles
+        #      retries regardless of IP (NAT rotation, proxy changes, etc.).
+        #   2. IP-hash fallback — for edge-cases where submissionID is absent,
+        #      keep the original IP-based window check.
+        # =====================================================================
+        from datetime import timedelta
+
+        # Extract Jotform's own unique submission identifier.
+        submission_id: str = (
+            str(form_data.get("submissionID", "") or form_data.get("submissionId", "")).strip()
+        )
+
+        if submission_id:
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=IDEMPOTENCY_WINDOW_SECONDS)
+            dup = db.query(Lead.id, Lead.lead_number).filter(
+                Lead.source.in_([LeadSource.jotform, LeadSource.referral]),
+                Lead.notes.contains(f"[submissionID:{submission_id}]"),
+                Lead.created_at >= cutoff,
+            ).first()
+            if dup:
+                logger.warning(
+                    f"Jotform duplicate detected via submissionID={submission_id} — "
+                    f"lead {dup.lead_number} already created. Skipping."
+                )
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "message": "Duplicate submission detected, original lead preserved",
+                        "lead_number": dup.lead_number,
+                        "duplicate": True,
+                    },
+                )
+        else:
+            # Fallback: IP-based check (less reliable — multiple patients can share
+            # a clinic Wi-Fi IP — but retained for payloads missing submissionID).
+            client_ip_early = get_client_ip(request)
+            ip_hash_early = EncryptionService.hash_ip(client_ip_early) if client_ip_early else None
+            if ip_hash_early:
+                cutoff = datetime.now(timezone.utc) - timedelta(seconds=IDEMPOTENCY_WINDOW_SECONDS)
+                duplicate = db.query(Lead.id, Lead.lead_number).filter(
+                    Lead.ip_address_hash == ip_hash_early,
+                    Lead.source.in_([LeadSource.jotform, LeadSource.referral]),
+                    Lead.created_at >= cutoff,
+                ).first()
+                if duplicate:
+                    logger.warning(
+                        f"Jotform duplicate detected via IP hash — lead {duplicate.lead_number} "
+                        f"was created within {IDEMPOTENCY_WINDOW_SECONDS}s from the same IP. Skipping."
+                    )
+                    return JSONResponse(
+                        status_code=200,
+                        content={
+                            "success": True,
+                            "message": "Duplicate submission detected, original lead preserved",
+                            "lead_number": duplicate.lead_number,
+                            "duplicate": True,
+                        },
+                    )
+
         # =====================================================================
         # V2: Use canonical mapping layer for consistent field handling
         # =====================================================================
@@ -996,7 +1070,12 @@ async def jotform_webhook(
             status=LeadStatus.NEW,
             contact_outcome=ContactOutcome.NEW,
             source=lead_source,
-            notes=referral_notes,
+            # Combine referral notes with Jotform submissionID tag so the
+            # idempotency check above can find this lead on webhook retries.
+            notes="\n".join(filter(None, [
+                referral_notes,
+                f"[submissionID:{submission_id}]" if submission_id else None,
+            ])) or None,
             
             # Referral tracking
             is_referral=is_referral,
@@ -1015,12 +1094,18 @@ async def jotform_webhook(
         db.commit()
         db.refresh(lead)
         
-        # Update provider referral counters
+        # IDEMPOTENT FIX: Recalculate provider total_referrals from actual lead COUNT.
+        # This prevents double-counting from Jotform webhook retries.
+        # COUNT is always accurate regardless of how many times this code runs.
         if referring_provider:
-            referring_provider.total_referrals = (referring_provider.total_referrals or 0) + 1
+            actual_count = db.query(func.count(Lead.id)).filter(
+                Lead.referring_provider_id == referring_provider.id,
+                Lead.deleted_at.is_(None),
+            ).scalar() or 0
+            referring_provider.total_referrals = actual_count
             referring_provider.last_referral_at = now
             db.commit()
-            logger.info(f"Updated provider stats: {referring_provider.name} total_referrals={referring_provider.total_referrals}")
+            logger.info(f"Provider {referring_provider.name} total_referrals set to {actual_count} (COUNT-based)")
         
         logger.info(
             f"Jotform lead created: {lead.lead_number}, "
@@ -1089,7 +1174,7 @@ async def jotform_webhook(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Jotform webhook error: {e}", exc_info=True)
+        logger.error(f"Jotform webhook error: {type(e).__name__}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Error processing lead")
 
@@ -1251,6 +1336,36 @@ async def google_ads_webhook(
             raise HTTPException(status_code=403, detail="Invalid webhook key")
 
         # =====================================================================
+        # 2b. IDEMPOTENCY CHECK: Google Ads may retry if response is slow.
+        #     Use the Google-provided lead_id (stored in notes) to deduplicate.
+        # =====================================================================
+        google_lead_id = body.get("lead_id", "")
+        if google_lead_id:
+            from datetime import timedelta
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=IDEMPOTENCY_WINDOW_SECONDS)
+            dup = db.query(Lead.id, Lead.lead_number).filter(
+                Lead.source == LeadSource.google_ads,
+                Lead.notes.contains(f"Lead ID: {google_lead_id}"),
+                Lead.created_at >= cutoff,
+            ).first()
+            if dup:
+                logger.info(
+                    f"[Google Ads] Duplicate submission detected (lead_id={google_lead_id}), "
+                    f"skipping. Original lead: {dup.lead_number}. "
+                    f"This is expected for test data (same lead_id) or webhook retries. "
+                    f"Real production leads have unique lead_ids and will each create a new lead."
+                )
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "success": True,
+                        "message": "Duplicate submission detected, original lead preserved",
+                        "lead_number": dup.lead_number,
+                        "duplicate": True,
+                    },
+                )
+
+        # =====================================================================
         # 3. Extract fields from user_column_data
         # =====================================================================
         lead_id = body.get("lead_id", "")
@@ -1278,11 +1393,20 @@ async def google_ads_webhook(
             last_name = columns.get("LAST_NAME", "")
 
         logger.info(
-            f"Google Ads lead parsed: name='{first_name} {last_name}', "
+            f"Google Ads lead parsed: name_present={'yes' if first_name else 'no'}, "
             f"email_present={'yes' if email else 'no'}, "
             f"phone_present={'yes' if phone else 'no'}, "
             f"custom_answer='{custom_answer}'"
         )
+
+        # GAP 7 FIX: Warn when ALL PHI fields are empty — typical of "Send test data"
+        # from the Google Ads console, which fires with no real lead information.
+        if not first_name and not last_name and not email and not phone:
+            logger.warning(
+                f"[Google Ads] Lead {lead_id} has NO PHI (empty name, email, phone). "
+                f"This is typical of 'Send test data' from the Google Ads console. "
+                f"Lead will be created with empty fields — review in dashboard and delete if test data."
+            )
 
         # =====================================================================
         # 4. Determine priority, urgency, score
@@ -1424,7 +1548,7 @@ async def google_ads_webhook(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Google Ads webhook error: {e}", exc_info=True)
+        logger.error(f"Google Ads webhook error: {type(e).__name__}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Error processing Google Ads lead")
 

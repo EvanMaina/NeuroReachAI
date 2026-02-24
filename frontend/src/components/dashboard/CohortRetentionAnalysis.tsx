@@ -11,7 +11,7 @@
  * @module components/dashboard/CohortRetentionAnalysis
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   Users,
   Percent,
@@ -40,6 +40,19 @@ interface CohortRetentionAnalysisProps {
 }
 
 type DisplayMode = 'percentage' | 'absolute';
+
+interface TooltipData {
+  cohortName: string;
+  periodLabel: string;
+  count: number;
+  percentage: number;
+}
+
+interface TooltipState {
+  data: TooltipData;
+  x: number;
+  y: number;
+}
 
 /**
  * Get color intensity based on retention percentage
@@ -74,6 +87,8 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
   const [displayMode, setDisplayMode] = useState<DisplayMode>('percentage');
   const [hoveredCell, setHoveredCell] = useState<{ row: number; col: number } | null>(null);
   const [showLostColumn, setShowLostColumn] = useState(true);
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
 
   // Calculate percentages and lost metrics from absolute values
   const processedData = useMemo(() => {
@@ -344,11 +359,26 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                           onMouseEnter={() =>
                             setHoveredCell({ row: rowIndex, col: colIndex })
                           }
-                          onMouseLeave={() => setHoveredCell(null)}
+                          onMouseLeave={() => {
+                            setHoveredCell(null);
+                            setTooltip(null);
+                          }}
+                          onMouseMove={(e) => {
+                            setTooltip({
+                              data: {
+                                cohortName: cohort.cohort,
+                                periodLabel: periodLabels[colIndex],
+                                count: value,
+                                percentage,
+                              },
+                              x: e.clientX,
+                              y: e.clientY,
+                            });
+                          }}
                         >
                           <div
                             className={`
-                              relative px-2 py-1.5 rounded text-center text-sm font-medium
+                              px-2 py-1.5 rounded text-center text-sm font-medium
                               transition-all duration-200 cursor-default
                               ${getRetentionColor(percentage)}
                               ${isHovered ? 'ring-2 ring-offset-1 ring-gray-400 scale-105' : ''}
@@ -357,22 +387,6 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                             {displayMode === 'percentage'
                               ? `${percentage.toFixed(0)}%`
                               : value.toLocaleString()}
-                            
-                            {/* Tooltip on hover */}
-                            {isHovered && (
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap z-20 shadow-lg">
-                                <div className="font-semibold">{cohort.cohort}</div>
-                                <div>{periodLabels[colIndex]}</div>
-                                <div className="mt-1 pt-1 border-t border-gray-700">
-                                  <span className="text-gray-400">Count:</span> {value.toLocaleString()}
-                                  <br />
-                                  <span className="text-gray-400">Rate:</span> {percentage.toFixed(1)}%
-                                </div>
-                                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
-                                  <div className="border-4 border-transparent border-t-gray-900" />
-                                </div>
-                              </div>
-                            )}
                           </div>
                         </td>
                       );
@@ -463,6 +477,35 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
           </tbody>
         </table>
       </div>
+
+      {/* Fixed-position tooltip — renders outside overflow container to avoid clipping */}
+      {tooltip && (
+        <div
+          ref={tooltipRef}
+          className="fixed z-50 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap shadow-xl pointer-events-none"
+          style={{
+            left: tooltip.x + 12,
+            top: tooltip.y - 70,
+            // Prevent tooltip from going off-screen right edge
+            transform: tooltip.x > window.innerWidth - 180 ? 'translateX(-100%)' : 'none',
+          }}
+        >
+          <div className="font-semibold">{tooltip.data.cohortName}</div>
+          <div className="text-gray-300">{tooltip.data.periodLabel}</div>
+          <div className="mt-1 pt-1 border-t border-gray-700">
+            <span className="text-gray-400">Count:</span>{' '}
+            <span className="font-medium">{tooltip.data.count.toLocaleString()}</span>
+            <br />
+            <span className="text-gray-400">Rate:</span>{' '}
+            <span className="font-medium">{tooltip.data.percentage.toFixed(1)}%</span>
+          </div>
+          {/* Arrow */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 top-full -mt-px"
+            style={{ width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid #111827' }}
+          />
+        </div>
+      )}
 
       {/* Legend */}
       <div className="mt-6 pt-4 border-t border-gray-100">

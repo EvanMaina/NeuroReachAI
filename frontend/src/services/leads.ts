@@ -526,6 +526,7 @@ export interface ILeadUpdateRequest {
   insurance_provider?: string;
   zip_code?: string;
   urgency?: string;
+  tms_therapy_interest?: string;
   notes?: string;
   status?: string;
   priority?: string;

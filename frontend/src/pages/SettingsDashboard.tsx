@@ -109,10 +109,10 @@ const PERMISSION_LABELS: Record<string, string> = {
 // =============================================================================
 
 const ROLE_STYLES: Record<string, string> = {
-  primary_admin: 'bg-red-100 text-red-700 border-red-200',
-  administrator: 'bg-purple-100 text-purple-700 border-purple-200',
-  coordinator:   'bg-blue-100 text-blue-700 border-blue-200',
-  specialist:    'bg-emerald-100 text-emerald-700 border-emerald-200',
+  primary_admin: 'bg-indigo-600 text-white',
+  administrator: 'bg-purple-500 text-white',
+  coordinator:   'bg-blue-500 text-white',
+  specialist:    'bg-emerald-500 text-white',
 };
 
 const STATUS_STYLES: Record<string, { bg: string; dot: string }> = {
@@ -131,7 +131,7 @@ const ROLE_DISPLAY_LABELS: Record<string, string> = {
 function RoleBadge({ role }: { role: string }) {
   const label = ROLE_DISPLAY_LABELS[role] || role.charAt(0).toUpperCase() + role.slice(1);
   return (
-    <span className={`px-2.5 py-1 text-xs font-medium rounded-full border ${ROLE_STYLES[role] || ROLE_STYLES.specialist}`}>
+    <span className={`px-2.5 py-1 text-xs font-semibold rounded-md border-0 ${ROLE_STYLES[role] || ROLE_STYLES.specialist}`}>
       {label}
     </span>
   );

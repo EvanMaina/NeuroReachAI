@@ -44,7 +44,7 @@ class LeadInput:
     other_condition_text: str = ""  # Free text when 'other' is selected
     
     # TMS Therapy Interest
-    tms_therapy_interest: str = ""  # daily_tms, accelerated_tms, saint_protocol, not_sure
+    tms_therapy_interest: str = ""  # daily_tms, accelerated_tms, not_sure
     
     # Preferred Contact Method
     preferred_contact_method: str = ""  # phone_call, text, email, any
@@ -361,10 +361,6 @@ TMS_INTEREST_MAP = {
     "traditional tms": "daily_tms",
     "accelerated tms": "accelerated_tms",
     "accelerated_tms": "accelerated_tms",
-    "saint protocol": "saint_protocol",
-    "saint_protocol": "saint_protocol",
-    "saint": "saint_protocol",
-    "stanford": "saint_protocol",
     "not sure": "not_sure",
     "not_sure": "not_sure",
     "unsure": "not_sure",

@@ -186,8 +186,49 @@ export async function updateProvider(
   }
   // Specialty is free text - no conversion needed, send as-is
   // (already in backendData from spread)
-  const response = await apiClient.patch<Record<string, unknown>>(`/api/providers/${providerId}`, backendData);
-  return providerFromBackend(response.data);
+  try {
+    const response = await apiClient.patch<Record<string, unknown>>(`/api/providers/${providerId}`, backendData);
+    return providerFromBackend(response.data);
+  } catch (error: unknown) {
+    // Handle specific error codes with user-friendly messages
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { 
+        response?: { 
+          status: number; 
+          data?: { 
+            detail?: string | Array<{ loc?: string[]; msg?: string; type?: string }> 
+          } 
+        } 
+      };
+      const status = axiosError.response?.status;
+      const detail = axiosError.response?.data?.detail;
+      
+      if (status === 409) {
+        // Duplicate email or NPI conflict
+        const errorMsg = typeof detail === 'string' ? detail : 'A provider with this email or NPI already exists.';
+        throw new Error(errorMsg);
+      }
+      if (status === 422) {
+        // Validation error
+        if (detail) {
+          if (Array.isArray(detail)) {
+            const messages = detail.map((err) => {
+              const field = err.loc && err.loc.length > 1 ? err.loc[err.loc.length - 1] : 'field';
+              const msg = err.msg || 'Invalid value';
+              const fieldLabel = field.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+              return `${fieldLabel}: ${msg}`;
+            });
+            throw new Error(messages.join('. '));
+          }
+          if (typeof detail === 'string') {
+            throw new Error(detail);
+          }
+        }
+        throw new Error('Please check all fields are filled correctly.');
+      }
+    }
+    throw error;
+  }
 }
 
 /**

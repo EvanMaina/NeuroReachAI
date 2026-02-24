@@ -10,6 +10,7 @@ import {
   User, Phone, Mail, MapPin, Stethoscope, Clock, Shield,
   Save, Loader2, AlertCircle, FileText, DollarSign, CheckCircle
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../common/Modal';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -41,6 +42,14 @@ const URGENCY_OPTIONS = [
   { value: 'ASAP', label: 'ASAP - Very Urgent' },
   { value: 'WITHIN_30_DAYS', label: 'Within 30 Days' },
   { value: 'EXPLORING', label: 'Just Exploring' },
+];
+
+// TMS Therapy Interest options — must match backend values
+const TMS_THERAPY_OPTIONS = [
+  { value: '', label: '— Select TMS Interest —' },
+  { value: 'daily_tms', label: 'Daily TMS' },
+  { value: 'accelerated_tms', label: 'Accelerated TMS' },
+  { value: 'not_sure', label: 'Not Sure' },
 ];
 
 // Priority options
@@ -88,6 +97,8 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
   isLoading,
   onSaveSuccess,
 }) => {
+  const queryClient = useQueryClient();
+
   // Form state
   const [formData, setFormData] = useState<ILeadUpdateRequest>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -119,6 +130,7 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
         insurance_provider: safeStr(lead.insuranceProvider),
         zip_code: safeStr(lead.zipCode),
         urgency: URGENCY_OPTIONS.some(o => o.value === urgencyVal) ? urgencyVal : '',
+        tms_therapy_interest: safeStr(lead.tmsTherapyInterest),
         notes: safeStr(lead.notes),
         status: statusToBackend(lead.status || 'new'),
         priority: safeStr(lead.priority).toUpperCase() || 'LOW',
@@ -181,6 +193,7 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
       if (safeStr(formData.notes) !== safeStr(lead.notes)) changes.notes = formData.notes;
       if (safeStr(formData.status) !== statusToBackend(lead.status)) changes.status = formData.status;
       if (safeStr(formData.priority) !== safeStr(lead.priority).toUpperCase()) changes.priority = formData.priority;
+      if (safeStr(formData.tms_therapy_interest) !== safeStr(lead.tmsTherapyInterest)) changes.tms_therapy_interest = formData.tms_therapy_interest;
 
       if (Object.keys(changes).length === 0) {
         onClose();
@@ -188,6 +201,9 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
       }
 
       await updateLead(lead.id, changes);
+      
+      // Invalidate analytics cache so TMS distribution & conditions update immediately
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
       
       // Show success feedback briefly before closing
       setIsSaving(false);
@@ -201,7 +217,7 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
       }, 1200);
       return; // skip finally block's setIsSaving
     } catch (err: any) {
-      console.error('Failed to update lead:', err);
+      if (import.meta.env.DEV) console.error('Failed to update lead:', err);
       // Extract specific error message from API response if available
       const apiMessage = err?.response?.data?.detail || err?.message;
       setError(apiMessage || 'Failed to save changes. Please try again.');
@@ -409,6 +425,22 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                TMS Therapy Interest
+              </label>
+              <select
+                name="tms_therapy_interest"
+                value={formData.tms_therapy_interest || ''}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {TMS_THERAPY_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 

@@ -12,20 +12,22 @@
  */
 
 import React, { useState, useCallback, memo, useMemo } from 'react';
-import { Activity, RefreshCw, Zap, Clock, TrendingUp } from 'lucide-react';
+import { Activity, Zap, Clock, TrendingUp } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '../components/dashboard/Sidebar';
 import { MainKPICards } from '../components/dashboard/MainKPICards';
 import { LeadingConditionsCard } from '../components/dashboard/LeadingConditionsCard';
+import { TMSTherapyInterestCard } from '../components/dashboard/TMSTherapyInterestCard';
 import { LeadsTrendChart } from '../components/dashboard/LeadsTrendChart';
 import { CohortRetentionAnalysis } from '../components/dashboard/CohortRetentionAnalysis';
 import { LeadsFilterModal } from '../components/dashboard/LeadsFilterModal';
-import { WidgetTester } from '../components/dashboard/WidgetTester';
 import { KPICardSkeleton } from '../components/common/SkeletonLoader';
+import { RefreshButton } from '../components/common/RefreshButton';
 import {
   getDashboardSummary,
   getConditionsDistribution,
   getCohortRetention,
+  getTMSInterestDistribution,
 } from '../services/analytics';
 import type { LeadTableRow, ConditionType } from '../types/lead';
 import type { StatsFilterType } from '../types/analytics';
@@ -54,6 +56,7 @@ interface CohortData {
 const QUERY_KEYS = {
   dashboardSummary: ['analytics', 'dashboard-summary'] as const,
   conditionsDistribution: ['analytics', 'conditions-distribution'] as const,
+  tmsDistribution: ['analytics', 'tms-distribution'] as const,
   cohortRetention: (months: number) => ['analytics', 'cohort-retention', months] as const,
 };
 
@@ -148,6 +151,20 @@ export const Dashboard: React.FC = () => {
     placeholderData: (previousData) => previousData,
   });
 
+  // TMS therapy interest distribution - CRITICAL: placeholderData prevents data disappearing
+  const {
+    data: tmsData,
+    isLoading: isLoadingTMS,
+  } = useQuery({
+    queryKey: QUERY_KEYS.tmsDistribution,
+    queryFn: () => getTMSInterestDistribution(),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
+    placeholderData: (previousData) => previousData,
+  });
+
   // ---------------------------------------------------------------------------
   // Memoized Transformed Data
   // ---------------------------------------------------------------------------
@@ -195,17 +212,61 @@ export const Dashboard: React.FC = () => {
 
   const transformedCohortData = useMemo((): CohortData[] => {
     if (!cohortData?.cohorts) return [];
-    
-    return cohortData.cohorts.map(c => ({
-      cohort: c.cohort,
-      cohortSize: c.cohort_size,
-      periods: c.periods,
-    }));
+
+    // PHASE 5B FIX: Filter out zero-size cohorts (empty ghost months Sep–Jan).
+    // Backend returns 6 months of buckets even when only 1 has data.
+    // Averaging 180 leads across 6 buckets shows "Avg Size: 30" — wrong.
+    // Filtering to only months with actual leads shows "Avg Size: 180" — correct.
+    return cohortData.cohorts
+      .filter(c => c.cohort_size > 0)
+      .map(c => ({
+        cohort: c.cohort,
+        cohortSize: c.cohort_size,
+        periods: c.periods,
+      }));
   }, [cohortData]);
 
   const cohortPeriodLabels = useMemo(() => {
     return cohortData?.period_labels || ['Initial', 'Contacted', 'Scheduled', 'Completed', 'Active', 'Retained'];
   }, [cohortData]);
+
+  const transformedTMSData = useMemo(() => {
+    if (!tmsData?.interests) return [];
+
+    // -------------------------------------------------------------------------
+    // Display-only mapping: merge any legacy/deprecated DB interest types into
+    // `accelerated_tms` so they render correctly instead of showing "Unknown".
+    // No database changes, no scoring changes — purely a label normalisation.
+    // -------------------------------------------------------------------------
+    // Valid current interest types — anything not in this set is legacy and
+    // gets merged into accelerated_tms for display purposes only.
+    const VALID_INTEREST_TYPES = new Set(['daily_tms', 'accelerated_tms', 'not_sure']);
+    const totalWithInterest = tmsData.total_with_interest || 1;
+    const mergedMap = new Map<string, { count: number; trend?: number }>();
+
+    for (const i of tmsData.interests) {
+      // Any type not in the current valid set is a legacy/deprecated DB value
+      const isLegacy = !VALID_INTEREST_TYPES.has(i.interest_type);
+      const displayType = isLegacy ? 'accelerated_tms' : i.interest_type;
+      const existing = mergedMap.get(displayType);
+      if (existing) {
+        existing.count += i.count;
+        // Keep the trend from the primary (non-legacy) entry if both exist
+        if (!isLegacy) {
+          existing.trend = i.trend;
+        }
+      } else {
+        mergedMap.set(displayType, { count: i.count, trend: i.trend });
+      }
+    }
+
+    return Array.from(mergedMap.entries()).map(([type, data]) => ({
+      interestType: type,
+      count: data.count,
+      percentage: totalWithInterest > 0 ? (data.count / totalWithInterest) * 100 : 0,
+      trend: data.trend,
+    }));
+  }, [tmsData]);
 
   // ---------------------------------------------------------------------------
   // Navigation
@@ -302,14 +363,11 @@ export const Dashboard: React.FC = () => {
                 queryTimeMs={summaryData.query_time_ms}
               />
             )}
-            <button
-              onClick={handleRefresh}
-              disabled={isFetchingSummary}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={16} className={isFetchingSummary ? 'animate-spin' : ''} />
-              <span className="text-sm font-medium">Refresh</span>
-            </button>
+            <RefreshButton
+              onRefresh={handleRefresh}
+              isRefreshing={isFetchingSummary}
+              label="Refresh"
+            />
           </div>
         </div>
 
@@ -358,6 +416,16 @@ export const Dashboard: React.FC = () => {
           />
         </div>
 
+        {/* TMS Therapy Interest Distribution */}
+        <div className="mb-8">
+          <TMSTherapyInterestCard
+            interests={transformedTMSData}
+            totalWithInterest={tmsData?.total_with_interest || 0}
+            totalLeads={tmsData?.total_leads || 0}
+            isLoading={isLoadingTMS}
+          />
+        </div>
+
         {/* Cohort Retention Analysis */}
         <div className="mb-8">
           <CohortRetentionAnalysis
@@ -369,28 +437,7 @@ export const Dashboard: React.FC = () => {
           />
         </div>
 
-        {/* Analytics Summary Note */}
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-              <Activity size={16} className="text-blue-600" />
-            </div>
-            <div>
-              <h4 className="font-medium text-blue-900">Lead Management</h4>
-              <p className="text-sm text-blue-700 mt-1">
-                For detailed lead management and pipeline operations, visit the{' '}
-                <a href="/coordinator" className="underline font-medium hover:text-blue-900">
-                  Coordinator Dashboard
-                </a>
-                . The Coordinator Dashboard includes queue-based management, Kanban board, and lead detail panels.
-              </p>
-            </div>
-          </div>
-        </div>
       </main>
-
-      {/* Widget Tester Panel */}
-      <WidgetTester />
 
       {/* Leads Filter Modal */}
       <LeadsFilterModal

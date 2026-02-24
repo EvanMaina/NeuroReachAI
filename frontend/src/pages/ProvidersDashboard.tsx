@@ -22,8 +22,7 @@ import {
   Clock,
   AlertCircle,
   Edit,
-  Archive,
-  ExternalLink,
+  Eye,
   X,
   Loader2,
   User,
@@ -31,6 +30,7 @@ import {
 import { listLeads, updateContactOutcome } from '../services/leads';
 import type { ILeadListItem, ContactOutcome } from '../types/lead';
 import { Sidebar } from '../components/dashboard/Sidebar';
+import { RefreshButton } from '../components/common/RefreshButton';
 import {
   getProviders,
   getProviderStats,
@@ -68,22 +68,16 @@ interface KPICardProps {
   color: string;
 }
 
-const KPICard: React.FC<KPICardProps> = ({ title, value, subtitle, icon, trend, color }) => (
-  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-    <div className="flex items-start justify-between">
-      <div>
-        <p className="text-sm font-medium text-gray-500">{title}</p>
-        <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
-        {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
-        {trend && (
-          <p className={`mt-2 text-sm flex items-center gap-1 ${trend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
-            <TrendingUp size={14} className={trend.isPositive ? '' : 'rotate-180'} />
-            {trend.isPositive ? '+' : ''}{trend.value}% from last month
-          </p>
-        )}
-      </div>
-      <div className={`p-3 rounded-lg ${color}`}>
+const KPICard: React.FC<KPICardProps> = ({ title, value, subtitle, icon, color }) => (
+  <div className={`bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] ${color}`}>
+    <div className="flex items-center gap-3">
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0`} style={{ backgroundColor: 'rgba(0,0,0,0.04)' }}>
         {icon}
+      </div>
+      <div>
+        <p className="text-xl font-bold text-gray-900 leading-tight">{value}</p>
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{title}</p>
+        {subtitle && <p className="text-[10px] text-gray-400 mt-0.5">{subtitle}</p>}
       </div>
     </div>
   </div>
@@ -465,7 +459,6 @@ const ReferralsPanel: React.FC<ReferralsPanelProps> = ({
       telUri = `tel:+1${digits}`;
     }
 
-    console.log('[3CX Click-to-Call] Triggering:', telUri);
     window.location.href = telUri;
     setCallStatus({ success: `Calling ${lead.firstName} via 3CX...` });
     setTimeout(() => setCallStatus({}), 3000);
@@ -544,8 +537,8 @@ const ReferralsPanel: React.FC<ReferralsPanelProps> = ({
                       await updateContactOutcome(lead.id, { contact_outcome: newOutcome as ContactOutcome });
                       refetch();
                       queryClient.invalidateQueries({ queryKey: ['leads'] });
-                    } catch (err) {
-                      console.error('Failed to update contact outcome:', err);
+                    } catch (_err) {
+                      // Error handled silently - UI state reverts
                     } finally {
                       setUpdatingOutcomeId(null);
                     }
@@ -674,15 +667,281 @@ const ReferralsPanel: React.FC<ReferralsPanelProps> = ({
 };
 
 // =============================================================================
-// Providers Table Component
+// Provider Profile Modal — Full read-only view with edit & referrals CTA
 // =============================================================================
+
+interface ProviderProfileModalProps {
+  provider: Provider | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onEdit: (provider: Provider) => void;
+  onViewReferrals: (provider: Provider) => void;
+}
+
+const ProviderProfileModal: React.FC<ProviderProfileModalProps> = ({
+  provider,
+  isOpen,
+  onClose,
+  onEdit,
+  onViewReferrals,
+}) => {
+  if (!isOpen || !provider) return null;
+
+  const gradientIdx = provider.name.charCodeAt(0) % AVATAR_GRADIENTS.length;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+
+        {/* ── Header / Hero ── */}
+        <div className="relative bg-gradient-to-br from-indigo-50 via-purple-50 to-blue-50 px-6 pt-6 pb-5 border-b border-gray-100">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-white/70 transition-colors"
+          >
+            <X size={20} />
+          </button>
+
+          <div className="flex items-center gap-4">
+            {/* Avatar */}
+            <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${AVATAR_GRADIENTS[gradientIdx]} flex items-center justify-center shadow-lg flex-shrink-0`}>
+              <span className="text-white font-bold text-xl leading-none">
+                {provider.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
+            </div>
+
+            {/* Name / practice / status */}
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 pr-8">{provider.name}</h2>
+              {provider.practice_name && (
+                <p className="text-sm text-gray-500 flex items-center gap-1 mt-0.5">
+                  <Building2 size={13} />
+                  {provider.practice_name}
+                </p>
+              )}
+              <div className="mt-1.5">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_COLORS[provider.status]}`}>
+                  {STATUS_LABELS[provider.status]}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3 mt-5">
+            <div className="bg-white rounded-xl px-4 py-3 text-center shadow-sm border border-gray-100">
+              <p className="text-2xl font-bold text-indigo-600">{provider.total_referrals}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mt-0.5">Total Referrals</p>
+            </div>
+            <div className="bg-white rounded-xl px-4 py-3 text-center shadow-sm border border-gray-100">
+              <p className="text-2xl font-bold text-emerald-600">{provider.converted_referrals}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mt-0.5">Converted</p>
+            </div>
+            <div className="bg-white rounded-xl px-4 py-3 text-center shadow-sm border border-gray-100">
+              <p className={`text-2xl font-bold ${
+                provider.conversion_rate >= 50 ? 'text-green-600' :
+                provider.conversion_rate >= 25 ? 'text-amber-600' :
+                'text-gray-600'
+              }`}>
+                {provider.conversion_rate.toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mt-0.5">Conversion Rate</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Scrollable Body ── */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+          {/* Contact Information */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contact Information</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                <Mail size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-500 font-medium">Email</p>
+                  {provider.email ? (
+                    <a href={`mailto:${provider.email}`} className="text-sm text-indigo-600 hover:underline break-all">{provider.email}</a>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">Not provided</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                <Phone size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">Phone</p>
+                  {provider.phone ? (
+                    <a href={`tel:${provider.phone}`} className="text-sm text-gray-900 hover:text-indigo-600 font-mono">{provider.phone}</a>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">Not provided</p>
+                  )}
+                </div>
+              </div>
+
+              {provider.fax && (
+                <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                  <Phone size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Fax</p>
+                    <p className="text-sm text-gray-900 font-mono">{provider.fax}</p>
+                  </div>
+                </div>
+              )}
+
+              {provider.preferred_contact && (
+                <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                  <CheckCircle size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Preferred Contact</p>
+                    <p className="text-sm text-gray-900 capitalize">{provider.preferred_contact}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Practice Details */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Practice Details</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                <User size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">Specialty</p>
+                  <p className="text-sm text-gray-900">{getSpecialtyLabel(provider.specialty)}</p>
+                </div>
+              </div>
+
+              {provider.npi_number && (
+                <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                  <Building2 size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">NPI Number</p>
+                    <p className="text-sm text-gray-900 font-mono">{provider.npi_number}</p>
+                  </div>
+                </div>
+              )}
+
+              {(provider.address_line1 || provider.city) && (
+                <div className="col-span-2 flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                  <Building2 size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-gray-500 font-medium">Address</p>
+                    <p className="text-sm text-gray-900">
+                      {[provider.address_line1, provider.address_line2, provider.city, provider.state, provider.zip_code]
+                        .filter(Boolean).join(', ')}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Timeline</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                <Clock size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">Provider Added</p>
+                  <p className="text-sm text-gray-900">
+                    {new Date(provider.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-lg">
+                <TrendingUp size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-500 font-medium">Last Referral</p>
+                  <p className="text-sm text-gray-900">
+                    {provider.last_referral_at
+                      ? new Date(provider.last_referral_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : <span className="text-gray-400 italic">Never</span>
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          {provider.notes && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Notes</h3>
+              <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{provider.notes}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer Actions ── */}
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            Close
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { onClose(); onViewReferrals(provider); }}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-lg transition-colors"
+            >
+              <Users size={15} />
+              View Referrals
+            </button>
+            <button
+              onClick={() => { onClose(); onEdit(provider); }}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+            >
+              <Edit size={15} />
+              Edit Provider
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// =============================================================================
+// Providers Table — Premium Design
+// =============================================================================
+
+// Avatar gradient palette for provider initials
+const AVATAR_GRADIENTS = [
+  'from-blue-500 to-indigo-500',
+  'from-violet-500 to-purple-500',
+  'from-emerald-500 to-teal-500',
+  'from-rose-500 to-pink-500',
+  'from-amber-500 to-orange-500',
+  'from-cyan-500 to-blue-500',
+  'from-fuchsia-500 to-purple-500',
+  'from-sky-500 to-indigo-500',
+];
+
+const PROVIDER_COL_KEYS = ['provider', 'email', 'specialty', 'status', 'referrals', 'conversion', 'lastReferral', 'actions'] as const;
+const PROVIDER_COL_LABELS: Record<string, string> = {
+  provider: 'Provider', email: 'Email', specialty: 'Specialty', status: 'Status',
+  referrals: 'Referrals', conversion: 'Conversion', lastReferral: 'Last Referral', actions: 'Actions',
+};
+const DEFAULT_PROVIDER_WIDTHS: Record<string, number> = {
+  provider: 220, email: 220, specialty: 140, status: 150,
+  referrals: 100, conversion: 110, lastReferral: 130, actions: 130,
+};
 
 interface ProvidersTableProps {
   providers: Provider[];
   isLoading: boolean;
   onEdit: (provider: Provider) => void;
   onArchive: (providerId: string) => void;
-  onViewReferrals: (provider: Provider) => void;
+  onViewProfile: (provider: Provider) => void;
   onStatusChange: (providerId: string, status: ProviderStatus) => void;
 }
 
@@ -690,13 +949,58 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
   providers,
   isLoading,
   onEdit,
-  onArchive,
-  onViewReferrals,
+  onArchive: _onArchive,
+  onViewProfile,
   onStatusChange,
 }) => {
+  // Column widths for resize
+  const [colWidths, setColWidths] = React.useState<Record<string, number>>({ ...DEFAULT_PROVIDER_WIDTHS });
+  const resizeRef = React.useRef<{ col: string; startX: number; startW: number } | null>(null);
+
+  // Column visibility
+  const [visCols, setVisCols] = React.useState<Set<string>>(new Set(PROVIDER_COL_KEYS));
+  const [showColMenu, setShowColMenu] = React.useState(false);
+  const colMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Resize handlers — bulletproof (capture ref to local var before setState callback)
+  React.useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const drag = resizeRef.current;
+      if (!drag) return;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      const diff = e.clientX - drag.startX;
+      const newWidth = Math.max(60, Math.min(500, drag.startW + diff));
+      if (!Number.isFinite(newWidth)) return;
+      setColWidths(prev => ({ ...prev, [drag.col]: newWidth }));
+    };
+    const onUp = () => { resizeRef.current = null; document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.cursor = ''; document.body.style.userSelect = ''; };
+  }, []);
+
+  // Close column menu on outside click
+  React.useEffect(() => {
+    const h = (e: MouseEvent) => { if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) setShowColMenu(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  // Resize handle helper
+  const ResizeHandle = ({ col }: { col: string }) => (
+    <div
+      className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
+      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col, startX: e.clientX, startW: colWidths[col] }; }}
+      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColWidths(prev => ({ ...prev, [col]: DEFAULT_PROVIDER_WIDTHS[col] })); }}
+    >
+      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <div className="animate-pulse space-y-4">
+      <div className="animate-pulse space-y-4 p-4">
         {[...Array(5)].map((_, i) => (
           <div key={i} className="h-16 bg-gray-100 rounded-lg" />
         ))}
@@ -709,151 +1013,200 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
       <div className="text-center py-12">
         <Users className="mx-auto h-12 w-12 text-gray-400" />
         <h3 className="mt-2 text-sm font-medium text-gray-900">No providers found</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Add a new provider or adjust your filters.
-        </p>
+        <p className="mt-1 text-sm text-gray-500">Add a new provider or adjust your filters.</p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Provider
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Email
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Specialty
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Status
-            </th>
-            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Referrals
-            </th>
-            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Conversion
-            </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Last Referral
-            </th>
-            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {providers.map((provider) => (
-            <tr key={provider.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 h-10 w-10">
-                    <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                      <span className="text-blue-600 font-medium text-sm">
-                        {provider.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-900">{provider.name}</div>
-                    {provider.practice_name && (
-                      <div className="text-sm text-gray-500 flex items-center gap-1">
-                        <Building2 size={12} />
-                        {provider.practice_name}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                {provider.email ? (
-                  <a
-                    href={`mailto:${provider.email}`}
-                    className="text-sm text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-                  >
-                    <Mail size={14} />
-                    {provider.email}
-                  </a>
-                ) : (
-                  <span className="text-sm text-gray-400">—</span>
-                )}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span className="text-sm text-gray-900">
-                  {getSpecialtyLabel(provider.specialty)}
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <select
-                  value={provider.status}
-                  onChange={(e) => onStatusChange(provider.id, e.target.value as ProviderStatus)}
-                  className={`
-                    text-xs font-medium rounded-full px-2.5 py-1 border-0 cursor-pointer
-                    focus:ring-2 focus:ring-blue-500
-                    ${STATUS_COLORS[provider.status]}
-                  `}
-                >
-                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-center">
-                <span className="text-sm font-semibold text-gray-900">
-                  {provider.total_referrals}
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-center">
-                <span className={`text-sm font-semibold ${
-                  provider.conversion_rate >= 50 ? 'text-green-600' :
-                  provider.conversion_rate >= 25 ? 'text-yellow-600' :
-                  'text-gray-500'
-                }`}>
-                  {provider.conversion_rate.toFixed(1)}%
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {provider.last_referral_at 
-                  ? new Date(provider.last_referral_at).toLocaleDateString()
-                  : 'Never'
-                }
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => onViewReferrals(provider)}
-                    className="text-blue-600 hover:text-blue-900"
-                    title="View Referrals"
-                  >
-                    <ExternalLink size={16} />
-                  </button>
-                  <button
-                    onClick={() => onEdit(provider)}
-                    className="text-gray-600 hover:text-gray-900"
-                    title="Edit"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  {provider.status !== 'archived' && (
-                    <button
-                      onClick={() => onArchive(provider.id)}
-                      className="text-red-600 hover:text-red-900"
-                      title="Archive"
-                    >
-                      <Archive size={16} />
-                    </button>
-                  )}
-                </div>
-              </td>
+    <div>
+      {/* Column visibility toggle button */}
+      <div className="flex justify-end px-4 pt-3 pb-1">
+        <div className="relative" ref={colMenuRef}>
+          <button
+            type="button"
+            onClick={() => setShowColMenu(v => !v)}
+            className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            title="Toggle columns"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          {showColMenu && (
+            <div className="absolute right-0 top-8 z-50 w-48 bg-white border border-gray-200 rounded-xl shadow-xl py-2">
+              <div className="flex items-center justify-between px-3 pb-2 mb-1 border-b border-gray-100">
+                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Columns</span>
+                <button onClick={() => setVisCols(new Set(PROVIDER_COL_KEYS))} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Reset</button>
+              </div>
+              {PROVIDER_COL_KEYS.map(col => {
+                const locked = col === 'provider';
+                return (
+                  <label key={col} className={`flex items-center gap-2.5 px-3 py-1.5 ${locked ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50 cursor-pointer'}`}>
+                    <input type="checkbox" checked={visCols.has(col)} disabled={locked} onChange={e => { if (locked) return; setVisCols(prev => { const n = new Set(prev); if (e.target.checked) n.add(col); else n.delete(col); return n; }); }} className="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 disabled:opacity-50" />
+                    <span className="text-xs text-gray-700">{PROVIDER_COL_LABELS[col]}{locked ? ' ✦' : ''}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ maxHeight: '600px' }} className="overflow-auto premium-scrollbar">
+        <table className="w-full" style={{ tableLayout: 'fixed', minWidth: '900px' }}>
+          <thead>
+            <tr className="bg-gray-50 border-b-2 border-gray-200">
+              {visCols.has('provider') && (
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.provider }}>
+                  Provider <ResizeHandle col="provider" />
+                </th>
+              )}
+              {visCols.has('email') && (
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.email }}>
+                  Email <ResizeHandle col="email" />
+                </th>
+              )}
+              {visCols.has('specialty') && (
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.specialty }}>
+                  Specialty <ResizeHandle col="specialty" />
+                </th>
+              )}
+              {visCols.has('status') && (
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.status }}>
+                  Status <ResizeHandle col="status" />
+                </th>
+              )}
+              {visCols.has('referrals') && (
+                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.referrals }}>
+                  Referrals <ResizeHandle col="referrals" />
+                </th>
+              )}
+              {visCols.has('conversion') && (
+                <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.conversion }}>
+                  Conversion <ResizeHandle col="conversion" />
+                </th>
+              )}
+              {visCols.has('lastReferral') && (
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: colWidths.lastReferral }}>
+                  Last Referral <ResizeHandle col="lastReferral" />
+                </th>
+              )}
+              {visCols.has('actions') && (
+                <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wide sticky top-0 z-[3] bg-gray-50 select-none" style={{ width: colWidths.actions }}>
+                  Actions
+                </th>
+              )}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {providers.map((provider, index) => {
+              const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+              const gradientIdx = provider.name.charCodeAt(0) % AVATAR_GRADIENTS.length;
+              return (
+                <tr key={provider.id} className={`group ${rowBg} hover:bg-indigo-50/40 transition-colors duration-150`}>
+                  {visCols.has('provider') && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${AVATAR_GRADIENTS[gradientIdx]} flex items-center justify-center flex-shrink-0 shadow-sm`}>
+                          <span className="text-white font-semibold text-sm leading-none">
+                            {provider.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-900">{provider.name}</div>
+                          {provider.practice_name && (
+                            <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                              <Building2 size={11} />
+                              {provider.practice_name}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  )}
+                  {visCols.has('email') && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {provider.email ? (
+                        <a
+                          href={`mailto:${provider.email}`}
+                          className="text-sm text-indigo-600 hover:text-indigo-800 no-underline hover:underline flex items-center gap-1.5 transition-colors"
+                        >
+                          <Mail size={13} className="flex-shrink-0" />
+                          <span className="truncate" style={{ maxWidth: '170px' }}>{provider.email}</span>
+                        </a>
+                      ) : (
+                        <span className="text-sm text-gray-400 italic">No email</span>
+                      )}
+                    </td>
+                  )}
+                  {visCols.has('specialty') && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm text-gray-700">{getSpecialtyLabel(provider.specialty)}</span>
+                    </td>
+                  )}
+                  {visCols.has('status') && (
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <select
+                        value={provider.status}
+                        onChange={(e) => onStatusChange(provider.id, e.target.value as ProviderStatus)}
+                        className={`text-xs font-semibold rounded-md px-2.5 py-1 border-0 cursor-pointer focus:ring-2 focus:ring-blue-500 ${STATUS_COLORS[provider.status]}`}
+                      >
+                        {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
+                  {visCols.has('referrals') && (
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="text-sm font-semibold text-gray-900 tabular-nums">{provider.total_referrals}</span>
+                    </td>
+                  )}
+                  {visCols.has('conversion') && (
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className={`text-sm tabular-nums ${
+                        provider.conversion_rate === 0 ? 'text-gray-400' :
+                        provider.conversion_rate >= 50 ? 'text-green-600 font-bold' :
+                        provider.conversion_rate >= 25 ? 'text-amber-600 font-semibold' :
+                        'text-gray-600 font-medium'
+                      }`}>
+                        {provider.conversion_rate.toFixed(1)}%
+                      </span>
+                    </td>
+                  )}
+                  {visCols.has('lastReferral') && (
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {provider.last_referral_at
+                        ? new Date(provider.last_referral_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : <span className="text-gray-400 italic">Never</span>
+                      }
+                    </td>
+                  )}
+                  {visCols.has('actions') && (
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => onViewProfile(provider)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors duration-150"
+                          title="View Profile"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          onClick={() => onEdit(provider)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors duration-150"
+                          title="Edit Provider"
+                        >
+                          <Edit size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
@@ -871,6 +1224,8 @@ export const ProvidersDashboard: React.FC = () => {
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [referralsProvider, setReferralsProvider] = useState<Provider | null>(null);
   const [isReferralsPanelOpen, setIsReferralsPanelOpen] = useState(false);
+  const [profileProvider, setProfileProvider] = useState<Provider | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Fetch providers
   const { data: providersData, isLoading: providersLoading } = useQuery({
@@ -909,7 +1264,6 @@ export const ProvidersDashboard: React.FC = () => {
       setMutationSuccess(`Provider "${data.name}" created successfully!`);
     },
     onError: (error: Error) => {
-      console.error('Create provider error:', error);
       setMutationError(error.message || 'Failed to create provider. Please try again.');
     },
   });
@@ -924,7 +1278,6 @@ export const ProvidersDashboard: React.FC = () => {
       setMutationSuccess(`Provider "${data.name}" updated successfully!`);
     },
     onError: (error: Error) => {
-      console.error('Update provider error:', error);
       setMutationError(error.message || 'Failed to update provider. Please try again.');
     },
   });
@@ -936,7 +1289,6 @@ export const ProvidersDashboard: React.FC = () => {
       setMutationSuccess('Provider archived successfully!');
     },
     onError: (error: Error) => {
-      console.error('Archive provider error:', error);
       setMutationError(error.message || 'Failed to archive provider. Please try again.');
     },
   });
@@ -969,8 +1321,12 @@ export const ProvidersDashboard: React.FC = () => {
     }
   };
 
+  const handleViewProfile = (provider: Provider) => {
+    setProfileProvider(provider);
+    setIsProfileModalOpen(true);
+  };
+
   const handleViewReferrals = (provider: Provider) => {
-    // Open slide-out panel with this provider's referrals
     setReferralsProvider(provider);
     setIsReferralsPanelOpen(true);
   };
@@ -1017,7 +1373,7 @@ export const ProvidersDashboard: React.FC = () => {
           </div>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Page Header */}
           <div className="flex items-center justify-between">
             <div>
@@ -1026,37 +1382,41 @@ export const ProvidersDashboard: React.FC = () => {
                 Manage healthcare providers who refer patients to your clinic
               </p>
             </div>
+            <RefreshButton
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: providerKeys.all })}
+              label="Refresh"
+            />
           </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* KPI Cards — Compact, matching Coordinator Dashboard style */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard
             title="Total Providers"
             value={stats?.total_providers ?? 0}
             subtitle={`${stats?.active_providers ?? 0} active`}
-            icon={<Users className="text-blue-600" size={24} />}
-            color="bg-blue-100"
+            icon={<Users size={18} className="text-indigo-600" />}
+            color="border-l-indigo-500"
           />
           <KPICard
             title="Total Referrals"
             value={stats?.total_referrals ?? 0}
             subtitle={`${stats?.referrals_this_month ?? 0} this month`}
-            icon={<UserPlus className="text-green-600" size={24} />}
-            color="bg-green-100"
+            icon={<UserPlus size={18} className="text-emerald-600" />}
+            color="border-l-emerald-500"
           />
           <KPICard
-            title="Avg. Conversion Rate"
+            title="Avg. Conversion"
             value={`${(stats?.overall_conversion_rate ?? 0).toFixed(1)}%`}
             subtitle="Referral to patient"
-            icon={<TrendingUp className="text-purple-600" size={24} />}
-            color="bg-purple-100"
+            icon={<TrendingUp size={18} className="text-violet-600" />}
+            color="border-l-violet-500"
           />
           <KPICard
             title="Pending Verification"
             value={stats?.pending_providers ?? 0}
             subtitle="Providers to review"
-            icon={<Clock className="text-amber-600" size={24} />}
-            color="bg-amber-100"
+            icon={<Clock size={18} className="text-amber-600" />}
+            color="border-l-amber-500"
           />
         </div>
 
@@ -1127,16 +1487,14 @@ export const ProvidersDashboard: React.FC = () => {
 
         {/* Providers Table with Scrolling */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="max-h-[500px] overflow-auto">
-            <ProvidersTable
-              providers={providersData?.items ?? []}
-              isLoading={providersLoading}
-              onEdit={handleEdit}
-              onArchive={handleArchive}
-              onViewReferrals={handleViewReferrals}
-              onStatusChange={handleStatusChange}
-            />
-          </div>
+          <ProvidersTable
+            providers={providersData?.items ?? []}
+            isLoading={providersLoading}
+            onEdit={handleEdit}
+            onArchive={handleArchive}
+            onViewProfile={handleViewProfile}
+            onStatusChange={handleStatusChange}
+          />
 
           {/* Pagination */}
           {providersData && providersData.total_pages > 1 && (
@@ -1205,6 +1563,18 @@ export const ProvidersDashboard: React.FC = () => {
         provider={editingProvider}
         onSave={handleSave}
         isLoading={createMutation.isPending || updateMutation.isPending}
+      />
+
+      {/* Provider Profile Modal */}
+      <ProviderProfileModal
+        provider={profileProvider}
+        isOpen={isProfileModalOpen}
+        onClose={() => {
+          setIsProfileModalOpen(false);
+          setProfileProvider(null);
+        }}
+        onEdit={handleEdit}
+        onViewReferrals={handleViewReferrals}
       />
 
       {/* Referrals Slide-out Panel */}
