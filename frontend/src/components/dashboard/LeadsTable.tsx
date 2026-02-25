@@ -13,7 +13,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  Eye, ChevronUp, ChevronDown,
+  Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Filter, Flame, Zap, CircleDot, Calendar, Users,
   Heart, Shield, Brain, Search, Mail, PhoneCall,
   UserCheck, AlertTriangle, RefreshCw, MessageSquare, Settings
@@ -247,6 +247,12 @@ const DEFAULT_VISIBLE: ReadonlyArray<string> = [
 ];
 
 // =============================================================================
+// Pagination
+// =============================================================================
+
+const TABLE_PAGE_SIZE = 50;
+
+// =============================================================================
 // Component
 // =============================================================================
 
@@ -272,6 +278,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   });
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  // Table pagination — 50 rows per page; resets whenever the result set changes
+  const [tablePage, setTablePage] = useState(1);
 
   // Resizable column widths
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...DEFAULT_COLUMN_WIDTHS });
@@ -536,6 +544,18 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
 
     return sorted;
   }, [leads, quickFilter, sortConfig, searchQuery]);
+
+  // Reset to page 1 whenever the filtered/sorted result set changes
+  useEffect(() => {
+    setTablePage(1);
+  }, [filteredAndSortedLeads]);
+
+  // Slice data for current page
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedLeads.length / TABLE_PAGE_SIZE));
+  const paginatedLeads = useMemo(
+    () => filteredAndSortedLeads.slice((tablePage - 1) * TABLE_PAGE_SIZE, tablePage * TABLE_PAGE_SIZE),
+    [filteredAndSortedLeads, tablePage]
+  );
 
   // ---------------------------------------------------------------------------
   // Render
@@ -847,7 +867,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredAndSortedLeads.map((lead, index) => {
+              {paginatedLeads.map((lead, index) => {
                 // Determine opaque row background for frozen cells (must be solid, not transparent)
                 const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                 return (
@@ -1090,11 +1110,34 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
       {/* Footer — flex-shrink-0, always visible */}
       {!isLoading && filteredAndSortedLeads.length > 0 && (
         <div className="flex-shrink-0 px-6 py-3 border-t border-gray-200 bg-gray-50">
-          <p className="text-xs text-gray-500">
-            Showing {filteredAndSortedLeads.length} lead{filteredAndSortedLeads.length !== 1 ? 's' : ''}
-            {quickFilter !== 'all' && ` • Filtered by: ${quickFilter}`}
-            {' '}• Sorted by: {sortConfig.field} ({sortConfig.direction === 'asc' ? 'ascending' : 'descending'})
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500">
+              Showing {((tablePage - 1) * TABLE_PAGE_SIZE) + 1}–{Math.min(tablePage * TABLE_PAGE_SIZE, filteredAndSortedLeads.length)} of {filteredAndSortedLeads.length} lead{filteredAndSortedLeads.length !== 1 ? 's' : ''}
+              {quickFilter !== 'all' && ` • Filtered: ${quickFilter}`}
+              {' '}• Sorted: {sortConfig.field} ({sortConfig.direction === 'asc' ? 'asc' : 'desc'})
+            </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setTablePage(p => Math.max(1, p - 1))}
+                  disabled={tablePage <= 1}
+                  className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs text-gray-600 px-2 font-medium">
+                  Page {tablePage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setTablePage(p => Math.min(totalPages, p + 1))}
+                  disabled={tablePage >= totalPages}
+                  className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

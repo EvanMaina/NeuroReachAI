@@ -31,6 +31,7 @@ import { listLeads, updateContactOutcome } from '../services/leads';
 import type { ILeadListItem, ContactOutcome } from '../types/lead';
 import { Sidebar } from '../components/dashboard/Sidebar';
 import { RefreshButton } from '../components/common/RefreshButton';
+import { ProviderEmailDialog } from '../components/dashboard/ProviderEmailDialog';
 import {
   getProviders,
   getProviderStats,
@@ -943,6 +944,7 @@ interface ProvidersTableProps {
   onArchive: (providerId: string) => void;
   onViewProfile: (provider: Provider) => void;
   onStatusChange: (providerId: string, status: ProviderStatus) => void;
+  onEmail: (provider: Provider) => void;
 }
 
 const ProvidersTable: React.FC<ProvidersTableProps> = ({
@@ -952,6 +954,7 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
   onArchive: _onArchive,
   onViewProfile,
   onStatusChange,
+  onEmail,
 }) => {
   // Column widths for resize
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({ ...DEFAULT_PROVIDER_WIDTHS });
@@ -1191,6 +1194,15 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
                         >
                           <Eye size={15} />
                         </button>
+                        {provider.email && (
+                          <button
+                            onClick={() => onEmail(provider)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors duration-150"
+                            title={`Email ${provider.name}`}
+                          >
+                            <Mail size={15} />
+                          </button>
+                        )}
                         <button
                           onClick={() => onEdit(provider)}
                           className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors duration-150"
@@ -1226,6 +1238,8 @@ export const ProvidersDashboard: React.FC = () => {
   const [isReferralsPanelOpen, setIsReferralsPanelOpen] = useState(false);
   const [profileProvider, setProfileProvider] = useState<Provider | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [emailProvider, setEmailProvider] = useState<Provider | null>(null);
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
 
   // Fetch providers
   const { data: providersData, isLoading: providersLoading } = useQuery({
@@ -1494,6 +1508,7 @@ export const ProvidersDashboard: React.FC = () => {
             onArchive={handleArchive}
             onViewProfile={handleViewProfile}
             onStatusChange={handleStatusChange}
+            onEmail={(provider) => { setEmailProvider(provider); setIsEmailDialogOpen(true); }}
           />
 
           {/* Pagination */}
@@ -1584,6 +1599,16 @@ export const ProvidersDashboard: React.FC = () => {
         onClose={() => {
           setIsReferralsPanelOpen(false);
           setReferralsProvider(null);
+        }}
+      />
+
+      {/* Provider Email Dialog */}
+      <ProviderEmailDialog
+        provider={emailProvider}
+        isOpen={isEmailDialogOpen}
+        onClose={() => {
+          setIsEmailDialogOpen(false);
+          setEmailProvider(null);
         }}
       />
     </div>

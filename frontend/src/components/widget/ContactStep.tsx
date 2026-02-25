@@ -336,7 +336,7 @@ export const ContactStep: React.FC<ContactStepProps> = ({
               className="nr-sms-checkbox"
             />
             <span className="nr-sms-consent-text">
-              I agree to receive text messages. Msg & data rates may apply.
+              I consent to receive calls, texts, and emails regarding my inquiry. Message & data rates may apply.
             </span>
           </label>
         </div>

@@ -514,10 +514,17 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 
     Logs error and returns generic message (never expose PHI or internals).
     """
-    # In production, log to secure logging system
-    # NEVER log PHI or sensitive data
-    if settings.is_development:
-        print(f"Unhandled exception: {type(exc).__name__}")
+    # Log ALL unhandled exceptions regardless of environment so production
+    # 500 errors are never silently swallowed and are always traceable.
+    # exc_info=True captures the full traceback without leaking it to the client.
+    logger.error(
+        "Unhandled exception on %s %s: %s: %s",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        exc,
+        exc_info=True,
+    )
 
     return JSONResponse(
         status_code=500,

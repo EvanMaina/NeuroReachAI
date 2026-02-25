@@ -25,7 +25,7 @@ import { DeleteConfirmDialog } from '../components/common/DeleteConfirmDialog';
 import { RefreshButton } from '../components/common/RefreshButton';
 import { filterLeadsByQueue, type QueueType } from '../components/dashboard/QueueSidebar';
 import { useNotifications } from '../hooks/useNotifications';
-import { useLeads, useDashboardSummary } from '../hooks/useLeads';
+import { useLeads, useDashboardSummary, useQueueSummary } from '../hooks/useLeads';
 import { useAuth } from '../hooks/useAuth';
 import { getLeadById, deleteLead } from '../services/leads';
 import { mapApiResponseToLead } from '../utils/leadMapper';
@@ -74,6 +74,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
   
   // Dashboard summary hook - also globally cached
   const { summary: dashboardSummaryData } = useDashboardSummary();
+  
+  // Queue summary hook — server-side counts, Redis-cached 10s, resolves analytics/coordinator mismatch
+  const { summary: queueSummary } = useQueueSummary();
   
   // Local UI states (not data)
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -244,8 +247,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
   );
   
   // Calculate queue-specific metrics from local data (pass activeQueue for queue-aware logic)
+  // inQueue: prefer server-side count (accurate across all 1000+ leads) with local count as fallback
   const queueLocalMetrics = {
-    inQueue: filteredQueueLeads.length,
+    inQueue: queueSummary?.[activeQueue] ?? filteredQueueLeads.length,
     addedToday: calculateAddedToday(filteredQueueLeads, activeQueue),
     responseRate: calculateResponseRate(filteredQueueLeads),
     conversionRate: calculateConversionRate(filteredQueueLeads, activeQueue),
@@ -830,16 +834,19 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
         onClose={() => {
           setIsQuickActionOpen(false);
           setQuickActionLead(null);
+          // Refresh leads to pick up the outcome change made by the panel's
+          // direct API call.  We intentionally do NOT call handleOutcomeChange
+          // from onOutcomeChange (below) because that fires a SECOND
+          // updateContactOutcome API request — the panel already called it.
+          refreshLeads();
         }}
-        onOutcomeChange={(leadId, newOutcome) => {
-          handleOutcomeChange(leadId, newOutcome);
-          if (quickActionLead && quickActionLead.id === leadId) {
-            setQuickActionLead(prev => prev ? {
-              ...prev,
-              contactOutcome: newOutcome,
-              contactAttempts: (prev.contactAttempts || 0) + 1,
-            } : null);
-          }
+        onOutcomeChange={(_leadId, _newOutcome) => {
+          // NOTE: The QuickActionPanel already called updateContactOutcome()
+          // directly and then calls onClose(). We do NOT call
+          // handleOutcomeChange() here because that triggers outcomeMutation
+          // which fires the same PATCH /contact-outcome API a second time,
+          // causing duplicate notes and double contact-attempt increments.
+          // The refreshLeads() in onClose ensures the UI is up-to-date.
         }}
         onScheduleSuccess={async () => {
           setIsQuickActionOpen(false);

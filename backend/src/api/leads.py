@@ -12,7 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 
 from ..core.config import settings
 from ..core.database import get_db
@@ -141,6 +141,139 @@ def get_user_agent(request: Request) -> Optional[str]:
         User agent string or None
     """
     return request.headers.get("User-Agent")
+
+
+# =============================================================================
+# Queue Filter Helper — mirrors frontend filterLeadsByQueue() in QueueSidebar.tsx
+# =============================================================================
+
+def apply_queue_filter(query, queue_type: Optional[str]):
+    """
+    Apply queue-type-specific SQL filters to a Lead query.
+
+    Exactly mirrors the frontend filterLeadsByQueue() in QueueSidebar.tsx so
+    the server returns only the leads that belong in each coordinator queue.
+
+    Args:
+        query: SQLAlchemy query already filtered for deleted_at IS NULL
+        queue_type: One of 'all','new','contacted','follow_up','callback',
+                    'scheduled','completed','unreachable','hot','medium','low'
+
+    Returns:
+        Modified query with the appropriate WHERE clauses applied
+    """
+    # Terminal statuses excluded from all "active" queues
+    TERMINAL = [
+        LeadStatus.CONSULTATION_COMPLETE,
+        LeadStatus.TREATMENT_STARTED,
+        LeadStatus.LOST,
+        LeadStatus.DISQUALIFIED,
+    ]
+
+    if not queue_type or queue_type == "all":
+        # All active leads — exclude terminal statuses
+        return query.filter(Lead.status.notin_(TERMINAL))
+
+    if queue_type == "new":
+        return query.filter(
+            Lead.status == LeadStatus.NEW,
+            or_(
+                Lead.contact_outcome == ContactOutcome.NEW,
+                Lead.contact_outcome.is_(None),
+            ),
+        )
+
+    if queue_type == "contacted":
+        CONTACTED_OUTCOMES = [
+            ContactOutcome.ANSWERED,
+            ContactOutcome.NO_ANSWER,
+            ContactOutcome.UNREACHABLE,
+            ContactOutcome.CALLBACK_REQUESTED,
+            ContactOutcome.NOT_INTERESTED,
+            ContactOutcome.SCHEDULED,
+            ContactOutcome.COMPLETED,
+        ]
+        return query.filter(
+            Lead.status != LeadStatus.SCHEDULED,
+            Lead.status.notin_(TERMINAL),
+            or_(
+                Lead.contact_outcome.in_(CONTACTED_OUTCOMES),
+                Lead.status == LeadStatus.CONTACTED,
+            ),
+        )
+
+    if queue_type == "follow_up":
+        FOLLOWUP_OUTCOMES = [
+            ContactOutcome.NO_ANSWER,
+            ContactOutcome.UNREACHABLE,
+            ContactOutcome.CALLBACK_REQUESTED,
+        ]
+        FOLLOWUP_REASONS = [
+            "No Answer",
+            "Not Interested",
+            "No Show",
+            "Cancelled Appointment",
+        ]
+        return query.filter(
+            Lead.status != LeadStatus.SCHEDULED,
+            Lead.status.notin_(TERMINAL),
+            or_(
+                Lead.contact_outcome.in_(FOLLOWUP_OUTCOMES),
+                Lead.follow_up_reason.in_(FOLLOWUP_REASONS),
+            ),
+        )
+
+    if queue_type == "callback":
+        return query.filter(
+            Lead.status != LeadStatus.SCHEDULED,
+            Lead.status.notin_(TERMINAL),
+            or_(
+                Lead.contact_outcome == ContactOutcome.CALLBACK_REQUESTED,
+                Lead.follow_up_reason == "Callback Requested",
+            ),
+        )
+
+    if queue_type == "scheduled":
+        return query.filter(Lead.status == LeadStatus.SCHEDULED)
+
+    if queue_type == "completed":
+        return query.filter(
+            Lead.status.in_([
+                LeadStatus.CONSULTATION_COMPLETE,
+                LeadStatus.TREATMENT_STARTED,
+            ])
+        )
+
+    if queue_type == "unreachable":
+        return query.filter(
+            Lead.status != LeadStatus.SCHEDULED,
+            Lead.status.notin_(TERMINAL),
+            or_(
+                Lead.contact_outcome == ContactOutcome.UNREACHABLE,
+                Lead.follow_up_reason == "Unreachable",
+            ),
+        )
+
+    if queue_type == "hot":
+        return query.filter(
+            Lead.priority == PriorityType.HOT,
+            Lead.status.notin_([LeadStatus.SCHEDULED] + TERMINAL),
+        )
+
+    if queue_type == "medium":
+        return query.filter(
+            Lead.priority == PriorityType.MEDIUM,
+            Lead.status.notin_([LeadStatus.SCHEDULED] + TERMINAL),
+        )
+
+    if queue_type == "low":
+        return query.filter(
+            Lead.priority == PriorityType.LOW,
+            Lead.status.notin_([LeadStatus.SCHEDULED] + TERMINAL),
+        )
+
+    # Unknown queue_type — return query unmodified
+    return query
 
 
 # =============================================================================
@@ -657,6 +790,7 @@ async def list_leads(
     in_service_area: Optional[bool] = None,
     is_referral: Optional[bool] = None,
     search: Optional[str] = None,
+    queue_type: Optional[str] = None,
 ) -> PaginatedResponse:
     """
     List leads with pagination, filtering, and search.
@@ -727,6 +861,12 @@ async def list_leads(
             search_term = search.strip()
             if search_term:
                 query = query.filter(Lead.lead_number.ilike(f"%{search_term}%"))
+
+        # Apply server-side queue filter (coordinator workflow routing).
+        # Mirrors filterLeadsByQueue() in QueueSidebar.tsx so each coordinator
+        # queue shows exactly the right leads without client-side filtering.
+        if queue_type:
+            query = apply_queue_filter(query, queue_type)
 
         # Get total count efficiently (single COUNT query with filters)
         total = query.count()
@@ -1078,6 +1218,71 @@ async def list_deleted_leads(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while loading deleted leads.",
         )
+
+
+# =============================================================================
+# Queue Summary Endpoint — MUST be before /{lead_id} to avoid UUID conflict
+# =============================================================================
+
+@router.get(
+    "/queue-summary",
+    summary="Queue Summary Counts",
+    description="Returns lead counts for each coordinator queue. Redis-cached for 10s.",
+    dependencies=[Depends(get_current_user)],
+)
+async def get_queue_summary(
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Return lead count for every coordinator queue in a single response.
+
+    Used by:
+    - Coordinator Sidebar badges (shows how many leads are in each queue)
+    - CoordinatorDashboard metrics cards (accurate "In Queue" count)
+
+    Redis-cached for 10 seconds to reduce DB load under concurrent usage.
+    The cache is automatically invalidated whenever leads are modified via
+    cache.invalidate_on_lead_change() which clears 'leads:*' pattern keys.
+
+    Returns:
+        Dict mapping queue name → count, e.g.:
+        {"all": 165, "new": 45, "contacted": 30, ..., "hot": 35}
+    """
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    _QUEUE_TYPES = [
+        "all", "new", "contacted", "follow_up", "callback",
+        "scheduled", "completed", "unreachable", "hot", "medium", "low",
+    ]
+
+    try:
+        # Try Redis cache first (10-second TTL)
+        try:
+            cache = get_cache()
+            cached = cache.get("leads:queue_summary")
+            if cached:
+                return cached
+        except Exception:
+            pass  # Redis down — fall through to DB
+
+        # One COUNT query per queue type — each uses an indexed WHERE clause
+        base = db.query(Lead).filter(Lead.deleted_at.is_(None))
+        result = {qt: apply_queue_filter(base, qt).count() for qt in _QUEUE_TYPES}
+
+        # Cache for 10 seconds
+        try:
+            cache = get_cache()
+            cache.set("leads:queue_summary", result, ttl=10)
+        except Exception:
+            pass  # Non-fatal
+
+        return result
+
+    except Exception as e:
+        _logger.error(f"queue-summary error: {e}", exc_info=True)
+        # Return zeros rather than 500 so the sidebar still renders
+        return {qt: 0 for qt in _QUEUE_TYPES}
 
 
 @router.get(
@@ -1488,8 +1693,13 @@ async def get_scheduled_leads(
     Returns:
         List of scheduled leads
     """
-    # Build query for leads with scheduled callbacks
-    query = db.query(Lead).filter(Lead.scheduled_callback_at.isnot(None))
+    # Build query for leads with scheduled callbacks, excluding soft-deleted leads.
+    # Without the deleted_at filter, soft-deleted leads with a future callback
+    # would appear in the calendar view — exposing PHI for deleted records.
+    query = db.query(Lead).filter(
+        Lead.scheduled_callback_at.isnot(None),
+        Lead.deleted_at.is_(None),
+    )
 
     # Apply date filters if provided
     if start_date:
@@ -1767,55 +1977,44 @@ async def update_contact_outcome(
     if outcome_data.next_follow_up_at:
         lead.next_follow_up_at = outcome_data.next_follow_up_at
 
-    # Create auto-note for the outcome in lead_notes table
-    try:
-        from ..models.lead_note import LeadNote
-        from ..core.auth import get_current_user as _get_user
-        
-        # Get current user from request state (set by dependency)
-        current_user = None
+    # Create outcome note ONLY if the coordinator typed something.
+    # If no note text was provided, the outcome is already tracked in the
+    # lead's contact_outcome and status fields — no need to pollute the
+    # Notes section with redundant "Outcome recorded: X" entries.
+    note_text_raw = (outcome_data.notes or "").strip()
+    if note_text_raw:
         try:
-            # The auth dependency already ran, we can access user from the request
-            # Since we use Depends(require_role(...)) the user is authenticated
-            from ..core.database import SessionLocal
+            from ..models.lead_note import LeadNote
+            
             user_name = "System"
             user_id = None
-            # Try to get the user from the auth token
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                from ..core.auth import decode_access_token
-                from ..models.user import User
-                token = auth_header.split(" ")[1]
-                payload = decode_access_token(token)
-                if payload and "sub" in payload:
-                    user = db.query(User).filter(User.id == payload["sub"]).first()
-                    if user:
-                        user_id = user.id
-                        user_name = f"{user.first_name} {user.last_name}".strip() or user.email
-        except Exception:
-            pass
+            try:
+                auth_header = request.headers.get("Authorization", "")
+                if auth_header.startswith("Bearer "):
+                    from ..core.security import decode_token
+                    from ..models.user import User
+                    token = auth_header.split(" ")[1]
+                    payload = decode_token(token)
+                    if payload and "sub" in payload:
+                        user = db.query(User).filter(User.id == payload["sub"]).first()
+                        if user:
+                            user_id = user.id
+                            user_name = f"{user.first_name} {user.last_name}".strip() or user.email
+            except Exception:
+                pass
 
-        auto_note = LeadNote(
-            lead_id=lead.id,
-            note_text=f"Outcome recorded: {outcome_data.contact_outcome.value}" + (
-                f" — {outcome_data.notes}" if outcome_data.notes else ""
-            ),
-            created_by=user_id,
-            created_by_name=user_name,
-            note_type="outcome",
-            related_outcome=outcome_data.contact_outcome.value,
-        )
-        db.add(auto_note)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Failed to create auto-note: {e}")
-
-    # Also append to legacy notes field if user provided notes text
-    if outcome_data.notes:
-        existing_notes = lead.notes or ""
-        timestamp = now.strftime("%Y-%m-%d %H:%M")
-        new_note = f"[{timestamp}] Outcome: {outcome_data.contact_outcome.value} - {outcome_data.notes}"
-        lead.notes = f"{new_note}\n{existing_notes}" if existing_notes else new_note
+            auto_note = LeadNote(
+                lead_id=lead.id,
+                note_text=f"Outcome recorded: {outcome_data.contact_outcome.value} — {note_text_raw}",
+                created_by=user_id,
+                created_by_name=user_name,
+                note_type="outcome",
+                related_outcome=outcome_data.contact_outcome.value,
+            )
+            db.add(auto_note)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to create outcome note: {e}")
 
     # Mark activity timestamp
     mark_lead_activity(lead)
@@ -2008,10 +2207,10 @@ async def update_consultation_outcome(
     try:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            from ..core.auth import decode_access_token
+            from ..core.security import decode_token
             from ..models.user import User
             token = auth_header.split(" ")[1]
-            payload = decode_access_token(token)
+            payload = decode_token(token)
             if payload and "sub" in payload:
                 user = db.query(User).filter(User.id == payload["sub"]).first()
                 if user:
@@ -2020,29 +2219,26 @@ async def update_consultation_outcome(
     except Exception:
         pass
 
-    # Create auto-note (system/outcome type)
-    try:
-        from ..models.lead_note import LeadNote
+    # Create consultation note ONLY if the coordinator typed something.
+    # If no note text was provided, the outcome is already tracked in the
+    # lead's status and follow_up_reason fields — no redundant note needed.
+    consultation_note_text = (notes or "").strip()
+    if consultation_note_text:
+        try:
+            from ..models.lead_note import LeadNote
 
-        note_text = f"Consultation outcome: {outcome_lower}" + (f" — {notes}" if notes else "")
-        auto_note = LeadNote(
-            lead_id=lead.id,
-            note_text=note_text,
-            created_by=user_id,
-            created_by_name=user_name,
-            note_type="outcome",
-            related_outcome=outcome_lower,
-        )
-        db.add(auto_note)
-    except Exception as e:
-        logger.warning(f"Failed to create consultation auto-note: {e}")
-
-    # Append to legacy notes field
-    if notes:
-        existing_notes = lead.notes or ""
-        timestamp = now.strftime("%Y-%m-%d %H:%M")
-        new_note = f"[{timestamp}] Consultation: {outcome_lower} - {notes}"
-        lead.notes = f"{new_note}\n{existing_notes}" if existing_notes else new_note
+            note_text = f"Consultation outcome: {outcome_lower} — {consultation_note_text}"
+            auto_note = LeadNote(
+                lead_id=lead.id,
+                note_text=note_text,
+                created_by=user_id,
+                created_by_name=user_name,
+                note_type="outcome",
+                related_outcome=outcome_lower,
+            )
+            db.add(auto_note)
+        except Exception as e:
+            logger.warning(f"Failed to create consultation note: {e}")
 
     mark_lead_activity(lead)
     db.commit()
@@ -2132,6 +2328,45 @@ async def update_lead(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
+
+    # =========================================================================
+    # OPTIMISTIC LOCKING — detect concurrent edits before writing.
+    #
+    # The client sends back the `updated_at` value it received when it last
+    # fetched the lead.  If another coordinator saved the lead in the
+    # meantime, `lead.updated_at` will be newer → we reject with 409 so the
+    # client can refresh and show a "this lead was modified" warning instead
+    # of silently overwriting the other coordinator's work.
+    #
+    # Legacy callers that omit `expected_updated_at` (None) bypass the check
+    # so backward compatibility is fully preserved.
+    # =========================================================================
+    if update_data.expected_updated_at is not None:
+        # Normalize both timestamps to UTC-aware for comparison.
+        # SQLAlchemy returns naive UTC datetimes from PostgreSQL; the client
+        # sends an ISO-8601 string that Pydantic parses as timezone-aware.
+        db_updated_at = lead.updated_at
+        if db_updated_at is not None and db_updated_at.tzinfo is None:
+            from datetime import timezone as _tz
+            db_updated_at = db_updated_at.replace(tzinfo=_tz.utc)
+        client_ts = update_data.expected_updated_at
+        if client_ts.tzinfo is None:
+            from datetime import timezone as _tz
+            client_ts = client_ts.replace(tzinfo=_tz.utc)
+
+        if db_updated_at != client_ts:
+            logger.warning(
+                "Optimistic locking conflict on lead %s: "
+                "client expected updated_at=%s but DB has %s",
+                lead_id, client_ts, db_updated_at,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This lead was modified by another user after you opened it. "
+                    "Please refresh and reapply your changes."
+                ),
+            )
 
     try:
         # Store old values for audit

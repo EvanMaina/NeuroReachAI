@@ -179,13 +179,27 @@ export async function updateProvider(
   providerId: string,
   data: ProviderUpdateRequest
 ): Promise<Provider> {
-  // Convert enums for backend
-  const backendData: Record<string, unknown> = { ...data };
+  // Build backend payload — only include fields with actual values.
+  // Empty strings for optional fields (email, phone, etc.) would fail
+  // Pydantic's EmailStr / length validators on the backend, causing 422.
+  const backendData: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue; // skip unset fields
+    if (typeof value === 'string' && value.trim() === '') {
+      // Convert empty strings to null so the backend clears the field
+      // instead of failing validation (e.g. EmailStr rejects "")
+      backendData[key] = null;
+    } else {
+      backendData[key] = value;
+    }
+  }
+
+  // Convert status enum to UPPERCASE for backend
   if (data.status !== undefined) {
     backendData.status = statusToBackend(data.status);
   }
   // Specialty is free text - no conversion needed, send as-is
-  // (already in backendData from spread)
   try {
     const response = await apiClient.patch<Record<string, unknown>>(`/api/providers/${providerId}`, backendData);
     return providerFromBackend(response.data);
@@ -371,5 +385,24 @@ export async function addProviderNote(
     note_type: noteType,
     created_by: createdBy,
   });
+  return response.data;
+}
+
+// =============================================================================
+// Provider Email
+// =============================================================================
+
+/**
+ * Send an email to a referring provider via the backend email service
+ */
+export async function sendProviderEmail(
+  providerId: string,
+  subject: string,
+  message: string
+): Promise<{ success: boolean; message: string }> {
+  const response = await apiClient.post<{ success: boolean; message: string }>(
+    `/api/providers/${providerId}/email`,
+    { subject, message }
+  );
   return response.data;
 }

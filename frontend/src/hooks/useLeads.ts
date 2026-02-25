@@ -32,12 +32,14 @@ import {
   listLeads,
   getQueueMetrics,
   getDashboardSummary,
+  getQueueSummary,
   updateLeadStatus,
   updateContactOutcome,
   type IListLeadsParams,
   type QueueTypeFilter,
   type IDashboardSummaryResponse,
   type IQueueMetricsResponse,
+  type IQueueSummary,
 } from '../services/leads';
 import type { LeadTableRow, LeadStatus, ContactOutcome } from '../types/lead';
 
@@ -51,6 +53,7 @@ export const LEADS_QUERY_KEYS = {
   detail: (id: string) => ['leads', 'detail', id] as const,
   metrics: (queueType: QueueTypeFilter) => ['leads', 'metrics', queueType] as const,
   dashboardSummary: () => ['leads', 'dashboard-summary'] as const,
+  queueSummary: () => ['leads', 'queue-summary'] as const,
 } as const;
 
 // =============================================================================
@@ -496,6 +499,53 @@ export function usePrefetchLeads() {
   }, [queryClient]);
 
   return prefetch;
+}
+
+// =============================================================================
+// Queue Summary Hook — server-side counts per coordinator queue
+// =============================================================================
+
+interface UseQueueSummaryReturn {
+  /** Server-side count for every coordinator queue, or null while loading */
+  summary: IQueueSummary | null;
+  isLoading: boolean;
+  error: Error | null;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Fetches lead counts per coordinator queue directly from the backend.
+ * Uses the /api/leads/queue-summary endpoint (Redis-cached for 10 s).
+ *
+ * These counts are the ground truth — always consistent with the full DB,
+ * regardless of the client-side page_size used by useLeads().
+ *
+ * Auto-refreshes every 30 s in sync with the main leads hook.
+ */
+export function useQueueSummary(): UseQueueSummaryReturn {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: LEADS_QUERY_KEYS.queueSummary(),
+    queryFn: () => getQueueSummary(),
+    placeholderData: (previousData) => previousData,
+    staleTime: 10 * 1000,        // 10 s — matches backend Redis TTL
+    gcTime: 5 * 60 * 1000,       // 5 min cache lifetime
+    refetchInterval: 30 * 1000,  // auto-refresh every 30 s
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    retry: 2,
+    networkMode: 'always',
+  });
+
+  const refresh = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
+
+  return {
+    summary: data ?? null,
+    isLoading,
+    error: error as Error | null,
+    refresh,
+  };
 }
 
 export default useLeads;

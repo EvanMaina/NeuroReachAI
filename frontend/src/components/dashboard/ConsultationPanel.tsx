@@ -329,23 +329,14 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
 
     try {
       const apiOutcome = OUTCOME_TO_API[outcome];
+      // The backend /consultation-outcome endpoint creates an outcome note automatically
+      // when notes text is provided, so we do NOT call createLeadNote() separately
+      // (that caused duplicate notes in the lead_notes table).
       await updateConsultationOutcome(lead.id, {
         outcome: apiOutcome,
         notes: noteText.trim() || undefined,
         scheduled_callback_at: scheduledAt,
       });
-
-      // Save manual note if provided (travels with lead)
-      if (noteText.trim()) {
-        try {
-          await createLeadNote(lead.id, {
-            note_text: noteText.trim(),
-            note_type: 'manual',
-          });
-        } catch (err) {
-          if (import.meta.env.DEV) console.warn('Note save failed (non-blocking):', err);
-        }
-      }
 
       // Build success toast message
       const leadName = `${lead.firstName} ${lead.lastName || ''}`.trim();

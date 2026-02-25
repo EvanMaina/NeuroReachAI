@@ -279,32 +279,22 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
     }
   }, [lead, isUpdating, scheduleDate, scheduleTime, noteText, onScheduleSuccess, onClose]);
 
-  // ---- Core execution: call API, save note, notify parent ----
+  // ---- Core execution: call API, notify parent ----
   const executeOutcome = useCallback(async (outcome: ContactOutcome, scheduledAt?: string) => {
     if (!lead) return;
     setIsUpdating(true);
 
     try {
       // 1. Update contact outcome via API
+      // The backend creates an outcome note automatically when notes text is provided,
+      // so we do NOT call createLeadNote() separately (that caused duplicate notes).
       await updateContactOutcome(lead.id, {
         contact_outcome: outcome,
         notes: noteText.trim() || undefined,
         next_follow_up_at: scheduledAt,
       });
 
-      // 2. If user wrote a note, save it as a manual note (travels with lead)
-      if (noteText.trim()) {
-        try {
-          await createLeadNote(lead.id, {
-            note_text: noteText.trim(),
-            note_type: 'manual',
-          });
-        } catch (err) {
-          if (import.meta.env.DEV) console.warn('Note save failed (non-blocking):', err);
-        }
-      }
-
-      // 3. Build success toast
+      // 2. Build success toast
       const leadName = `${lead.firstName} ${lead.lastName || ''}`.trim();
       let toastMessage = '';
       switch (outcome) {

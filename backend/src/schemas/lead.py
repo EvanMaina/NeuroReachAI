@@ -559,6 +559,17 @@ class LeadUpdate(BaseModel):
         description="Lead priority level"
     )
 
+    # Optimistic locking — client sends back the updated_at it last received.
+    # If the lead has been modified by another coordinator since then, the
+    # server rejects the update with HTTP 409 so no silent overwrite occurs.
+    # Omit this field (or send None) to skip the check (legacy callers).
+    expected_updated_at: Optional[datetime] = Field(
+        default=None,
+        description="updated_at timestamp from the client's last fetch. "
+                    "If provided and it doesn't match the current DB value, "
+                    "the update is rejected with HTTP 409 Conflict."
+    )
+
     @field_validator('phone')
     @classmethod
     def normalize_phone(cls, v: Optional[str]) -> Optional[str]:

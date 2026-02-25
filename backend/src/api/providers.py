@@ -11,6 +11,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, and_, or_
 
@@ -222,13 +223,17 @@ async def get_provider_stats(
         ReferringProvider.status == ProviderStatus.PENDING
     ).count()
     
-    # Count referral leads
-    total_referrals = db.query(Lead).filter(Lead.is_referral == True).count()
-    
-    # Count converted referrals (reached SCHEDULED or beyond)
+    # Count referral leads — exclude soft-deleted leads
+    total_referrals = db.query(Lead).filter(
+        Lead.is_referral == True,
+        Lead.deleted_at.is_(None),
+    ).count()
+
+    # Count converted referrals (reached SCHEDULED or beyond) — exclude soft-deleted
     converted_referrals = db.query(Lead).filter(
         and_(
             Lead.is_referral == True,
+            Lead.deleted_at.is_(None),
             Lead.status.in_([
                 LeadStatus.SCHEDULED,
                 LeadStatus.CONSULTATION_COMPLETE,
@@ -236,17 +241,18 @@ async def get_provider_stats(
             ])
         )
     ).count()
-    
+
     # Calculate conversion rate
     overall_conversion_rate = 0.0
     if total_referrals > 0:
         overall_conversion_rate = round((converted_referrals / total_referrals) * 100, 1)
-    
-    # Count referrals this month
+
+    # Count referrals this month — exclude soft-deleted
     first_of_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     referrals_this_month = db.query(Lead).filter(
         and_(
             Lead.is_referral == True,
+            Lead.deleted_at.is_(None),
             Lead.created_at >= first_of_month
         )
     ).count()
@@ -591,10 +597,13 @@ async def get_provider_referrals(
             detail="Provider not found",
         )
     
-    # Get referral leads
+    # Get referral leads — exclude soft-deleted leads
     leads = (
         db.query(Lead)
-        .filter(Lead.referring_provider_id == provider_id)
+        .filter(
+            Lead.referring_provider_id == provider_id,
+            Lead.deleted_at.is_(None),
+        )
         .order_by(desc(Lead.created_at))
         .limit(limit)
         .all()
@@ -816,4 +825,111 @@ async def add_provider_note(
         "success": True,
         "note": note.to_dict(),
         "message": "Note added successfully",
+    }
+
+
+# =============================================================================
+# Provider Email Endpoint
+# =============================================================================
+
+class ProviderEmailRequest(BaseModel):
+    subject: str
+    message: str
+
+
+@router.post(
+    "/{provider_id}/email",
+    summary="Send Email to Provider",
+    description="Send a direct email to a referring provider via the platform email service.",
+)
+async def send_provider_email(
+    provider_id: UUID,
+    email_request: ProviderEmailRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Send an email to a referring provider.
+
+    Uses the platform SMTP email service. Returns 400 if provider has no email.
+    """
+    provider = db.query(ReferringProvider).filter(
+        ReferringProvider.id == provider_id
+    ).first()
+
+    if not provider:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Provider not found",
+        )
+
+    if not provider.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provider has no email address on file",
+        )
+
+    from ..services.email_service import email_service
+    from ..services.email_base import wrap_in_email_layout
+
+    # Build the message body using the branded layout (teal header + clinic footer).
+    # wrap_in_email_layout() injects body_html into a <table> structure, so the
+    # content MUST be wrapped in <tr><td> tags — raw <p>/<div> tags inside a
+    # <table> render incorrectly in most email clients (Outlook, Gmail, etc.).
+    body_html = f"""
+                    <tr>
+                        <td style="padding: 20px 30px 0 30px;">
+                            <p style="margin: 0 0 20px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.7;">
+                                Dear {provider.name},
+                            </p>
+                            <div style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #333333; line-height: 1.8; white-space: pre-wrap;">{email_request.message}</div>
+                        </td>
+                    </tr>
+"""
+    html_content = wrap_in_email_layout(
+        title=email_request.subject,
+        body_html=body_html,
+    )
+
+    try:
+        success = email_service.send_email(
+            to_email=provider.email,
+            subject=email_request.subject,
+            html_content=html_content,
+            text_content=email_request.message,
+        )
+    except Exception as exc:
+        logger.error(f"Email send failed for provider {provider.id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send email. Please check the email service configuration.",
+        )
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Email delivery failed. Please try again later.",
+        )
+
+    logger.info(f"Email sent to provider {provider.name} <{provider.email}>")
+
+    # Log audit
+    try:
+        audit_service = AuditService(db)
+        audit_service.log_update(
+            table_name="referring_providers",
+            record_id=provider.id,
+            ip_address=get_client_ip(request),
+            endpoint=f"/api/providers/{provider_id}/email",
+            request_method="POST",
+            user_agent=get_user_agent(request),
+            old_values={},
+            new_values={"action": "email_sent", "subject": email_request.subject},
+        )
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "message": f"Email sent successfully to {provider.name} at {provider.email}",
     }

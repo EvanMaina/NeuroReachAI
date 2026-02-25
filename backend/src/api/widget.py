@@ -150,7 +150,9 @@ async def serve_widget_bundle(request: Request):
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "*",
-            "Cache-Control": "public, max-age=3600, s-maxage=86400",
+            # no-cache: browser revalidates on every request — ensures
+            # updated widget JS is picked up immediately after rebuilds.
+            "Cache-Control": "no-cache",
             "X-Content-Type-Options": "nosniff",
             "ngrok-skip-browser-warning": "true",
         },
@@ -321,7 +323,9 @@ async def serve_assessment_bundle(request: Request):
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "*",
-            "Cache-Control": "public, max-age=3600, s-maxage=86400",
+            # no-cache: browser revalidates every request — picks up
+            # rebuilt bundles immediately after deploy.
+            "Cache-Control": "no-cache",
             "X-Content-Type-Options": "nosniff",
             "ngrok-skip-browser-warning": "true",
         },
@@ -394,7 +398,10 @@ async def assessment_page(request: Request):
         headers={
             "ngrok-skip-browser-warning": "true",
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "public, max-age=3600",
+            # no-cache: browser must revalidate on every request — critical so
+            # that a rebuild/deploy is picked up immediately instead of serving
+            # stale HTML+JS for up to max-age seconds.
+            "Cache-Control": "no-cache",
             "X-Content-Type-Options": "nosniff",
         },
     )

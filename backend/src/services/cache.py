@@ -386,6 +386,21 @@ class CacheService:
         except RedisError as e:
             logger.warning(f"Cache delete pattern error for {pattern}: {e}")
             return 0
+
+    def invalidate_pattern(self, pattern: str) -> int:
+        """
+        Alias for delete_pattern for API consistency.
+
+        Several callers (providers.py, etc.) use invalidate_pattern; this ensures
+        they all resolve to the same underlying delete_pattern implementation.
+
+        Args:
+            pattern: Key pattern with wildcards (e.g., "providers:*")
+
+        Returns:
+            Number of keys deleted
+        """
+        return self.delete_pattern(pattern)
     
     # ==========================================================================
     # Dashboard Caching Methods

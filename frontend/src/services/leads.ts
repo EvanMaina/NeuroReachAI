@@ -202,6 +202,37 @@ export async function getDashboardSummary(): Promise<IDashboardSummaryResponse> 
   return response.data;
 }
 
+/**
+ * Queue-level lead counts returned by the `/api/leads/queue-summary` endpoint.
+ * Matches the backend's `apply_queue_filter` logic exactly — server is the
+ * ground truth so these counts are always consistent with the DB.
+ */
+export interface IQueueSummary {
+  all: number;
+  new: number;
+  contacted: number;
+  follow_up: number;
+  callback: number;
+  scheduled: number;
+  completed: number;
+  unreachable: number;
+  hot: number;
+  medium: number;
+  low: number;
+  [key: string]: number; // index signature for dynamic access by queue name
+}
+
+/**
+ * Fetch server-side lead counts for every coordinator queue in one request.
+ * Redis-cached for 10 s on the backend.
+ *
+ * @returns Promise with counts per queue
+ */
+export async function getQueueSummary(): Promise<IQueueSummary> {
+  const response = await apiClient.get<IQueueSummary>('/api/leads/queue-summary');
+  return response.data;
+}
+
 // =============================================================================
 // Lead Types and Functions
 // =============================================================================
@@ -259,6 +290,8 @@ export interface IListLeadsParams {
   status?: LeadStatus;
   contact_outcome_filter?: ContactOutcome;
   in_service_area?: boolean;
+  /** Server-side queue filter — mirrors QueueSidebar logic on the DB */
+  queue_type?: string;
 }
 
 /**
