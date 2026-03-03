@@ -200,6 +200,12 @@ export const LeadEditModal: React.FC<LeadEditModalProps> = ({
         return;
       }
 
+      // Optimistic locking: send the last-known updated_at so the server
+      // rejects with HTTP 409 if another coordinator modified this lead.
+      if (lead.updatedAt) {
+        changes.expected_updated_at = lead.updatedAt;
+      }
+
       await updateLead(lead.id, changes);
       
       // Invalidate analytics cache so TMS distribution & conditions update immediately

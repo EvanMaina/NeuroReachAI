@@ -14,25 +14,25 @@ OPTIMIZED v3.0:
 import time
 import logging
 import uuid
-import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from enum import Enum
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case, extract, and_, or_
-from sqlalchemy.exc import SQLAlchemyError, OperationalError
+from sqlalchemy import func, case, and_, or_
+from sqlalchemy.exc import SQLAlchemyError
 
 from ..core.database import get_db
 from ..core.config import settings
 from ..models.lead import Lead, PriorityType, LeadStatus, ContactOutcome
 from ..services.cache import get_cache, CacheService
+from ..core.auth import get_current_user
 from pydantic import BaseModel, Field
 
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/metrics", tags=["Metrics"])
+router = APIRouter(prefix="/api/metrics", tags=["Metrics"], dependencies=[Depends(get_current_user)])
 
 # Cache key prefixes for metrics
 CACHE_PREFIX_QUEUE_METRICS = "neuroreach:metrics:queue"
@@ -207,9 +207,6 @@ def _compute_queue_metrics(
     
     # Build base query based on queue type — EXCLUDES soft-deleted leads
     base_query = db.query(Lead).filter(Lead.deleted_at.is_(None))
-    
-    # Import or_ for SQL OR conditions
-    from sqlalchemy import or_
     
     # First, filter out completed/lost/disqualified leads for most queues (matches frontend activeLeads)
     # Frontend: !['consultation complete', 'treatment started', 'lost', 'disqualified'].includes(l.status)
@@ -437,6 +434,7 @@ async def get_monthly_trends(
     Much more efficient than daily aggregation for long periods.
     
     Features:
+    - Redis caching with 60-second TTL
     - Comprehensive error handling with request IDs
     - Graceful degradation on database errors
     - Query timeout protection (10 seconds)
@@ -452,6 +450,14 @@ async def get_monthly_trends(
     request_id = str(uuid.uuid4())[:8]
     
     logger.info(f"[{request_id}] Monthly trends request: period={period.value}")
+    
+    # Try cache first
+    cache = get_cache()
+    cache_key = f"{CACHE_PREFIX_TRENDS}:monthly:{period.value}"
+    cached_data = cache.get(cache_key)
+    if cached_data:
+        logger.debug(f"[{request_id}] Monthly trends cache hit ({(time.time() - start_time) * 1000:.2f}ms)")
+        return MonthlyTrendsResponse(**cached_data)
     
     try:
         now = datetime.now(timezone.utc)
@@ -541,6 +547,14 @@ async def get_monthly_trends(
             "num_months": num_months,
         }
         
+        # Cache the result for 60 seconds
+        result_dict = {
+            "period": period.value,
+            "data": [p.model_dump() for p in data_points],
+            "summary": summary,
+        }
+        cache.set(cache_key, result_dict, ttl=CACHE_TTL_TRENDS)
+        
         return MonthlyTrendsResponse(
             period=period.value,
             data=data_points,
@@ -580,6 +594,7 @@ async def get_daily_trends(
     
     Provides daily lead counts for trend visualization.
     Best for short-term analysis (7-60 days).
+    Redis cached for 60 seconds.
     
     Args:
         period: Time period to retrieve
@@ -588,6 +603,13 @@ async def get_daily_trends(
     Returns:
         Daily trend data with summary statistics
     """
+    # Try cache first
+    cache = get_cache()
+    cache_key = f"{CACHE_PREFIX_TRENDS}:daily:{period.value}"
+    cached_data = cache.get(cache_key)
+    if cached_data:
+        return DailyTrendsResponse(**cached_data)
+    
     now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     
@@ -683,6 +705,14 @@ async def get_daily_trends(
         "peak_count": peak_count,
         "num_days": num_days,
     }
+    
+    # Cache the result for 60 seconds
+    result_dict = {
+        "period": period.value,
+        "data": [p.model_dump() for p in data_points],
+        "summary": summary,
+    }
+    cache.set(cache_key, result_dict, ttl=CACHE_TTL_TRENDS)
     
     return DailyTrendsResponse(
         period=period.value,

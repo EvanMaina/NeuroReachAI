@@ -154,10 +154,6 @@ EMAIL_TITLES = {
         "TMS Therapy Consultation Request Received",
         "Thank you for reaching out to our care team",
     ),
-    "appointment_reminder": (
-        "Your TMS Consultation Appointment",
-        "We look forward to seeing you",
-    ),
     "user_invitation": (
         "Welcome to TMS NeuroReach",
         "Your account has been created",
@@ -165,10 +161,6 @@ EMAIL_TITLES = {
     "password_reset": (
         "Reset Your Password",
         "We received a request to reset your TMS NeuroReach account password",
-    ),
-    "follow_up_reminder": (
-        "TMS Therapy Follow-Up",
-        "We're here to help you take the next step",
     ),
     "access_request_admin": (
         "New Access Request — TMS NeuroReach",
@@ -248,76 +240,6 @@ EMAIL_BODY_TEMPLATES = {
                         <td style="padding: 20px 30px 0 30px;">
                             <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #999999; line-height: 1.6; text-align: center;">
                                 If you have any questions or need immediate assistance, please don't hesitate to contact us.
-                            </p>
-                        </td>
-                    </tr>
-""",
-
-    # =========================================================================
-    # APPOINTMENT REMINDER
-    # =========================================================================
-    "appointment_reminder": f"""
-{_DIVIDER}
-
-                    <!-- Greeting -->
-                    <tr>
-                        <td style="padding: 20px 30px 0 30px;">
-                            <h2 style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: bold; color: #1A1A1A; line-height: 1.3;">
-                                Hi {{{{ first_name }}}},
-                            </h2>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 16px 30px 0 30px;">
-                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
-                                This is a friendly reminder about your upcoming TMS therapy consultation. We're looking forward to meeting you and discussing how TMS can help.
-                            </p>
-                        </td>
-                    </tr>
-
-{_DIVIDER}
-
-                    <!-- Appointment Details Box -->
-                    <tr>
-                        <td style="padding: 0 30px;">
-                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F0F7F7; border-left: 4px solid {HEADER_BG_COLOR}; border-radius: 8px;">
-                                <tr>
-                                    <td style="padding: 24px; text-align: center;">
-                                        <p style="margin: 0 0 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; color: {HEADER_BG_COLOR};">Your Appointment</p>
-                                        <p style="margin: 0 0 4px 0; font-family: Arial, Helvetica, sans-serif; font-size: 26px; font-weight: bold; color: #1A1A1A;">{{{{ appointment_date }}}}</p>
-                                        <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 20px; font-weight: bold; color: {HEADER_BG_COLOR};">{{{{ appointment_time }}}}</p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-
-{_DIVIDER}
-
-                    <!-- What to Bring -->
-                    <tr>
-                        <td style="padding: 0 30px;">
-                            <h3 style="margin: 0 0 12px 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; color: #1A1A1A;">
-                                What to Bring
-                            </h3>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 0 30px 0 46px;">
-                            <p style="margin: 0 0 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">&#8226; Photo ID</p>
-                            <p style="margin: 0 0 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">&#8226; Insurance card (if applicable)</p>
-                            <p style="margin: 0 0 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">&#8226; List of current medications</p>
-                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">&#8226; Medical records (if available)</p>
-                        </td>
-                    </tr>
-
-{_DIVIDER}
-
-                    <!-- CTA -->
-                    <tr>
-                        <td style="padding: 0 30px;">
-                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #999999; line-height: 1.6; text-align: center;">
-                                Need to make changes? Call us at <a href="tel:+14806683599" style="color: {HEADER_BG_COLOR}; text-decoration: none; font-weight: bold;">(480) 668-3599</a>
                             </p>
                         </td>
                     </tr>
@@ -482,74 +404,6 @@ EMAIL_BODY_TEMPLATES = {
                     </tr>
 """,
 
-    # =========================================================================
-    # FOLLOW-UP REMINDER — sent to idle leads after 3+ days
-    # =========================================================================
-    "follow_up_reminder": f"""
-{_DIVIDER}
-
-                    <!-- Greeting -->
-                    <tr>
-                        <td style="padding: 20px 30px 0 30px;">
-                            <h2 style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: bold; color: #1A1A1A; line-height: 1.3;">
-                                Hi {{{{ first_name }}}},
-                            </h2>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 16px 30px 0 30px;">
-                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
-                                We noticed you expressed interest in TMS therapy but we haven't been able to connect yet. We understand that taking the first step toward mental health treatment can feel overwhelming, and we're here to support you.
-                            </p>
-                        </td>
-                    </tr>
-
-{_DIVIDER}
-
-                    <!-- Did You Know Box -->
-                    <tr>
-                        <td style="padding: 0 30px;">
-                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F0F7F7; border-left: 4px solid {HEADER_BG_COLOR}; border-radius: 8px;">
-                                <tr>
-                                    <td style="padding: 20px;">
-                                        <p style="margin: 0 0 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; color: #1A1A1A;">Did you know?</p>
-                                        <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #444444; line-height: 1.6;">
-                                            TMS therapy is FDA-approved, non-invasive, and has helped thousands of people find relief from depression when other treatments haven't worked.
-                                        </p>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-
-{_DIVIDER}
-
-                    <!-- Ready to take the next step -->
-                    <tr>
-                        <td style="padding: 0 30px;">
-                            <h3 style="margin: 0 0 12px 0; font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: bold; color: #1A1A1A;">
-                                Ready to Take the Next Step?
-                            </h3>
-                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
-                                Our care coordination team is standing by to answer your questions and help you schedule a consultation. There's no obligation, and all conversations are confidential.
-                            </p>
-                        </td>
-                    </tr>
-
-                    <!-- CTA -->
-                    <tr>
-                        <td align="center" style="padding: 24px 30px 0 30px;">
-                            <a href="tel:+14806683599" style="display: inline-block; padding: 16px 40px; background-color: {HEADER_BG_COLOR}; color: #ffffff; text-decoration: none; border-radius: 8px; font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold;">Call Us: (480) 668-3599</a>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 20px 30px 0 30px;">
-                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #999999; line-height: 1.6; text-align: center;">
-                                Prefer to schedule online? Reply to this email and we'll send you a booking link.
-                            </p>
-                        </td>
-                    </tr>
-""",
     # =========================================================================
     # ACCESS REQUEST ADMIN — sent to admin when someone requests dashboard access
     # =========================================================================

@@ -69,7 +69,6 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     dataUpdatedAt,
     refresh: refreshLeads,
     updateStatus: updateLeadStatus,
-    updateOutcome: updateLeadOutcome,
   } = useLeads({ autoRefresh: true, refetchInterval: 30000 });
   
   // Dashboard summary hook - also globally cached
@@ -313,11 +312,6 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
   const handleStatusChange = useCallback((leadId: string, newStatus: LeadStatus) => {
     updateLeadStatus(leadId, newStatus);
   }, [updateLeadStatus]);
-
-  // Handle contact outcome change - uses optimistic update via React Query
-  const handleOutcomeChange = useCallback((leadId: string, newOutcome: ContactOutcome) => {
-    updateLeadOutcome(leadId, newOutcome);
-  }, [updateLeadOutcome]);
 
   // Handle manual refresh - uses React Query refresh
   const handleRefresh = useCallback(async () => {

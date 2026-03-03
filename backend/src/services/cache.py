@@ -516,13 +516,16 @@ class CacheService:
         # Invalidate trend caches for immediate updates
         self.delete_pattern(f"{self.PREFIX_TREND}:*")
         
+        # Invalidate metrics trends caches (daily/monthly trends in metrics.py)
+        self.delete_pattern("neuroreach:metrics:trends:*")
+        
         # CRITICAL: Invalidate conditions + TMS distribution caches
         # When a lead's tms_therapy_interest or condition is edited,
         # the analytics dashboard cards must reflect changes immediately.
         self.delete_pattern(f"{self.PREFIX_CONDITIONS}:*")
         
-        # Invalidate cohort retention cache (lead status changes affect it)
-        self.delete(f"{self.PREFIX_COHORT}:retention")
+        # Invalidate ALL cohort retention caches (per-filter keys: months:3, year:2026, etc.)
+        self.delete_pattern(f"{self.PREFIX_COHORT}:*")
         
         logger.debug("Lead change cache invalidation completed (all related caches cleared)")
     

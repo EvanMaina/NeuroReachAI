@@ -19,7 +19,7 @@ import { MainKPICards } from '../components/dashboard/MainKPICards';
 import { LeadingConditionsCard } from '../components/dashboard/LeadingConditionsCard';
 import { TMSTherapyInterestCard } from '../components/dashboard/TMSTherapyInterestCard';
 import { LeadsTrendChart } from '../components/dashboard/LeadsTrendChart';
-import { CohortRetentionAnalysis } from '../components/dashboard/CohortRetentionAnalysis';
+import { CohortRetentionAnalysis, type CohortTimeFilter } from '../components/dashboard/CohortRetentionAnalysis';
 import { LeadsFilterModal } from '../components/dashboard/LeadsFilterModal';
 import { KPICardSkeleton } from '../components/common/SkeletonLoader';
 import { RefreshButton } from '../components/common/RefreshButton';
@@ -57,7 +57,7 @@ const QUERY_KEYS = {
   dashboardSummary: ['analytics', 'dashboard-summary'] as const,
   conditionsDistribution: ['analytics', 'conditions-distribution'] as const,
   tmsDistribution: ['analytics', 'tms-distribution'] as const,
-  cohortRetention: (months: number) => ['analytics', 'cohort-retention', months] as const,
+  cohortRetention: (filter: { months?: number; year?: number }) => ['analytics', 'cohort-retention', filter] as const,
 };
 
 // =============================================================================
@@ -104,6 +104,9 @@ export const Dashboard: React.FC = () => {
   const [filteredLeads, setFilteredLeads] = useState<LeadTableRow[]>([]);
   const [isLoadingFiltered, setIsLoadingFiltered] = useState(false);
 
+  // Cohort retention time filter — default "Last 3 Months"
+  const [cohortTimeFilter, setCohortTimeFilter] = useState<CohortTimeFilter>({ type: 'months', value: 3 });
+
   // ---------------------------------------------------------------------------
   // React Query Hooks - Optimized Data Fetching with Caching
   // ---------------------------------------------------------------------------
@@ -137,13 +140,20 @@ export const Dashboard: React.FC = () => {
     placeholderData: (previousData) => previousData,
   });
 
-  // Cohort retention - CRITICAL: placeholderData prevents data disappearing
+  // Cohort retention — dynamic query key based on cohortTimeFilter state
+  const cohortQueryFilter = useMemo(() => {
+    if (cohortTimeFilter.type === 'months') {
+      return { months: cohortTimeFilter.value };
+    }
+    return { year: cohortTimeFilter.value };
+  }, [cohortTimeFilter]);
+
   const {
     data: cohortData,
     isLoading: isLoadingCohort,
   } = useQuery({
-    queryKey: QUERY_KEYS.cohortRetention(6),
-    queryFn: () => getCohortRetention(6),
+    queryKey: QUERY_KEYS.cohortRetention(cohortQueryFilter),
+    queryFn: () => getCohortRetention(cohortQueryFilter),
     staleTime: 2 * 60 * 1000, // 2 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
     refetchOnWindowFocus: true,
@@ -434,6 +444,9 @@ export const Dashboard: React.FC = () => {
             title="Monthly Cohort Retention Analysis"
             subtitle="Track lead progression and retention on a monthly basis"
             isLoading={isLoadingCohort}
+            activeFilter={cohortTimeFilter}
+            onFilterChange={setCohortTimeFilter}
+            availableYears={cohortData?.available_years ?? []}
           />
         </div>
 

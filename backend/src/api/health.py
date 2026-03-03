@@ -11,10 +11,11 @@ Endpoints:
 - /api/admin/queue/status: Queue monitoring (admin)
 """
 
+import logging
 from datetime import datetime
 from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -22,9 +23,10 @@ from ..core.config import settings
 from ..core.database import get_db
 from ..schemas.common import HealthResponse
 from ..services.cache import get_cache
-from ..core.auth import get_current_user, require_role
+from ..core.auth import require_role
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Health"])
 
 
@@ -58,10 +60,10 @@ async def health_check(db: Session = Depends(get_db)) -> HealthResponse:
         
         # Warn if database is slow
         if db_response_time_ms > 100:
-            print(f"⚠️ Slow database response: {db_response_time_ms}ms")
+            logger.warning(f"Slow database response: {db_response_time_ms}ms")
     except Exception as e:
         db_status = "disconnected"
-        print(f"❌ Database health check failed: {e}")
+        logger.error(f"Database health check failed: {e}")
     
     # Determine overall status
     if db_status == "connected":
@@ -126,10 +128,7 @@ async def readiness_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     # Check Elasticsearch (if enabled)
     if settings.elasticsearch_enabled:
         try:
-            # Would check ES health here
-            # from elasticsearch import Elasticsearch
-            # es = Elasticsearch([settings.elasticsearch_url])
-            # es.cluster.health()
+            # Elasticsearch health check placeholder — enable when ES client is configured
             components["elasticsearch"] = {
                 "status": "healthy",
                 "enabled": True,

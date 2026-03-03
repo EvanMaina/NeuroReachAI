@@ -27,6 +27,9 @@ venv/
 ENV/
 
 # Environment config files (contain secrets -- NEVER commit)
+.env
+.env.production
+.env.local
 backend/.env
 backend/.env.development
 backend/.env.production
