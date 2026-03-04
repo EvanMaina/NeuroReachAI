@@ -29,7 +29,7 @@ import { useLeads, useDashboardSummary, useQueueSummary } from '../hooks/useLead
 import { useAuth } from '../hooks/useAuth';
 import { getLeadById, deleteLead } from '../services/leads';
 import { mapApiResponseToLead } from '../utils/leadMapper';
-import type { Lead, LeadTableRow, LeadStatus, ContactOutcome } from '../types/lead';
+import type { Lead, LeadTableRow, LeadStatus } from '../types/lead';
 
 // Queue configuration for titles and colors
 const QUEUE_CONFIG: Record<string, { title: string; subtitle: string; color: string; bgColor: string }> = {

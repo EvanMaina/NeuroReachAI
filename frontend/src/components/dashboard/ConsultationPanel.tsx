@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import type { LeadTableRow, LeadStatus } from '../../types/lead';
-import { updateConsultationOutcome, createLeadNote, type ConsultationOutcomeType } from '../../services/leads';
+import { updateConsultationOutcome, type ConsultationOutcomeType } from '../../services/leads';
 
 // Consultation outcome types for internal use
 type ConsultationOutcome = 
