@@ -10,17 +10,14 @@ Provides:
 """
 
 import hashlib
-import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
-from uuid import UUID
 
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from ..core.config import settings
 from ..core.database import SessionLocal
@@ -431,11 +428,7 @@ def sync_lead_to_elasticsearch(self, lead_id: str) -> Dict[str, Any]:
         }
 
         # Index to Elasticsearch
-        # Note: Actual ES client would be initialized here
-        # from elasticsearch import Elasticsearch
-        # es = Elasticsearch([settings.elasticsearch_url])
-        # es.index(index=settings.elasticsearch_index, id=str(lead.id), document=doc)
-
+        # Elasticsearch indexing placeholder — enable when ES client is configured
         logger.info(f"Lead {lead.lead_number} synced to Elasticsearch")
 
         return {"status": "success", "lead_id": lead_id}
@@ -625,6 +618,7 @@ def send_lead_receipt_notifications(
     
     Uses the UNIFIED lead confirmation email template from email_templates.py.
     Sends via Paubox (HIPAA-compliant) with automatic fallback to SMTP.
+    SMS is sent to every lead that has a phone number — business requirement.
 
     Args:
         self: Celery task instance
@@ -665,7 +659,7 @@ def send_lead_receipt_notifications(
             masked_email = email[:2] + "***@" + email.split("@")[-1] if "@" in email else "***"
             logger.info(f"Lead confirmation email sent to {masked_email} via {results['email_provider']}: {results['email']}")
 
-        # Send SMS
+        # Send SMS to every lead with a phone number (business requirement)
         if phone:
             context = {
                 "first_name": first_name,
@@ -689,258 +683,6 @@ def send_lead_receipt_notifications(
         raise
 
 
-@shared_task(
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    max_retries=3,
-)
-def send_appointment_reminders(
-    self,
-    lead_id: str,
-    email: str,
-    phone: str,
-    first_name: str,
-    lead_number: str,
-    appointment_date: str,
-    appointment_time: str,
-) -> Dict[str, Any]:
-    """
-    Send appointment reminder email and SMS.
-
-    Args:
-        self: Celery task instance
-        lead_id: UUID of the lead
-        email: Lead's email address
-        phone: Lead's phone number
-        first_name: Lead's first name
-        lead_number: Lead reference number
-        appointment_date: Appointment date (formatted)
-        appointment_time: Appointment time (formatted)
-
-    Returns:
-        Dict with send status
-    """
-    from ..services.email_service import email_service
-    from ..services.sms_service import sms_service
-
-    results = {"email": False, "sms": False}
-
-    try:
-        # Prepare context
-        context = {
-            "first_name": first_name,
-            "lead_number": lead_number,
-            "appointment_date": appointment_date,
-            "appointment_time": appointment_time,
-            "phone_number": settings.support_phone,
-        }
-
-        # Send email
-        if email:
-            html_content = email_service.render_template(
-                "appointment_reminder", context)
-            results["email"] = email_service.send_email(
-                to_email=email,
-                subject=f"Reminder: Your TMS Consultation Tomorrow at {appointment_time}",
-                html_content=html_content,
-            )
-
-        # Send SMS
-        if phone:
-            sms_content = sms_service.render_template(
-                "appointment_reminder", context)
-            results["sms"] = sms_service.send_sms(
-                to_number=phone,
-                message=sms_content,
-            )
-
-        logger.info(
-            f"Appointment reminders sent for lead {lead_number}: {results}")
-        return {"status": "success", "results": results}
-
-    except Exception as e:
-        logger.error(
-            f"Failed to send appointment reminders for lead {lead_id}: {e}")
-        raise
-
-
-@shared_task(
-    bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    max_retries=3,
-)
-def send_follow_up_reminders(
-    self,
-    lead_id: str,
-    email: str,
-    phone: str,
-    first_name: str,
-    lead_number: str,
-) -> Dict[str, Any]:
-    """
-    Send follow-up reminder email and SMS for idle leads.
-
-    Args:
-        self: Celery task instance
-        lead_id: UUID of the lead
-        email: Lead's email address
-        phone: Lead's phone number
-        first_name: Lead's first name
-        lead_number: Lead reference number
-
-    Returns:
-        Dict with send status
-    """
-    from ..services.email_service import email_service
-    from ..services.sms_service import sms_service
-
-    results = {"email": False, "sms": False}
-
-    try:
-        # Prepare context
-        context = {
-            "first_name": first_name,
-            "lead_number": lead_number,
-            "phone_number": settings.support_phone,
-        }
-
-        # Send email
-        if email:
-            html_content = email_service.render_template(
-                "follow_up_reminder", context)
-            results["email"] = email_service.send_email(
-                to_email=email,
-                subject="We're Here to Help - TMS Therapy Consultation",
-                html_content=html_content,
-            )
-
-        # Send SMS
-        if phone:
-            sms_content = sms_service.render_template(
-                "follow_up_reminder", context)
-            results["sms"] = sms_service.send_sms(
-                to_number=phone,
-                message=sms_content,
-            )
-
-        logger.info(
-            f"Follow-up reminders sent for lead {lead_number}: {results}")
-        return {"status": "success", "results": results}
-
-    except Exception as e:
-        logger.error(
-            f"Failed to send follow-up reminders for lead {lead_id}: {e}")
-        raise
-
-
-@shared_task
-def check_and_send_appointment_reminders() -> Dict[str, Any]:
-    """
-    Periodic task to check for appointments tomorrow and send reminders.
-
-    Runs daily to find leads with scheduled callbacks tomorrow.
-    """
-    from datetime import datetime, timedelta, timezone
-
-    db = get_db_session()
-
-    try:
-        # Get tomorrow's date range
-        tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
-        start_of_day = tomorrow.replace(
-            hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = tomorrow.replace(
-            hour=23, minute=59, second=59, microsecond=999999)
-
-        # Find leads with scheduled callbacks tomorrow
-        leads = db.query(Lead).filter(
-            Lead.scheduled_callback_at >= start_of_day,
-            Lead.scheduled_callback_at <= end_of_day,
-            Lead.status == LeadStatus.SCHEDULED,
-        ).all()
-
-        sent_count = 0
-        for lead in leads:
-            # Decrypt PHI
-            from ..services.encryption import EncryptionService
-            decrypted = EncryptionService.decrypt_lead_phi(lead)
-
-            # Format appointment details
-            appointment_date = lead.scheduled_callback_at.strftime(
-                "%A, %B %d, %Y")
-            appointment_time = lead.scheduled_callback_at.strftime("%I:%M %p")
-
-            # Queue reminder task
-            send_appointment_reminders.delay(
-                lead_id=str(lead.id),
-                email=decrypted.get("email", ""),
-                phone=decrypted.get("phone", ""),
-                first_name=decrypted.get("first_name", ""),
-                lead_number=lead.lead_number,
-                appointment_date=appointment_date,
-                appointment_time=appointment_time,
-            )
-            sent_count += 1
-
-        logger.info(f"Queued {sent_count} appointment reminders")
-        return {"status": "success", "reminders_queued": sent_count}
-
-    except Exception as e:
-        logger.error(f"Failed to check appointment reminders: {e}")
-        return {"status": "error", "error": str(e)}
-
-    finally:
-        db.close()
-
-
-@shared_task
-def check_and_send_follow_up_reminders() -> Dict[str, Any]:
-    """
-    Periodic task to check for idle leads and send follow-up reminders.
-
-    Runs daily to find leads that haven't been contacted in 3+ days.
-    """
-    from datetime import datetime, timedelta, timezone
-
-    db = get_db_session()
-
-    try:
-        # Find leads created 3+ days ago that are still NEW
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=3)
-
-        leads = db.query(Lead).filter(
-            Lead.created_at <= cutoff_date,
-            Lead.status == LeadStatus.NEW,
-            Lead.contact_attempts < 3,  # Don't spam
-        ).all()
-
-        sent_count = 0
-        for lead in leads:
-            # Decrypt PHI
-            from ..services.encryption import EncryptionService
-            decrypted = EncryptionService.decrypt_lead_phi(lead)
-
-            # Queue follow-up task
-            send_follow_up_reminders.delay(
-                lead_id=str(lead.id),
-                email=decrypted.get("email", ""),
-                phone=decrypted.get("phone", ""),
-                first_name=decrypted.get("first_name", ""),
-                lead_number=lead.lead_number,
-            )
-            sent_count += 1
-
-        logger.info(f"Queued {sent_count} follow-up reminders")
-        return {"status": "success", "reminders_queued": sent_count}
-
-    except Exception as e:
-        logger.error(f"Failed to check follow-up reminders: {e}")
-        return {"status": "error", "error": str(e)}
-
-    finally:
-        db.close()
 
 
 # =============================================================================

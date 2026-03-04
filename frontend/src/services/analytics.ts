@@ -71,6 +71,7 @@ export interface ICohortRetention {
 export interface ICohortRetentionResponse {
   period_labels: string[];
   cohorts: ICohortRetention[];
+  available_years: number[];
   cache_hit: boolean;
   query_time_ms: number;
 }
@@ -167,16 +168,28 @@ export async function getConditionsDistribution(): Promise<IConditionsDistributi
  * Get cohort retention analysis.
  * 
  * Returns monthly cohort retention data with 60-second cache TTL.
+ * Supports two filter modes:
+ * - months: Look back N months from today (1, 3, 6, or 12)
+ * - year: Show all 12 months for a specific calendar year
  * 
- * @param months - Number of months (1-12, default 6)
- * @returns Cohort retention data
+ * @param options - Filter options (months or year)
+ * @returns Cohort retention data with available_years for dropdown
  */
 export async function getCohortRetention(
-  months: number = 6
+  options: { months?: number; year?: number } = { months: 3 }
 ): Promise<ICohortRetentionResponse> {
+  const params: Record<string, number> = {};
+  if (options.months != null) {
+    params.months = options.months;
+  } else if (options.year != null) {
+    params.year = options.year;
+  } else {
+    params.months = 3;
+  }
+  
   const response = await apiClient.get<ICohortRetentionResponse>(
     '/api/analytics/cohort-retention',
-    { params: { months } }
+    { params }
   );
   return response.data;
 }

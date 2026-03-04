@@ -214,15 +214,6 @@ class SMSService:
 SMS_TEMPLATES = {
     "lead_receipt": """Hi {first_name}! Thank you for your interest in TMS therapy. We've received your consultation request (Ref: {lead_number}). A care coordinator will personally reach out to you within {response_time}. Questions? Call us at {phone_number} - TMS Institute of Arizona""",
 
-    "appointment_reminder": """Hi {first_name}, this is a reminder about your TMS therapy consultation tomorrow at {appointment_time}. Please bring your ID and insurance card. To confirm or reschedule, call {phone_number}. See you soon! - TMS Institute of Arizona""",
-
-    "appointment_reminder_same_day": """Hi {first_name}, your TMS consultation is today at {appointment_time}. We look forward to seeing you! Location: {location}. Questions? Call {phone_number} - TMS Institute of Arizona""",
-
-    "follow_up_reminder": """Hi {first_name}, we noticed you expressed interest in TMS therapy but we haven't connected yet. We're here to help! Call us at {phone_number} to schedule your consultation. No obligation. - TMS Institute of Arizona (Ref: {lead_number})""",
-
-    "follow_up_gentle": """Hi {first_name}, just checking in. Our TMS therapy team is available to answer any questions you may have. Feel free to call us at {phone_number} when you're ready. - TMS Institute of Arizona""",
-
-    "consultation_scheduled": """Hi {first_name}! Your TMS consultation is confirmed for {appointment_date} at {appointment_time}. We'll send a reminder the day before. Questions? Call {phone_number} - TMS Institute of Arizona""",
 }
 
 

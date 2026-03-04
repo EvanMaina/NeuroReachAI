@@ -39,7 +39,7 @@ export const analyticsKeys = {
   conditions: () => [...analyticsKeys.all, 'conditions'] as const,
   conditionsDistribution: () => [...analyticsKeys.conditions(), 'distribution'] as const,
   cohort: () => [...analyticsKeys.all, 'cohort'] as const,
-  cohortRetention: (months: number) => [...analyticsKeys.cohort(), 'retention', months] as const,
+  cohortRetention: (filter: { months?: number; year?: number }) => [...analyticsKeys.cohort(), 'retention', filter] as const,
   tmsDistribution: () => [...analyticsKeys.all, 'tms-distribution'] as const,
   leads: () => [...analyticsKeys.all, 'leads'] as const,
   leadsCursor: (priority?: string, status?: string) => 
@@ -186,28 +186,47 @@ export function useConditionsDistribution(options: UseConditionsDistributionOpti
 
 interface UseCohortRetentionOptions {
   months?: number;
+  year?: number;
   enabled?: boolean;
 }
 
 /**
  * Hook for fetching cohort retention analysis.
  * 
+ * Supports two filter modes:
+ * - months: Look back N months from today (1, 3, 6, or 12)
+ * - year: Show all 12 months for a specific calendar year
+ * 
  * Caches for 60 seconds, matching backend cache TTL.
  * CRITICAL: Uses placeholderData to prevent data disappearing during navigation.
  * 
- * @param options - Query options
+ * @param options - Query options (months or year filter + enabled)
  * @returns Query result with cohort retention data
  */
 export function useCohortRetention(options: UseCohortRetentionOptions = {}) {
-  const { months = 6, enabled = true } = options;
+  const { months, year, enabled = true } = options;
+  
+  // Build filter object: months takes priority over year, default to months=3
+  const filter: { months?: number; year?: number } = {};
+  if (months != null) {
+    filter.months = months;
+  } else if (year != null) {
+    filter.year = year;
+  } else {
+    filter.months = 3;
+  }
+  
+  const filterLabel = filter.months != null
+    ? `${filter.months} months`
+    : `year ${filter.year}`;
   
   return useQuery<ICohortRetentionResponse, Error>({
-    queryKey: analyticsKeys.cohortRetention(months),
+    queryKey: analyticsKeys.cohortRetention(filter),
     queryFn: async () => {
       if (import.meta.env.DEV) {
-        console.log(`🔍 Fetching cohort retention (${months} months)...`);
+        console.log(`🔍 Fetching cohort retention (${filterLabel})...`);
       }
-      const data = await getCohortRetention(months);
+      const data = await getCohortRetention(filter);
       if (import.meta.env.DEV) {
         console.log('✅ Cohort retention loaded:', data);
       }
@@ -339,10 +358,11 @@ export function usePrefetchAnalytics() {
     });
   };
   
-  const prefetchCohort = async (months: number = 6) => {
+  const prefetchCohort = async (months: number = 3) => {
+    const filter = { months };
     await queryClient.prefetchQuery({
-      queryKey: analyticsKeys.cohortRetention(months),
-      queryFn: () => getCohortRetention(months),
+      queryKey: analyticsKeys.cohortRetention(filter),
+      queryFn: () => getCohortRetention(filter),
       staleTime: 50000,
     });
   };

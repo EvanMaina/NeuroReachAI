@@ -288,7 +288,7 @@ async def send_sms_to_lead(
                 first_name = decrypted.get("first_name", "Contact")
                 lead_id_str = str(lead.id)
     elif sms_data.lead_id:
-        # Lead-based SMS - fetch lead and verify consent
+        # Lead-based SMS - fetch lead and get phone
         lead = db.query(Lead).filter(Lead.id == sms_data.lead_id).first()
 
         if not lead:
@@ -297,12 +297,8 @@ async def send_sms_to_lead(
                 detail="Lead not found",
             )
 
-        # Check SMS consent for lead-based SMS
-        if not lead.sms_consent:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Lead has not provided SMS consent. Cannot send SMS.",
-            )
+        # Business requirement: coordinators can send SMS to any lead with a phone number.
+        # The sms_consent field is stored in the DB for record-keeping but does NOT gate sending.
 
         # Decrypt PHI to get phone
         decrypted = EncryptionService.decrypt_lead_phi(lead)

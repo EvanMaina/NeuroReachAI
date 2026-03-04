@@ -190,7 +190,7 @@ class PauboxEmailService:
                 try:
                     error_json = response.json()
                     error_detail = json.dumps(error_json)
-                except:
+                except (ValueError, TypeError):
                     pass
                 
                 logger.error(

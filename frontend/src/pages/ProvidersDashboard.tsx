@@ -141,6 +141,10 @@ interface ProviderFormModalProps {
   provider?: Provider | null;
   onSave: (data: ProviderCreateRequest | ProviderUpdateRequest) => void;
   isLoading: boolean;
+  /** Server-side error message from the API (e.g. duplicate email 409) */
+  serverError?: string | null;
+  /** Called when the user modifies a field so the parent can clear the server error */
+  onClearServerError?: () => void;
 }
 
 const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
@@ -149,6 +153,8 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
   provider,
   onSave,
   isLoading,
+  serverError,
+  onClearServerError,
 }) => {
   const [formData, setFormData] = useState<ProviderCreateRequest>({
     name: '',
@@ -190,6 +196,17 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
     setEmailError('');
     setPhoneError('');
   }, [provider, isOpen]);
+
+  // Determine if serverError is an email-specific error (duplicate email)
+  const isEmailServerError = serverError
+    ? /email/i.test(serverError)
+    : false;
+  // Determine if serverError is an NPI-specific error
+  const isNpiServerError = serverError
+    ? /npi/i.test(serverError)
+    : false;
+  // Generic server error (not email or NPI specific)
+  const isGenericServerError = serverError && !isEmailServerError && !isNpiServerError;
 
   if (!isOpen) return null;
 
@@ -236,6 +253,28 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Generic server error banner (not field-specific) */}
+          {isGenericServerError && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg">
+              <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+              <span className="text-sm text-red-700">{serverError}</span>
+              <button type="button" onClick={() => onClearServerError?.()} className="ml-auto text-red-400 hover:text-red-600">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* NPI server error banner */}
+          {isNpiServerError && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg">
+              <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+              <span className="text-sm text-red-700">{serverError}</span>
+              <button type="button" onClick={() => onClearServerError?.()} className="ml-auto text-red-400 hover:text-red-600">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
           {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -276,18 +315,19 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
                 value={formData.email || ''}
                 onChange={(e) => {
                   setFormData({ ...formData, email: e.target.value });
-                  if (emailError) setEmailError(''); // Clear error on change
+                  if (emailError) setEmailError(''); // Clear client validation error
+                  if (isEmailServerError) onClearServerError?.(); // Clear server error
                 }}
                 onBlur={handleEmailBlur}
                 className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  emailError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                  emailError || isEmailServerError ? 'border-red-500 bg-red-50' : 'border-gray-300'
                 }`}
                 placeholder="provider@clinic.com"
               />
-              {emailError && (
+              {(emailError || isEmailServerError) && (
                 <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
                   <AlertCircle size={12} />
-                  {emailError}
+                  {emailError || serverError}
                 </p>
               )}
             </div>
@@ -1253,11 +1293,13 @@ export const ProvidersDashboard: React.FC = () => {
     queryFn: getProviderStats,
   });
 
-  // State for mutation errors
+  // State for toast notifications (auto-dismiss)
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [mutationSuccess, setMutationSuccess] = useState<string | null>(null);
+  // State for persistent inline form errors (shown inside the modal, NOT auto-dismissed)
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Clear notifications after timeout
+  // Clear toast notifications after timeout (formError is NOT auto-dismissed)
   useEffect(() => {
     if (mutationError || mutationSuccess) {
       const timer = setTimeout(() => {
@@ -1269,16 +1311,29 @@ export const ProvidersDashboard: React.FC = () => {
     return undefined;
   }, [mutationError, mutationSuccess]);
 
+  /**
+   * Check if an error message is a form-validation error (e.g. duplicate email/NPI 409).
+   * These should be shown inline in the modal, not as a fleeting toast.
+   */
+  const isFormRelatedError = (msg: string) =>
+    /email|npi|already exists|duplicate|conflict/i.test(msg);
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: createProvider,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: providerKeys.all });
       setIsModalOpen(false);
+      setFormError(null);
       setMutationSuccess(`Provider "${data.name}" created successfully!`);
     },
     onError: (error: Error) => {
-      setMutationError(error.message || 'Failed to create provider. Please try again.');
+      const msg = error.message || 'Failed to create provider. Please try again.';
+      if (isFormRelatedError(msg)) {
+        setFormError(msg); // Show inline in modal — persistent
+      } else {
+        setMutationError(msg); // Show as toast — auto-dismiss
+      }
     },
   });
 
@@ -1289,10 +1344,16 @@ export const ProvidersDashboard: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: providerKeys.all });
       setIsModalOpen(false);
       setEditingProvider(null);
+      setFormError(null);
       setMutationSuccess(`Provider "${data.name}" updated successfully!`);
     },
     onError: (error: Error) => {
-      setMutationError(error.message || 'Failed to update provider. Please try again.');
+      const msg = error.message || 'Failed to update provider. Please try again.';
+      if (isFormRelatedError(msg)) {
+        setFormError(msg); // Show inline in modal — persistent
+      } else {
+        setMutationError(msg); // Show as toast — auto-dismiss
+      }
     },
   });
 
@@ -1574,10 +1635,13 @@ export const ProvidersDashboard: React.FC = () => {
         onClose={() => {
           setIsModalOpen(false);
           setEditingProvider(null);
+          setFormError(null);
         }}
         provider={editingProvider}
         onSave={handleSave}
         isLoading={createMutation.isPending || updateMutation.isPending}
+        serverError={formError}
+        onClearServerError={() => setFormError(null)}
       />
 
       {/* Provider Profile Modal */}

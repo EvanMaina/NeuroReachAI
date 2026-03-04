@@ -11,7 +11,7 @@
  * @module components/dashboard/CohortRetentionAnalysis
  */
 
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Users,
   Percent,
@@ -21,6 +21,8 @@ import {
   TrendingDown,
   AlertTriangle,
   Award,
+  ChevronDown,
+  Calendar,
 } from 'lucide-react';
 
 interface CohortData {
@@ -31,12 +33,26 @@ interface CohortData {
   winbacks?: number; // Number of re-engaged leads
 }
 
+/** Filter value for the cohort time dropdown */
+export type CohortTimeFilter =
+  | { type: 'months'; value: 1 }
+  | { type: 'months'; value: 3 }
+  | { type: 'months'; value: 6 }
+  | { type: 'months'; value: 12 }
+  | { type: 'year'; value: number };
+
 interface CohortRetentionAnalysisProps {
   data: CohortData[];
   periodLabels?: string[];
   title?: string;
   subtitle?: string;
   isLoading?: boolean;
+  /** Currently active time filter */
+  activeFilter?: CohortTimeFilter;
+  /** Callback when user selects a new time filter */
+  onFilterChange?: (filter: CohortTimeFilter) => void;
+  /** Available years for the year picker (descending order) */
+  availableYears?: number[];
 }
 
 type DisplayMode = 'percentage' | 'absolute';
@@ -77,18 +93,46 @@ const getLossColor = (percentage: number): string => {
   return 'bg-gray-50 text-gray-400';
 };
 
+/**
+ * Get display label for a cohort time filter
+ */
+const getFilterLabel = (filter: CohortTimeFilter): string => {
+  if (filter.type === 'months') {
+    return filter.value === 1 ? 'Last Month' : `Last ${filter.value} Months`;
+  }
+  return `Year ${filter.value}`;
+};
+
 export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = ({
   data,
   periodLabels = ['Initial', 'Contacted', 'Scheduled', 'Completed', 'Active', 'Retained'],
   title = 'Monthly Cohort Retention Analysis',
   subtitle = 'Track lead progression and retention by monthly cohort',
   isLoading = false,
+  activeFilter = { type: 'months', value: 3 },
+  onFilterChange,
+  availableYears = [],
 }) => {
   const [displayMode, setDisplayMode] = useState<DisplayMode>('percentage');
   const [hoveredCell, setHoveredCell] = useState<{ row: number; col: number } | null>(null);
   const [showLostColumn, setShowLostColumn] = useState(true);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target as Node)) {
+        setFilterDropdownOpen(false);
+      }
+    };
+    if (filterDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [filterDropdownOpen]);
 
   // Calculate percentages and lost metrics from absolute values
   const processedData = useMemo(() => {
@@ -214,6 +258,79 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
 
         {/* Controls */}
         <div className="flex items-center gap-3">
+          {/* Time Filter Dropdown */}
+          {onFilterChange && (
+            <div className="relative" ref={filterDropdownRef}>
+              <button
+                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors"
+              >
+                <Calendar size={14} />
+                <span>{getFilterLabel(activeFilter)}</span>
+                <ChevronDown size={14} className={`transition-transform ${filterDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {filterDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-30">
+                  {/* Month options */}
+                  <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                    Lookback
+                  </div>
+                  {([1, 3, 6, 12] as const).map((m) => {
+                    const isActive = activeFilter.type === 'months' && activeFilter.value === m;
+                    return (
+                      <button
+                        key={`m-${m}`}
+                        onClick={() => {
+                          onFilterChange({ type: 'months', value: m });
+                          setFilterDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                          isActive
+                            ? 'bg-purple-50 text-purple-700 font-medium'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {m === 1 ? 'Last Month' : `Last ${m} Months`}
+                        {isActive && <span className="float-right text-purple-500">✓</span>}
+                      </button>
+                    );
+                  })}
+
+                  {/* Year options (only if available) */}
+                  {availableYears.length > 0 && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                        By Year
+                      </div>
+                      {availableYears.map((yr) => {
+                        const isActive = activeFilter.type === 'year' && activeFilter.value === yr;
+                        return (
+                          <button
+                            key={`y-${yr}`}
+                            onClick={() => {
+                              onFilterChange({ type: 'year', value: yr });
+                              setFilterDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                              isActive
+                                ? 'bg-purple-50 text-purple-700 font-medium'
+                                : 'text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            {yr}
+                            {isActive && <span className="float-right text-purple-500">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Lost column toggle */}
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
             <input

@@ -56,9 +56,9 @@ function injectStyles(): void {
        ============================================================ */
     #nr-card-widget {
       position: fixed;
-      top: 160px;
+      top: 480px;
       right: 120px;
-      z-index: 99999;
+      z-index: 999;
       width: 260px;
       border-radius: 12px;
       overflow: visible;
@@ -231,7 +231,7 @@ function injectStyles(): void {
        Tier 1: Large Desktop (≥1440px)
        ============================================================ */
     @media (min-width: 1440px) {
-      #nr-card-widget { width: 280px; right: 140px; top: 160px; }
+      #nr-card-widget { width: 280px; right: 140px; top: 480px; }
       .nr-card-body { padding: 44px 28px 40px; gap: 40px; }
       .nr-card-headline { font-size: 22px; }
       .nr-card-cta { font-size: 15px; padding: 14px 20px; }
@@ -243,7 +243,7 @@ function injectStyles(): void {
        Tier 3: Small Laptop (1025px - 1279px)
        ============================================================ */
     @media (min-width: 1025px) and (max-width: 1279px) {
-      #nr-card-widget { width: 240px; right: 80px; top: 155px; }
+      #nr-card-widget { width: 240px; right: 80px; top: 480px; }
       .nr-card-body { padding: 36px 22px 32px; gap: 32px; }
       .nr-card-headline { font-size: 19px; }
       .nr-card-cta { font-size: 14px; padding: 12px 16px; }
@@ -254,7 +254,7 @@ function injectStyles(): void {
        Tier 4: Tablet (769px - 1024px)
        ============================================================ */
     @media (min-width: 769px) and (max-width: 1024px) {
-      #nr-card-widget { width: 200px; right: 40px; top: 150px; border-radius: 10px; }
+      #nr-card-widget { width: 200px; right: 40px; top: 480px; border-radius: 10px; }
       .nr-card-inner { border-radius: 10px; }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
       .nr-card-body { padding: 28px 18px 24px; gap: 24px; }
@@ -276,13 +276,16 @@ function injectStyles(): void {
        ============================================================ */
     @media (max-width: 768px) {
       #nr-card-widget {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
         width: 150px;
-        right: 8px;
-        top: 160px;
-        left: auto;
         border-radius: 10px;
         transform: translateX(30px) scale(0.95);
         transform-origin: top right;
+        z-index: 999;
       }
       #nr-card-widget.nr-card-visible {
         transform: translateX(0) scale(1);
@@ -326,10 +329,14 @@ function injectStyles(): void {
        ============================================================ */
     @media (max-width: 375px) {
       #nr-card-widget {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
         width: 130px;
-        right: 6px;
-        top: 150px;
         border-radius: 8px;
+        z-index: 999;
       }
       .nr-card-inner { border-radius: 8px; }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 1px; }

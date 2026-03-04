@@ -563,6 +563,13 @@ export interface ILeadUpdateRequest {
   notes?: string;
   status?: string;
   priority?: string;
+  /**
+   * Optimistic locking — send the `updated_at` timestamp from the last fetch.
+   * If another coordinator has modified this lead since, the server returns
+   * HTTP 409 Conflict instead of silently overwriting their changes.
+   * Omit to skip the check (legacy callers).
+   */
+  expected_updated_at?: string;
 }
 
 /**

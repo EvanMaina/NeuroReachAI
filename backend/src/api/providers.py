@@ -791,7 +791,7 @@ async def add_provider_note(
             note_text = body.get("note_text", "")
             note_type = body.get("note_type", "general")
             created_by = body.get("created_by")
-        except:
+        except (ValueError, KeyError, TypeError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="note_text is required",

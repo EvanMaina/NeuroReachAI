@@ -493,16 +493,20 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     Handle ValueError exceptions.
 
     Returns user-friendly error response without exposing internals.
+    In production, returns a generic message to avoid leaking internal details.
     """
     import traceback
     logger.error(f"ValueError on {request.method} {request.url.path}: {type(exc).__name__}: {exc}")
     logger.error(traceback.format_exc())
+    # In production, never forward raw exception text to the client —
+    # it may contain field values, internal paths, or other sensitive details.
+    client_message = str(exc) if settings.is_development else "Invalid input. Please check your data and try again."
     return JSONResponse(
         status_code=400,
         content={
             "success": False,
             "error": "validation_error",
-            "message": str(exc),
+            "message": client_message,
         },
     )
 

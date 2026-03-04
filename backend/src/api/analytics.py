@@ -13,7 +13,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import text, func, case, and_
+from sqlalchemy import func, case, and_
 from pydantic import BaseModel, Field
 
 from ..core.config import settings
@@ -93,6 +93,7 @@ class CohortRetentionResponse(BaseModel):
     """Cohort retention analysis response."""
     period_labels: List[str] = Field(..., description="Labels for each retention period")
     cohorts: List[CohortRetention] = Field(..., description="Cohort data")
+    available_years: List[int] = Field(default_factory=list, description="Years that have lead data")
     cache_hit: bool = Field(default=False, description="Whether data came from cache")
     query_time_ms: float = Field(default=0, description="Query execution time in milliseconds")
 
@@ -744,114 +745,227 @@ async def get_tms_therapy_distribution(
     "/cohort-retention",
     response_model=CohortRetentionResponse,
     summary="Get Cohort Retention",
-    description="Get monthly cohort retention analysis.",
+    description="Get monthly cohort retention analysis with time-range filters.",
 )
 async def get_cohort_retention(
     request: Request,
     db: Session = Depends(get_db),
-    months: int = Query(default=6, ge=1, le=12, description="Number of months"),
+    months: Optional[int] = Query(default=None, description="Number of months to look back (1, 3, 6, or 12)"),
+    year: Optional[int] = Query(default=None, ge=2020, le=2099, description="Specific year to show all 12 months"),
 ) -> CohortRetentionResponse:
     """
-    Get cohort retention analysis data.
+    Get cohort retention analysis data with flexible time-range filters.
     
-    Tracks lead progression through funnel stages by cohort month.
-    Cached for 60 seconds.
+    Supports two filter modes:
+    - **months**: Look back N months from today (1, 3, 6, or 12)
+    - **year**: Show all 12 months for a specific calendar year
+    
+    Priority rules:
+    - If `months` is provided → return that many monthly cohorts counting back from today
+    - If `year` is provided → return cohorts for Jan–Dec of that year
+    - If neither → default to months=3
+    - If both → months takes priority, year is ignored
+    
+    Cached per filter combination for 60 seconds.
     
     Args:
         request: FastAPI request
         db: Database session
-        months: Number of months to include
+        months: Number of months to look back (1, 3, 6, or 12)
+        year: Specific calendar year (e.g., 2026)
         
     Returns:
-        Cohort retention data
+        Cohort retention data with available_years for dropdown population
     """
     start_time = time.time()
     cache = get_cache()
     
-    # Try cache first
-    cached_data = cache.get_cohort_data()
+    # -------------------------------------------------------------------------
+    # Determine filter mode and build cache key
+    # -------------------------------------------------------------------------
+    # Priority: months > year > default (months=3)
+    if months is not None:
+        # Validate months to allowed values
+        allowed_months = {1, 3, 6, 12}
+        if months not in allowed_months:
+            months = min(allowed_months, key=lambda x: abs(x - months))
+        filter_mode = "months"
+        cache_key = f"{cache.PREFIX_COHORT}:months:{months}"
+    elif year is not None:
+        filter_mode = "year"
+        cache_key = f"{cache.PREFIX_COHORT}:year:{year}"
+    else:
+        # Default: last 3 months
+        months = 3
+        filter_mode = "months"
+        cache_key = f"{cache.PREFIX_COHORT}:months:{months}"
+    
+    # -------------------------------------------------------------------------
+    # Try per-filter cache first
+    # -------------------------------------------------------------------------
+    cached_data = cache.get(cache_key)
     if cached_data:
+        # Still need available_years (cached separately with longer TTL)
+        available_years = _get_available_years(db, cache)
         return CohortRetentionResponse(
             period_labels=cached_data["labels"],
             cohorts=[CohortRetention(**c) for c in cached_data["cohorts"]],
+            available_years=available_years,
             cache_hit=True,
             query_time_ms=round((time.time() - start_time) * 1000, 2)
         )
     
+    # -------------------------------------------------------------------------
+    # Compute cohort data based on filter mode
+    # -------------------------------------------------------------------------
     period_labels = ["Initial", "Contacted", "Scheduled", "Completed", "Active", "Retained"]
-    
-    # Calculate cohort months
     today = datetime.utcnow().date()
     cohorts = []
     
-    for i in range(months - 1, -1, -1):
-        # Calculate month start/end
-        month_date = today.replace(day=1) - timedelta(days=i * 30)
-        month_start = month_date.replace(day=1)
-        if month_start.month == 12:
-            month_end = month_start.replace(year=month_start.year + 1, month=1)
-        else:
-            month_end = month_start.replace(month=month_start.month + 1)
+    if filter_mode == "months":
+        # Start from the LAST COMPLETE month, not the current (incomplete) month.
+        # On March 2 2026, anchor is February 2026 — the most recent month with
+        # a full data set.  The current month is almost always incomplete and
+        # misleading for cohort analysis.
+        first_of_current = today.replace(day=1)
+        last_complete = first_of_current - timedelta(days=1)  # last day of prev month
+        anchor_month = last_complete.month
+        anchor_year = last_complete.year
         
-        cohort_name = month_start.strftime("%b %Y")
-        
-        # Get cohort statistics — EXCLUDES soft-deleted leads
-        cohort_stats = db.query(
-            func.count(Lead.id).label('total'),
-            func.count(Lead.id).filter(
-                Lead.status.notin_([LeadStatus.NEW])
-            ).label('contacted'),
-            func.count(Lead.id).filter(
-                Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED])
-            ).label('scheduled'),
-            func.count(Lead.id).filter(
-                Lead.status.in_([LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED])
-            ).label('completed'),
-            func.count(Lead.id).filter(
-                Lead.status == LeadStatus.TREATMENT_STARTED
-            ).label('active'),
-            func.count(Lead.id).filter(
-                Lead.status != LeadStatus.LOST
-            ).label('retained'),
-        ).filter(
-            and_(
-                Lead.created_at >= month_start,
-                Lead.created_at < month_end,
-                Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
-            )
-        ).first()
-        
-        total = cohort_stats.total or 0
-        if total > 0:
-            periods = [
-                total,
-                cohort_stats.contacted or 0,
-                cohort_stats.scheduled or 0,
-                cohort_stats.completed or 0,
-                cohort_stats.active or 0,
-                cohort_stats.retained or 0,
-            ]
-            percentages = [round(p / total * 100, 1) for p in periods]
-        else:
-            periods = [0, 0, 0, 0, 0, 0]
-            percentages = [0, 0, 0, 0, 0, 0]
-        
-        cohorts.append({
-            "cohort": cohort_name,
-            "cohort_size": total,
-            "periods": periods,
-            "percentages": percentages,
-        })
+        for i in range(months - 1, -1, -1):
+            target_month = anchor_month - i
+            target_year = anchor_year
+            while target_month <= 0:
+                target_month += 12
+                target_year -= 1
+            
+            month_start = today.replace(year=target_year, month=target_month, day=1)
+            if target_month == 12:
+                month_end = month_start.replace(year=target_year + 1, month=1)
+            else:
+                month_end = month_start.replace(month=target_month + 1)
+            
+            cohort_name = month_start.strftime("%b %Y")
+            stats = _query_cohort_stats(db, month_start, month_end)
+            cohorts.append(_build_cohort_entry(cohort_name, stats))
     
-    # Cache result
-    cache.set_cohort_data({"labels": period_labels, "cohorts": cohorts})
+    else:
+        # Year mode: show all 12 months of the specified year
+        for m in range(1, 13):
+            month_start = datetime(year, m, 1).date()
+            if m == 12:
+                month_end = datetime(year + 1, 1, 1).date()
+            else:
+                month_end = datetime(year, m + 1, 1).date()
+            
+            # Don't include future months
+            if month_start > today:
+                break
+            
+            cohort_name = month_start.strftime("%b %Y")
+            stats = _query_cohort_stats(db, month_start, month_end)
+            cohorts.append(_build_cohort_entry(cohort_name, stats))
+    
+    # -------------------------------------------------------------------------
+    # Cache result per filter combination
+    # -------------------------------------------------------------------------
+    result_data = {"labels": period_labels, "cohorts": cohorts}
+    cache.set(cache_key, result_data, ttl=settings.cache_ttl_analytics)
+    
+    # Get available years (cached separately, 5-minute TTL)
+    available_years = _get_available_years(db, cache)
     
     return CohortRetentionResponse(
         period_labels=period_labels,
         cohorts=[CohortRetention(**c) for c in cohorts],
+        available_years=available_years,
         cache_hit=False,
         query_time_ms=round((time.time() - start_time) * 1000, 2)
     )
+
+
+def _query_cohort_stats(db: Session, month_start, month_end):
+    """Query cohort statistics for a single month window. EXCLUDES soft-deleted leads."""
+    return db.query(
+        func.count(Lead.id).label('total'),
+        func.count(Lead.id).filter(
+            Lead.status.notin_([LeadStatus.NEW])
+        ).label('contacted'),
+        func.count(Lead.id).filter(
+            Lead.status.in_([LeadStatus.SCHEDULED, LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED])
+        ).label('scheduled'),
+        func.count(Lead.id).filter(
+            Lead.status.in_([LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED])
+        ).label('completed'),
+        func.count(Lead.id).filter(
+            Lead.status == LeadStatus.TREATMENT_STARTED
+        ).label('active'),
+        func.count(Lead.id).filter(
+            Lead.status != LeadStatus.LOST
+        ).label('retained'),
+    ).filter(
+        and_(
+            Lead.created_at >= month_start,
+            Lead.created_at < month_end,
+            Lead.deleted_at.is_(None),
+        )
+    ).first()
+
+
+def _build_cohort_entry(cohort_name: str, cohort_stats) -> dict:
+    """Build a cohort entry dict from query results."""
+    total = cohort_stats.total or 0
+    if total > 0:
+        periods = [
+            total,
+            cohort_stats.contacted or 0,
+            cohort_stats.scheduled or 0,
+            cohort_stats.completed or 0,
+            cohort_stats.active or 0,
+            cohort_stats.retained or 0,
+        ]
+        percentages = [round(p / total * 100, 1) for p in periods]
+    else:
+        periods = [0, 0, 0, 0, 0, 0]
+        percentages = [0, 0, 0, 0, 0, 0]
+    
+    return {
+        "cohort": cohort_name,
+        "cohort_size": total,
+        "periods": periods,
+        "percentages": percentages,
+    }
+
+
+def _get_available_years(db: Session, cache: CacheService) -> List[int]:
+    """
+    Get list of years that have lead data, cached for 5 minutes.
+    
+    Returns years in descending order (newest first).
+    """
+    cache_key = f"{cache.PREFIX_COHORT}:available_years"
+    cached_years = cache.get(cache_key)
+    if cached_years is not None:
+        return cached_years
+    
+    # Query distinct years from lead created_at — EXCLUDES soft-deleted leads
+    try:
+        rows = db.query(
+            func.extract('year', Lead.created_at).label('yr')
+        ).filter(
+            Lead.deleted_at.is_(None),
+        ).distinct().order_by(
+            func.extract('year', Lead.created_at).desc()
+        ).all()
+        
+        years = [int(row.yr) for row in rows if row.yr is not None]
+    except Exception as e:
+        logger.warning(f"Failed to query available years: {e}")
+        years = [datetime.utcnow().year]
+    
+    # Cache for 5 minutes (years change very rarely)
+    cache.set(cache_key, years, ttl=300)
+    return years
 
 
 # =============================================================================

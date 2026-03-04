@@ -49,8 +49,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
       console.error('Component stack:', errorInfo.componentStack);
     }
 
-    // TODO: In production, send to Sentry/Datadog/etc.
-    // errorTrackingService.captureException(error, { extra: errorInfo });
   }
 
   handleReload = () => {
