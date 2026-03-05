@@ -2,7 +2,7 @@
 # Multi-stage build for React application
 
 # Development stage
-FROM node:20-alpine AS development
+FROM node:20.18-alpine AS development
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20.18-alpine AS builder
 
 WORKDIR /app
 
@@ -39,7 +39,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine AS production
+FROM nginx:1.27-alpine AS production
 
 # Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf

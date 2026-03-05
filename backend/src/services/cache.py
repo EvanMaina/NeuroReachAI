@@ -66,12 +66,31 @@ class CacheService:
             return
             
         try:
-            self._redis = redis.from_url(
-                settings.redis_url,
+            # Build connection kwargs
+            redis_kwargs = dict(
                 decode_responses=True,
                 socket_connect_timeout=5,
                 socket_timeout=5,
                 retry_on_timeout=True,
+            )
+
+            # Clean the Redis URL: strip any query parameters like
+            # ?ssl_cert_reqs=CERT_NONE that were added for Celery but
+            # confuse redis.from_url(). We handle TLS settings via kwargs.
+            redis_url = settings.redis_url
+            if "?" in redis_url:
+                redis_url = redis_url.split("?")[0]
+
+            # AWS ElastiCache with transit encryption uses self-signed certs.
+            # When the URL scheme is rediss:// (TLS), disable strict cert
+            # verification so the connection succeeds without a custom CA bundle.
+            if redis_url.startswith("rediss://"):
+                import ssl
+                redis_kwargs["ssl_cert_reqs"] = "none"
+
+            self._redis = redis.from_url(
+                redis_url,
+                **redis_kwargs,
             )
             # Test connection
             self._redis.ping()

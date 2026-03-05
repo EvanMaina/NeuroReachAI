@@ -195,36 +195,6 @@ const queryClient = new QueryClient({
   },
 });
 
-// Log when QueryClient is created (debugging)
-if (import.meta.env.DEV) {
-  console.log('🔧 QueryClient initialized with persistent cache settings');
-}
-
-// =============================================================================
-// Performance Monitoring
-// =============================================================================
-
-const initPerformanceMonitoring = () => {
-  if (typeof window === 'undefined' || !('performance' in window)) return;
-
-  // Only run in development
-  if (import.meta.env.DEV) {
-    window.addEventListener('load', () => {
-      requestAnimationFrame(() => {
-        const timing = performance.timing;
-        const metrics = {
-          TTFB: timing.responseStart - timing.navigationStart,
-          DOMContentLoaded: timing.domContentLoadedEventEnd - timing.navigationStart,
-          PageLoad: timing.loadEventEnd - timing.navigationStart,
-        };
-        console.log('📊 Performance:', metrics);
-      });
-    });
-  }
-};
-
-// Initialize once
-initPerformanceMonitoring();
 
 // =============================================================================
 // Page Renderer (Memoized)

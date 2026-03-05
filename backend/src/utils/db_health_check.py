@@ -7,6 +7,7 @@ Used for monitoring, debugging, and ensuring HIPAA compliance.
 
 import sys
 import os
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.database import engine, SessionLocal
 from src.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class HealthStatus(Enum):
@@ -86,7 +89,7 @@ class DatabaseHealthCheck:
         return {
             "status": overall_status.value,
             "timestamp": datetime.utcnow().isoformat(),
-            "database": settings.database_name,
+            "database": settings.database_url.split("/")[-1] if "/" in settings.database_url else "unknown",
             "environment": settings.environment,
             "checks": [
                 {
@@ -396,42 +399,34 @@ def run_health_check() -> Dict[str, Any]:
 
 
 def print_health_report():
-    """Print formatted health check report to console."""
-    print("\n" + "=" * 60)
-    print("NeuroReach AI - Database Health Check")
-    print("=" * 60)
-    
+    """Print formatted health check report to console (CLI usage only)."""
+    import json
+
     report = run_health_check()
-    
-    # Overall status
+
     status_emoji = {
         "healthy": "✅",
         "degraded": "⚠️",
         "unhealthy": "❌",
         "unknown": "❓"
     }
-    
-    print(f"\nOverall Status: {status_emoji.get(report['status'], '❓')} {report['status'].upper()}")
-    print(f"Timestamp: {report['timestamp']}")
-    print(f"Database: {report['database']}")
-    print(f"Environment: {report['environment']}")
-    
-    print("\n" + "-" * 60)
-    print("Individual Checks:")
-    print("-" * 60)
-    
+
+    logger.info("=" * 60)
+    logger.info("NeuroReach AI - Database Health Check")
+    logger.info("=" * 60)
+    logger.info("Overall Status: %s %s", status_emoji.get(report['status'], '❓'), report['status'].upper())
+    logger.info("Timestamp: %s", report['timestamp'])
+    logger.info("Database: %s", report['database'])
+    logger.info("Environment: %s", report['environment'])
+
     for check in report['checks']:
         emoji = status_emoji.get(check['status'], '❓')
-        print(f"\n{emoji} {check['name']}")
-        print(f"   Status: {check['status']}")
-        print(f"   Message: {check['message']}")
+        logger.info("%s %s — %s: %s", emoji, check['name'], check['status'], check['message'])
         if check.get('duration_ms'):
-            print(f"   Duration: {check['duration_ms']}ms")
+            logger.info("   Duration: %sms", check['duration_ms'])
         if check.get('details'):
-            print(f"   Details: {check['details']}")
-    
-    print("\n" + "=" * 60)
-    
+            logger.info("   Details: %s", check['details'])
+
     return report
 
 
@@ -442,6 +437,8 @@ def print_health_report():
 if __name__ == "__main__":
     import json
     import argparse
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     
     parser = argparse.ArgumentParser(description="Database Health Check")
     parser.add_argument("--json", action="store_true", help="Output as JSON")

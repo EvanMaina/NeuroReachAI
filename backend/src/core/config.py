@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # ==========================================================================
     # Celery Task Queue Settings
     # ==========================================================================
+    celery_enabled: bool = Field(
+        default=True,
+        description="Enable Celery async task queue. When False, tasks run synchronously."
+    )
     celery_broker_url: str = Field(
         default="redis://localhost:6379/1",
         description="Celery broker URL (Redis)"

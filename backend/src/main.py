@@ -300,8 +300,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Initializes cache service and performs health checks.
     """
     # Startup
-    print(f"Starting {settings.app_name} v{settings.app_version}")
-    print(f"Environment: {settings.environment}")
+    logger.info("Starting %s v%s", settings.app_name, settings.app_version)
+    logger.info("Environment: %s", settings.environment)
 
     # =========================================================================
     # PRODUCTION ENVIRONMENT VALIDATION
@@ -326,39 +326,38 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             _missing_services.append("TWILIO_ACCOUNT_SID (sms_mode=twilio but no SID)")
 
     if _insecure_secrets and settings.is_production:
-        print("=" * 60)
-        print("  FATAL: INSECURE SECRETS DETECTED IN PRODUCTION")
-        print(f"  The following env vars still use dev defaults: {', '.join(_insecure_secrets)}")
-        print("  Set strong, unique values before deploying to production!")
-        print("  Refusing to start. Exiting.")
-        print("=" * 60)
+        logger.critical(
+            "FATAL: INSECURE SECRETS DETECTED IN PRODUCTION. "
+            "The following env vars still use dev defaults: %s. "
+            "Set strong, unique values before deploying to production! Refusing to start.",
+            ", ".join(_insecure_secrets),
+        )
         import sys
         sys.exit(1)
     elif _insecure_secrets:
-        print("=" * 60)
-        print("  WARNING: Dev-default secrets in use:")
-        print(f"     {', '.join(_insecure_secrets)}")
-        print("  This is fine for development, but MUST be changed for production.")
-        print("=" * 60)
+        logger.warning(
+            "Dev-default secrets in use: %s. "
+            "This is fine for development, but MUST be changed for production.",
+            ", ".join(_insecure_secrets),
+        )
 
     if _missing_services:
-        print("=" * 60)
-        print("  WARNING: Potentially missing production services:")
-        for svc in _missing_services:
-            print(f"     - {svc}")
-        print("  These services may not work correctly in production.")
-        print("=" * 60)
+        logger.warning(
+            "Potentially missing production services: %s. "
+            "These services may not work correctly in production.",
+            ", ".join(_missing_services),
+        )
 
     # Initialize cache service
     cache = get_cache()
     if cache.is_connected:
-        print("Redis cache connected")
+        logger.info("Redis cache connected")
     else:
-        print("Redis cache not available - operating without cache")
+        logger.warning("Redis cache not available - operating without cache")
 
     # In development, we can create tables (production should use Alembic)
     if settings.is_development:
-        print("Development mode - tables managed by init SQL script")
+        logger.info("Development mode - tables managed by init SQL script")
 
     # Admin seeding is handled by the setup_fresh_admin.py script.
     # Run it after first deployment:
@@ -371,20 +370,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         try:
             user_count = db.query(User).count()
             if user_count == 0:
-                print("=" * 60)
-                print("  NO USERS FOUND")
-                print("  Run the setup script to create the first admin:")
-                print("    docker exec -it neuroreach-backend python /app/scripts/setup_fresh_admin.py --email admin@clinic.com")
-                print("=" * 60)
+                logger.warning(
+                    "NO USERS FOUND. Run the setup script to create the first admin: "
+                    "docker exec -it neuroreach-backend python /app/scripts/setup_fresh_admin.py --email admin@clinic.com"
+                )
         finally:
             db.close()
     except Exception as e:
-        print(f"[WARNING] Could not check user table: {e}")
+        logger.warning("Could not check user table: %s", e)
 
     yield
 
     # Shutdown
-    print("Shutting down...")
+    logger.info("Shutting down...")
     engine.dispose()
 
 

@@ -1120,14 +1120,14 @@ async def jotform_webhook(
         except Exception:
             pass
         
-        # Send unified confirmation email
+        # Send unified confirmation email via dispatcher (Celery async with sync fallback)
         try:
-            from ..tasks.lead_tasks import send_lead_receipt_notifications
+            from ..services.sync_notifications import dispatch_lead_receipt_notifications
             decrypted_email = EncryptionService.decrypt_field(lead.email_encrypted)
             decrypted_first = EncryptionService.decrypt_field(lead.first_name_encrypted)
             decrypted_phone = EncryptionService.decrypt_field(lead.phone_encrypted)
             if decrypted_email:
-                send_lead_receipt_notifications.delay(
+                dispatch_lead_receipt_notifications(
                     lead_id=str(lead.id),
                     email=decrypted_email,
                     phone=decrypted_phone or "",
@@ -1136,9 +1136,9 @@ async def jotform_webhook(
                     conditions=lead_input.conditions or [],
                     other_condition_text=lead_input.other_condition_text or "",
                 )
-                logger.info(f"Queued confirmation email for Jotform lead {lead.lead_number}")
+                logger.info(f"Sent confirmation email for Jotform lead {lead.lead_number}")
         except Exception as e:
-            logger.warning(f"Failed to queue confirmation email for Jotform lead {lead.lead_number}: {e}")
+            logger.warning(f"Failed to send confirmation email for Jotform lead {lead.lead_number}: {e}")
         
         try:
             audit_service = AuditService(db)
@@ -1494,11 +1494,11 @@ async def google_ads_webhook(
         except Exception:
             pass
 
-        # Send unified confirmation email (Google Ads has NO conditions data)
+        # Send unified confirmation email (Google Ads has NO conditions data) via dispatcher
         try:
-            from ..tasks.lead_tasks import send_lead_receipt_notifications
+            from ..services.sync_notifications import dispatch_lead_receipt_notifications
             if email:
-                send_lead_receipt_notifications.delay(
+                dispatch_lead_receipt_notifications(
                     lead_id=str(lead.id),
                     email=email,
                     phone=normalize_phone(phone or ""),
@@ -1507,9 +1507,9 @@ async def google_ads_webhook(
                     conditions=[],
                     other_condition_text="",
                 )
-                logger.info(f"Queued confirmation email for Google Ads lead {lead.lead_number}")
+                logger.info(f"Sent confirmation email for Google Ads lead {lead.lead_number}")
         except Exception as e:
-            logger.warning(f"Failed to queue confirmation email for Google Ads lead {lead.lead_number}: {e}")
+            logger.warning(f"Failed to send confirmation email for Google Ads lead {lead.lead_number}: {e}")
 
         # Audit log
         try:

@@ -325,42 +325,46 @@ async def forgot_password(
     db.add(reset_token)
     db.commit()
 
-    # Build reset URL
+    # Build reset URL — prefer the first non-localhost, non-API CORS origin
     frontend_url = "http://localhost:5173"
     cors_origins = getattr(settings, 'cors_origins', '')
     for origin in cors_origins.split(','):
         origin = origin.strip()
-        if origin and origin != '*' and 'localhost' not in origin:
+        if origin and origin != '*' and 'localhost' not in origin and 'api.' not in origin:
             frontend_url = origin
             break
-        if origin and origin != '*' and 'localhost:5173' in origin:
-            frontend_url = origin
 
     reset_url = f"{frontend_url}/#reset-password?token={raw_token}"
 
-    # Send reset email (best-effort)
+    # Send reset email (best-effort) — routes through Paubox when EMAIL_MODE=paubox
     try:
         from ..services.email_service import EmailService
+        from ..services.paubox_email_service import send_email_via_paubox
+
         email_svc = EmailService()
         html = email_svc.render_template("password_reset", {
             "first_name": user.first_name,
             "last_name": user.last_name,
             "reset_url": reset_url,
         })
-        email_svc.send_email(
+        text_content = (
+            f"Hi {user.first_name},\n\n"
+            f"We received a request to reset your password for your TMS NeuroReach account.\n\n"
+            f"Click the link below to reset your password:\n{reset_url}\n\n"
+            f"This link will expire in 1 hour.\n\n"
+            f"If you didn't request this, you can safely ignore this email.\n\n"
+            f"— TMS Institute of Arizona Team"
+        )
+        result = send_email_via_paubox(
             to_email=user.email,
             subject="Password Reset Request — TMS NeuroReach",
             html_content=html,
-            text_content=(
-                f"Hi {user.first_name},\n\n"
-                f"We received a request to reset your password for your TMS NeuroReach account.\n\n"
-                f"Click the link below to reset your password:\n{reset_url}\n\n"
-                f"This link will expire in 1 hour.\n\n"
-                f"If you didn't request this, you can safely ignore this email.\n\n"
-                f"— TMS Institute of Arizona Team"
-            ),
+            text_content=text_content,
         )
-        logger.info(f"Password reset email sent to {user.email}")
+        if result.get("success"):
+            logger.info(f"Password reset email sent to {user.email} via {result.get('provider', 'unknown')}")
+        else:
+            logger.error(f"Password reset email failed for {user.email}: {result.get('error', 'unknown')}")
     except Exception as e:
         logger.error(f"Failed to send password reset email to {user.email}: {e}")
 
@@ -483,41 +487,70 @@ class AccessRequestResponse(BaseModel):
 @router.post("/request-access", response_model=AccessRequestResponse)
 async def request_access(
     body: AccessRequestBody,
+    db: Session = Depends(get_db),
 ) -> AccessRequestResponse:
     """
     Public endpoint: submit a request for dashboard access.
-    Sends a notification email to the admin so they can manually create the account.
+    Sends a notification email to ALL admin users so they can manually create the account.
     """
     logger.info(f"Access request received from {body.full_name} <{body.email}>")
 
-    # Determine admin email — fall back to from_email
-    admin_email = getattr(settings, 'from_email', 'noreply@neuroreach.ai')
+    # Query ALL admin/primary_admin users from database
+    from ..models.user import UserRole
+    admin_users = (
+        db.query(User)
+        .filter(
+            User.role.in_([UserRole.ADMINISTRATOR, UserRole.PRIMARY_ADMIN]),
+            User.status == UserStatus.ACTIVE,
+        )
+        .all()
+    )
 
-    # Send notification email to admin
+    # Build list of admin emails; fall back to from_email if no admins found
+    admin_emails = [u.email for u in admin_users if u.email]
+    if not admin_emails:
+        fallback = getattr(settings, 'from_email', 'noreply@neuroreach.ai')
+        admin_emails = [fallback]
+
+    logger.info(f"Sending access request notification to {len(admin_emails)} admin(s): {admin_emails}")
+
+    # Send notification email to EACH admin — routes through Paubox when EMAIL_MODE=paubox
     try:
         from ..services.email_service import EmailService
+        from ..services.paubox_email_service import send_email_via_paubox
+
         email_svc = EmailService()
         html = email_svc.render_template("access_request_admin", {
             "full_name": body.full_name,
             "requester_email": body.email,
             "reason": body.reason,
         })
-        email_svc.send_email(
-            to_email=admin_email,
-            subject="New Access Request — TMS NeuroReach",
-            html_content=html,
-            text_content=(
-                f"New Access Request — TMS NeuroReach\n\n"
-                f"A new user has requested access to the TMS NeuroReach dashboard:\n\n"
-                f"Name: {body.full_name}\n"
-                f"Email: {body.email}\n"
-                f"Role/Reason: {body.reason}\n\n"
-                f"To grant access, log into the admin panel and create their account.\n"
-            ),
+        text_content = (
+            f"New Access Request — TMS NeuroReach\n\n"
+            f"A new user has requested access to the TMS NeuroReach dashboard:\n\n"
+            f"Name: {body.full_name}\n"
+            f"Email: {body.email}\n"
+            f"Role/Reason: {body.reason}\n\n"
+            f"To grant access, log into the admin panel and create their account.\n"
         )
-        logger.info(f"Access request notification sent to admin for {body.email}")
+
+        for admin_email in admin_emails:
+            try:
+                result = send_email_via_paubox(
+                    to_email=admin_email,
+                    subject="New Access Request — TMS NeuroReach",
+                    html_content=html,
+                    text_content=text_content,
+                )
+                if result.get("success"):
+                    logger.info(f"Access request notification sent to {admin_email} via {result.get('provider', 'unknown')} for {body.email}")
+                else:
+                    logger.error(f"Access request notification failed for {admin_email}: {result.get('error', 'unknown')}")
+            except Exception as e:
+                logger.error(f"Failed to send access request notification to {admin_email}: {e}")
+
     except Exception as e:
-        logger.error(f"Failed to send access request notification: {e}")
+        logger.error(f"Failed to send access request notifications: {e}")
 
     return AccessRequestResponse(
         success=True,

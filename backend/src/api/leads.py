@@ -687,15 +687,15 @@ async def submit_lead(
         message = get_confirmation_message(score_breakdown.priority, in_service_area)
         estimated_time = get_estimated_response_time(score_breakdown.priority)
 
-        # Queue receipt notifications (email + SMS) using UNIFIED template
+        # Send receipt notifications (email + SMS) via dispatcher (Celery async with sync fallback)
         try:
-            from ..tasks.lead_tasks import send_lead_receipt_notifications
+            from ..services.sync_notifications import dispatch_lead_receipt_notifications
 
             # Decrypt PHI for notifications
             decrypted = EncryptionService.decrypt_lead_phi(lead)
 
-            # Send email + SMS asynchronously with conditions for unified template
-            send_lead_receipt_notifications.delay(
+            # Send email + SMS with conditions for unified template
+            dispatch_lead_receipt_notifications(
                 lead_id=str(lead.id),
                 email=decrypted["email"],
                 phone=decrypted["phone"],
@@ -709,7 +709,7 @@ async def submit_lead(
             # Log error but don't fail the request
             # Notifications are nice-to-have, not critical
             import logging
-            logging.error(f"Failed to queue notification: {e}")
+            logging.error(f"Failed to send notification: {e}")
             pass
 
         # Create audit log entry (without PHI)

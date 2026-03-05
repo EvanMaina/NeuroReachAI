@@ -1,4 +1,8 @@
-# Dependencies
+# =============================================================================
+# NeuroReach AI — Git Ignore
+# =============================================================================
+
+# --- Dependencies ---
 node_modules/
 __pycache__/
 *.py[cod]
@@ -20,65 +24,114 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
-.venv
+# --- Virtual environments ---
+.venv/
 env/
 venv/
 ENV/
 
-# Environment config files (contain secrets -- NEVER commit)
+# --- Environment config files (contain secrets — NEVER commit) ---
 .env
-.env.production
 .env.local
+.env.production
+.env.development
+.env.staging
+.env.*.local
 backend/.env
+backend/.env.local
 backend/.env.development
 backend/.env.production
-backend/.env.example
+backend/.env.staging
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.staging
 
-# IDE
+# --- IDE ---
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# OS
+# --- OS ---
 .DS_Store
 Thumbs.db
 
-# Testing
+# --- Testing ---
 .coverage
 .pytest_cache/
 htmlcov/
 .tox/
 .nox/
 
-# Build
+# --- Build artifacts ---
 *.log
 *.tmp
 *.temp
-
-# Database
-*.db
-*.sqlite3
-
-# Frontend build
 frontend/dist/
 frontend/.vite/
 
-# Secrets (NEVER commit)
+# --- Database ---
+*.db
+*.sqlite3
+
+# --- Secrets / certificates (NEVER commit) ---
 *.pem
 *.key
-.env.local
-.env.*.local
 secrets/
 
-# Docker
+# --- Docker ---
 .docker/
 
-# Alembic
+# --- Alembic ---
 alembic/versions/*.pyc
-  
-# Sensitive files  
-login_response.json  
--p/ 
+
+# --- ECS task definitions & overrides (contain secrets) ---
+*-task-def.json
+*-task-def-new.json
+*-taskdef-updated.json
+*-overrides.json
+*-containers.json
+current-taskdef.json
+syncfix-taskdef.json
+backend-task-def.json
+celery-task-def.json
+db-check-overrides.json
+db-init-overrides.json
+user-create-overrides.json
+
+# --- Test scripts (may contain credentials) ---
+test_paubox.py
+test_twilio.py
+test_twilio_direct.py
+_test.py
+
+# --- Deployment helper scripts ---
+fetch_logs.py
+gen_taskdefs.py
+ecs-logs.txt
+
+# --- Response dumps ---
+*_response.json
+*_resp.json
+leads_response.json
+login_resp.json
+login_response.json
+
+# --- Frontend build bundles in backend (CI-generated) ---
+backend/frontend-bundles/
+
+# --- Combined SQL (generated during deploy) ---
+backend/scripts/combined_init.sql
+
+# --- Temporary task definition files ---
+_tmp_*.json
+*-taskdef-current.json
+
+# --- Deployment utility scripts ---
+update_redis_endpoint.py
+
+# --- Frontend build artifacts (widget/assessment bundles) ---
+frontend/dist-widget/
+frontend/dist-assessment/

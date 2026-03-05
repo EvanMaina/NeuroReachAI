@@ -22,7 +22,6 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    allowedHosts: ['hydrologically-nesh-sook.ngrok-free.dev'],
     proxy: {
       '/api': {
         // BACKEND_URL is set by docker-compose to http://backend:8000;

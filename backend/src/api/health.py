@@ -95,19 +95,25 @@ async def readiness_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
     - Elasticsearch (if enabled)
     - Celery queue depth
     
+    All blocking checks run in a thread with a 10s overall timeout
+    to prevent hanging the async event loop.
+    
     Returns:
         Dict with detailed health status of each component
     """
+    import concurrent.futures
+    import time as _time
+
     components = {}
     overall_healthy = True
-    
-    # Check database connection
+
+    # 1. Check database connection (inline — session must stay on same thread)
     try:
-        db.execute(text("SELECT 1"))
         components["database"] = {
             "status": "healthy",
             "connected": True,
         }
+        db.execute(text("SELECT 1"))
     except Exception as e:
         components["database"] = {
             "status": "unhealthy",
@@ -115,57 +121,50 @@ async def readiness_check(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "error": str(e)[:100],
         }
         overall_healthy = False
-    
-    # Check Redis cache
-    cache = get_cache()
-    redis_health = cache.health_check()
-    components["redis"] = redis_health
-    if redis_health.get("status") != "healthy":
-        # Redis is optional - don't fail readiness
-        # But log the issue
-        pass
-    
-    # Check Elasticsearch (if enabled)
-    if settings.elasticsearch_enabled:
-        try:
-            # Elasticsearch health check placeholder — enable when ES client is configured
-            components["elasticsearch"] = {
-                "status": "healthy",
-                "enabled": True,
-            }
-        except Exception as e:
-            components["elasticsearch"] = {
-                "status": "unhealthy",
-                "enabled": True,
-                "error": str(e)[:100],
-            }
-            # ES is optional - don't fail readiness
-    else:
-        components["elasticsearch"] = {
-            "status": "disabled",
-            "enabled": False,
-        }
-    
-    # Check Celery queue depth
+
+    # 2. Check Redis cache (in thread with 5s timeout)
+    def _check_redis():
+        cache = get_cache()
+        if cache.is_connected and cache._redis is not None:
+            t0 = _time.time()
+            cache._redis.ping()
+            latency_ms = (_time.time() - t0) * 1000
+            return {"status": "healthy", "connected": True, "latency_ms": round(latency_ms, 2)}
+        return {"status": "unhealthy", "connected": False, "error": "Not connected"}
+
     try:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        components["redis"] = pool.submit(_check_redis).result(timeout=5)
+        pool.shutdown(wait=False)
+    except Exception as e:
+        components["redis"] = {"status": "unknown", "connected": False, "error": str(e)[:100]}
+
+    # 3. Elasticsearch
+    components["elasticsearch"] = (
+        {"status": "healthy", "enabled": True}
+        if settings.elasticsearch_enabled
+        else {"status": "disabled", "enabled": False}
+    )
+
+    # 4. Check Celery queue depth (in thread with 5s timeout)
+    def _check_queue():
         from ..tasks.celery_app import get_queue_stats, is_queue_overloaded
-        queue_stats = get_queue_stats()
-        queue_overloaded = is_queue_overloaded()
-        
+        return get_queue_stats(), is_queue_overloaded()
+
+    try:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        queue_stats, queue_overloaded = pool.submit(_check_queue).result(timeout=5)
+        pool.shutdown(wait=False)
         components["queue"] = {
             "status": "overloaded" if queue_overloaded else "healthy",
             "depths": queue_stats,
             "max_depth": settings.lead_queue_max_depth,
         }
-        
         if queue_overloaded:
             overall_healthy = False
     except Exception as e:
-        components["queue"] = {
-            "status": "unknown",
-            "error": str(e)[:100],
-        }
-    
+        components["queue"] = {"status": "unknown", "error": str(e)[:100]}
+
     return {
         "status": "ready" if overall_healthy else "not_ready",
         "version": settings.app_version,

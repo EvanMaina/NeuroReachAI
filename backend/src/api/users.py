@@ -208,19 +208,19 @@ async def create_user(body: UserCreate, db: Session = Depends(get_db)) -> UserRe
 
 
 def _send_invitation_email(user: User, temp_password: str) -> None:
-    """Send the invitation email with temporary credentials. Best-effort."""
+    """Send the invitation email with temporary credentials. Best-effort.
+    Routes through Paubox when EMAIL_MODE=paubox, falls back to SMTP."""
     try:
         from ..core.config import settings
+        from ..services.paubox_email_service import send_email_via_paubox
+
         # Build login URL from the first CORS origin (frontend URL)
+        # Prefer the first non-localhost, non-API CORS origin (i.e. the frontend)
         login_url = "http://localhost:5173"  # default dev
         cors_origins = getattr(settings, 'cors_origins', '')
         for origin in cors_origins.split(','):
             origin = origin.strip()
-            if origin and origin != '*' and 'localhost:5173' in origin:
-                login_url = origin
-                break
-            # Prefer non-localhost origin for production
-            if origin and origin != '*' and 'localhost' not in origin:
+            if origin and origin != '*' and 'localhost' not in origin and 'api.' not in origin:
                 login_url = origin
                 break
 
@@ -233,24 +233,29 @@ def _send_invitation_email(user: User, temp_password: str) -> None:
             "role": user.role.value.capitalize(),
             "login_url": login_url,
         })
-        email_svc.send_email(
+        text_content = (
+            f"Hi {user.first_name} {user.last_name},\n\n"
+            f"An administrator has created your TMS NeuroReach account. "
+            f"Use the credentials below to log in for the first time.\n\n"
+            f"Role: {user.role.value.capitalize()}\n"
+            f"Email (Username): {user.email}\n"
+            f"Temporary Password: {temp_password}\n\n"
+            f"Log in at: {login_url}\n\n"
+            f"Important: You will be prompted to change this temporary password on your "
+            f"first login. Please choose a strong password that you will remember.\n\n"
+            f"If you have any questions or trouble logging in, contact your administrator.\n\n"
+            f"— TMS Institute of Arizona Team"
+        )
+        result = send_email_via_paubox(
             to_email=user.email,
             subject="Welcome to TMS NeuroReach — Your Account Has Been Created",
             html_content=html,
-            text_content=(
-                f"Hi {user.first_name} {user.last_name},\n\n"
-                f"An administrator has created your TMS NeuroReach account. "
-                f"Use the credentials below to log in for the first time.\n\n"
-                f"Role: {user.role.value.capitalize()}\n"
-                f"Email (Username): {user.email}\n"
-                f"Temporary Password: {temp_password}\n\n"
-                f"Log in at: {login_url}\n\n"
-                f"Important: You will be prompted to change this temporary password on your "
-                f"first login. Please choose a strong password that you will remember.\n\n"
-                f"If you have any questions or trouble logging in, contact your administrator.\n\n"
-                f"— TMS Institute of Arizona Team"
-            ),
+            text_content=text_content,
         )
+        if result.get("success"):
+            logger.info(f"Invitation email sent to {user.email} via {result.get('provider', 'unknown')}")
+        else:
+            logger.warning(f"Invitation email failed for {user.email}: {result.get('error', 'unknown')}")
     except Exception as e:
         logger.warning(f"Invitation email failed for {user.email}: {e}")
 

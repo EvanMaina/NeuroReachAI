@@ -167,10 +167,10 @@ async def send_email_to_lead(
         )
 
     try:
-        # Queue email via Celery
-        from ..tasks.lead_tasks import send_coordinator_email
+        # Send email via dispatcher (Celery async with sync fallback)
+        from ..services.sync_notifications import dispatch_coordinator_email
 
-        task = send_coordinator_email.delay(
+        sync_result = dispatch_coordinator_email(
             to_email=email,
             subject=email_data.subject,
             body=email_data.body,
@@ -211,14 +211,14 @@ async def send_email_to_lead(
         db.commit()
 
         return CommunicationResponse(
-            success=True,
-            message=f"Email queued for delivery to {email}",
-            task_id=task.id,
+            success=sync_result.get("status") == "success",
+            message=f"Email sent to {email} via {sync_result.get('provider', 'unknown')}",
+            task_id=sync_result.get("message_id"),
         )
 
     except Exception as e:
         import logging
-        logging.error(f"Failed to queue email: {e}")
+        logging.error(f"Failed to send email: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send email: {str(e)}",
@@ -318,13 +318,13 @@ async def send_sms_to_lead(
         )
 
     try:
-        # Queue SMS via Celery
-        from ..tasks.lead_tasks import send_coordinator_sms
+        # Send SMS via dispatcher (Celery async with sync fallback)
+        from ..services.sync_notifications import dispatch_coordinator_sms
 
-        task = send_coordinator_sms.delay(
+        sms_result = dispatch_coordinator_sms(
             to_phone=phone,
             message=sms_data.message,
-            lead_id=lead_id_str,
+            lead_id=lead_id_str or "direct",
             lead_name=first_name,
             category=sms_data.category,
         )
@@ -364,14 +364,14 @@ async def send_sms_to_lead(
         db.commit()
 
         return CommunicationResponse(
-            success=True,
-            message=f"SMS queued for delivery to {phone}",
-            task_id=task.id,
+            success=sms_result.get("status") == "success",
+            message=f"SMS sent to {phone}" if sms_result.get("status") == "success" else f"SMS failed: {sms_result.get('error', 'unknown')}",
+            task_id=sms_result.get("message_sid"),
         )
 
     except Exception as e:
         import logging
-        logging.error(f"Failed to queue SMS: {e}")
+        logging.error(f"Failed to send SMS: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send SMS: {str(e)}",

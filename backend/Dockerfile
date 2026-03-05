@@ -4,7 +4,7 @@
 # =============================================================================
 # Build stage
 # =============================================================================
-FROM python:3.11-slim as builder
+FROM python:3.11.11-slim as builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # =============================================================================
 # Production stage
 # =============================================================================
-FROM python:3.11-slim as production
+FROM python:3.11.11-slim as production
 
 WORKDIR /app
 
@@ -54,6 +54,10 @@ COPY --chown=neuroreach:neuroreach static/ /app/static/
 
 # Copy scripts (setup_fresh_admin.py, etc.)
 COPY --chown=neuroreach:neuroreach scripts/ /app/scripts/
+
+# Copy frontend widget/assessment bundles (built by CI pipeline)
+# In local dev these directories contain only .gitkeep; in CI they have real bundles.
+COPY --chown=neuroreach:neuroreach frontend-bundles/ /app/frontend/
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \

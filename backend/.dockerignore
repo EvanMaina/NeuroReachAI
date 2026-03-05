@@ -1,0 +1,49 @@
+# =============================================================================
+# Backend Docker Ignore
+# Reduces build context size and prevents secrets from leaking into images.
+# =============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+*.egg
+.venv/
+env/
+venv/
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation (not needed in image)
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Frontend bundles placeholder (CI copies real bundles)
+frontend-bundles/.gitkeep

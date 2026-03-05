@@ -2,14 +2,16 @@
 Celery application configuration.
 
 Configures Celery for async lead processing with:
-- Redis as message broker
+- Redis as message broker (supports both redis:// and rediss:// TLS)
 - Automatic retry with exponential backoff
 - Dead letter queue for failed tasks
 - Task routing for different priorities
 - Monitoring via Flower
+- AWS ElastiCache compatibility (TLS with self-signed certs)
 """
 
 import logging
+import ssl as _ssl
 from celery import Celery
 from kombu import Exchange, Queue
 
@@ -17,6 +19,28 @@ from ..core.config import settings
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# TLS Configuration for AWS ElastiCache
+# =============================================================================
+# ElastiCache with transit encryption uses rediss:// URLs.
+# The self-signed certificates require disabling strict cert verification.
+
+_broker_use_ssl = None
+_backend_use_ssl = None
+
+if settings.celery_broker_url.startswith("rediss://"):
+    _broker_use_ssl = {
+        "ssl_cert_reqs": _ssl.CERT_NONE,
+    }
+    logger.info("Celery broker TLS enabled (ssl_cert_reqs=CERT_NONE for ElastiCache)")
+
+if settings.celery_result_backend.startswith("rediss://"):
+    _backend_use_ssl = {
+        "ssl_cert_reqs": _ssl.CERT_NONE,
+    }
+    logger.info("Celery result backend TLS enabled (ssl_cert_reqs=CERT_NONE for ElastiCache)")
 
 
 # =============================================================================
@@ -37,7 +61,7 @@ celery_app = Celery(
 # Celery Configuration
 # =============================================================================
 
-celery_app.conf.update(
+_conf = dict(
     # Task execution settings
     task_serializer="json",
     accept_content=["json"],
@@ -74,7 +98,7 @@ celery_app.conf.update(
     task_default_routing_key="default",
     
     # ==========================================================================
-    # CELERY BEAT SCHEDULER - Using Redis instead of file-based scheduler
+    # CELERY BEAT SCHEDULER - Using /tmp for writable location
     # This fixes the "[Errno 13] Permission denied: 'celerybeat-schedule'" error
     # ==========================================================================
     beat_scheduler="celery.beat:PersistentScheduler",
@@ -100,6 +124,14 @@ celery_app.conf.update(
         },
     },
 )
+
+# Add TLS settings only if needed (broker and/or backend)
+if _broker_use_ssl:
+    _conf["broker_use_ssl"] = _broker_use_ssl
+if _backend_use_ssl:
+    _conf["redis_backend_use_ssl"] = _backend_use_ssl
+
+celery_app.conf.update(**_conf)
 
 
 # =============================================================================
@@ -220,7 +252,7 @@ def get_queue_depth(queue_name: str = "leads.high") -> int:
         Number of messages in queue
     """
     try:
-        with celery_app.pool.acquire(block=True) as conn:
+        with celery_app.pool.acquire(block=True, timeout=3) as conn:
             return conn.default_channel.client.llen(queue_name)
     except Exception as e:
         logger.error(f"Failed to get queue depth: {e}")
