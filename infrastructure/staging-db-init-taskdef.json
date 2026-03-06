@@ -1,0 +1,31 @@
+{
+  "family": "neuroreach-staging-db-init",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::131880217305:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "db-init",
+      "image": "131880217305.dkr.ecr.us-east-2.amazonaws.com/neuroreach-ai/backend:staging-db-init",
+      "essential": true,
+      "command": ["python", "/app/scripts/init_database.py"],
+      "environment": [
+        {
+          "name": "DATABASE_URL",
+          "value": "postgresql://neuroreach:NRstaging2026SecureP4ss@neuroreach-staging-db.cfggkciq6tun.us-east-2.rds.amazonaws.com:5432/neuroreach_staging"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/neuroreach-staging-db-init",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}
