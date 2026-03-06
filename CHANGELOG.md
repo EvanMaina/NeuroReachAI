@@ -5,6 +5,49 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-03-06
+
+### Added
+- **Documentation (Phase 10):** Comprehensive operational and developer documentation
+  - `docs/OPERATIONS_RUNBOOK.md` — Full operations runbook covering:
+    - Quick reference URLs and AWS console links
+    - Deployment procedures (CI/CD automatic + manual emergency)
+    - One-click rollback via GitHub Actions + CLI rollback
+    - **Monitoring & Alerts Dashboard access** — CloudWatch dashboard URL, 13 alarm details, SNS alert subscription (email/SMS)
+    - Health check procedures (production + staging)
+    - Log viewing (CloudWatch console + CLI commands)
+    - Scaling procedures (auto-scaling config + manual scaling)
+    - Backup & restore (RDS snapshots, PITR, S3 pg_dump)
+    - Secret rotation procedures (JWT, encryption key, DB password)
+    - Staging environment access (hosts file trick + curl with Host header before DNS)
+    - Troubleshooting guide (service health, high CPU, DB issues, 5xx errors, pipeline failures)
+    - Emergency procedures (production down, data breach, DB corruption)
+  - `docs/ARCHITECTURE.md` — System architecture documentation covering:
+    - Full architecture diagram (ALB → ECS → RDS/Redis → External services)
+    - AWS infrastructure inventory (compute, database, cache, networking, storage, monitoring)
+    - Application component structure (backend API + frontend + 3 build outputs)
+    - Network topology with security boundaries
+    - Data flow diagrams (lead submission, coordinator actions)
+    - Security model (HIPAA PHI protection, authentication, CI/CD security)
+    - CI/CD pipeline architecture (5 workflow files)
+    - Monitoring architecture (dashboard, alarms, logs, Container Insights)
+    - Environment comparison (production vs staging)
+  - `docs/DEVELOPMENT.md` — Developer guide covering:
+    - Prerequisites and installation
+    - Local development setup (Docker Compose + manual)
+    - Project structure overview
+    - Git branch workflow (dev → staging → main)
+    - PR process with CI check details
+    - Testing (Pytest + Vitest)
+    - Code style and linting (Flake8, ESLint, MyPy, TypeScript)
+    - Environment variables reference
+    - Database migration guide
+    - Common development tasks
+
+### Changed
+- `docs/DEPLOYMENT_PLAN.md` — Status updated to "✅ ALL 10 PHASES COMPLETE"
+- Staging smoke tests now use ALB DNS directly with Host header (bypasses external DNS dependency)
+
 ## [1.7.0] - 2026-03-06
 
 ### Added
