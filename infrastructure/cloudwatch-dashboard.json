@@ -1,0 +1,418 @@
+{
+    "widgets": [
+        {
+            "height": 2,
+            "width": 24,
+            "y": 0,
+            "x": 0,
+            "type": "text",
+            "properties": {
+                "markdown": "# 🧠 NeuroReach AI — Production Monitoring Dashboard\n**Cluster:** neuroreach-ai-cluster | **Region:** us-east-2 | **ALB:** neuroreach-ai-alb | **RDS:** neuroreach-ai-db"
+            }
+        },
+        {
+            "height": 1,
+            "width": 24,
+            "y": 2,
+            "x": 0,
+            "type": "text",
+            "properties": {
+                "markdown": "## 🚦 Alarm Status"
+            }
+        },
+        {
+            "height": 3,
+            "width": 24,
+            "y": 3,
+            "x": 0,
+            "type": "alarm",
+            "properties": {
+                "title": "Active Alarms",
+                "alarms": [
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-backend-cpu-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-backend-memory-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-celery-cpu-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-celery-memory-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-backend-service-degraded",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-celery-service-degraded",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-alb-5xx-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-alb-target-5xx-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-alb-response-time-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-alb-unhealthy-hosts",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-rds-cpu-high",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-rds-storage-low",
+                    "arn:aws:cloudwatch:us-east-2:131880217305:alarm:neuroreach-rds-connections-high"
+                ]
+            }
+        },
+        {
+            "height": 1,
+            "width": 24,
+            "y": 6,
+            "x": 0,
+            "type": "text",
+            "properties": {
+                "markdown": "## 📦 ECS Services — Backend & Celery"
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 7,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ECS", "CPUUtilization", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-backend-service", { "label": "Backend CPU", "color": "#1f77b4" } ],
+                    [ "AWS/ECS", "CPUUtilization", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-celery-service", { "label": "Celery CPU", "color": "#ff7f0e" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "ECS CPU Utilization (%)",
+                "yAxis": { "left": { "min": 0, "max": 100 } },
+                "annotations": {
+                    "horizontal": [
+                        { "label": "Alarm Threshold", "value": 80, "color": "#d62728" }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 7,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ECS", "MemoryUtilization", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-backend-service", { "label": "Backend Memory", "color": "#2ca02c" } ],
+                    [ "AWS/ECS", "MemoryUtilization", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-celery-service", { "label": "Celery Memory", "color": "#9467bd" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "ECS Memory Utilization (%)",
+                "yAxis": { "left": { "min": 0, "max": 100 } },
+                "annotations": {
+                    "horizontal": [
+                        { "label": "Alarm Threshold", "value": 80, "color": "#d62728" }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 13,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "ECS/ContainerInsights", "RunningTaskCount", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-backend-service", { "label": "Backend Running", "color": "#1f77b4" } ],
+                    [ "ECS/ContainerInsights", "DesiredTaskCount", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-backend-service", { "label": "Backend Desired", "color": "#1f77b4", "stat": "Average", "visible": true } ],
+                    [ "ECS/ContainerInsights", "RunningTaskCount", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-celery-service", { "label": "Celery Running", "color": "#ff7f0e" } ],
+                    [ "ECS/ContainerInsights", "DesiredTaskCount", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-celery-service", { "label": "Celery Desired", "color": "#ff7f0e", "stat": "Average" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 60,
+                "title": "ECS Task Count (Running vs Desired)",
+                "yAxis": { "left": { "min": 0 } }
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 13,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "ECS/ContainerInsights", "PendingTaskCount", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-backend-service", { "label": "Backend Pending", "color": "#d62728" } ],
+                    [ "ECS/ContainerInsights", "PendingTaskCount", "ClusterName", "neuroreach-ai-cluster", "ServiceName", "neuroreach-ai-celery-service", { "label": "Celery Pending", "color": "#ff7f0e" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 60,
+                "title": "ECS Pending Tasks (should be 0)",
+                "yAxis": { "left": { "min": 0 } }
+            }
+        },
+        {
+            "height": 1,
+            "width": 24,
+            "y": 19,
+            "x": 0,
+            "type": "text",
+            "properties": {
+                "markdown": "## 🌐 ALB — Load Balancer & HTTP Metrics"
+            }
+        },
+        {
+            "height": 6,
+            "width": 8,
+            "y": 20,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ApplicationELB", "RequestCount", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "Total Requests", "color": "#1f77b4", "stat": "Sum" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Sum",
+                "period": 300,
+                "title": "ALB Request Count (5min)"
+            }
+        },
+        {
+            "height": 6,
+            "width": 8,
+            "y": 20,
+            "x": 8,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ApplicationELB", "HTTPCode_Target_2XX_Count", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "2xx (Success)", "color": "#2ca02c", "stat": "Sum" } ],
+                    [ "AWS/ApplicationELB", "HTTPCode_Target_4XX_Count", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "4xx (Client Error)", "color": "#ff7f0e", "stat": "Sum" } ],
+                    [ "AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "5xx (Server Error)", "color": "#d62728", "stat": "Sum" } ],
+                    [ "AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "ELB 5xx", "color": "#8c564b", "stat": "Sum" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Sum",
+                "period": 300,
+                "title": "ALB HTTP Status Codes (5min)"
+            }
+        },
+        {
+            "height": 6,
+            "width": 8,
+            "y": 20,
+            "x": 16,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "Average", "stat": "Average", "color": "#1f77b4" } ],
+                    [ "...", { "label": "P95", "stat": "p95", "color": "#ff7f0e" } ],
+                    [ "...", { "label": "P99", "stat": "p99", "color": "#d62728" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "ALB Response Time (seconds)",
+                "annotations": {
+                    "horizontal": [
+                        { "label": "P99 Alarm (5s)", "value": 5, "color": "#d62728" }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 26,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "targetgroup/neuroreach-ai-backend-tg/9f32ff283bca11ce", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "Healthy Hosts", "color": "#2ca02c" } ],
+                    [ "AWS/ApplicationELB", "UnHealthyHostCount", "TargetGroup", "targetgroup/neuroreach-ai-backend-tg/9f32ff283bca11ce", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "Unhealthy Hosts", "color": "#d62728" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 60,
+                "title": "ALB Target Health",
+                "yAxis": { "left": { "min": 0 } }
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 26,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/ApplicationELB", "ActiveConnectionCount", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "Active Connections", "color": "#1f77b4", "stat": "Sum" } ],
+                    [ "AWS/ApplicationELB", "NewConnectionCount", "LoadBalancer", "app/neuroreach-ai-alb/09820aa0f84e6f0b", { "label": "New Connections", "color": "#2ca02c", "stat": "Sum" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Sum",
+                "period": 300,
+                "title": "ALB Connections"
+            }
+        },
+        {
+            "height": 1,
+            "width": 24,
+            "y": 32,
+            "x": 0,
+            "type": "text",
+            "properties": {
+                "markdown": "## 🗄️ RDS PostgreSQL — neuroreach-ai-db"
+            }
+        },
+        {
+            "height": 6,
+            "width": 8,
+            "y": 33,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "CPU %", "color": "#1f77b4" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS CPU Utilization (%)",
+                "yAxis": { "left": { "min": 0, "max": 100 } },
+                "annotations": {
+                    "horizontal": [
+                        { "label": "Alarm Threshold", "value": 80, "color": "#d62728" }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 6,
+            "width": 8,
+            "y": 33,
+            "x": 8,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Free Storage (bytes)", "color": "#2ca02c" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS Free Storage Space",
+                "annotations": {
+                    "horizontal": [
+                        { "label": "5GB Alarm", "value": 5368709120, "color": "#d62728" }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 6,
+            "width": 8,
+            "y": 33,
+            "x": 16,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "DB Connections", "color": "#9467bd" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS Active Connections",
+                "annotations": {
+                    "horizontal": [
+                        { "label": "Alarm Threshold", "value": 80, "color": "#d62728" }
+                    ]
+                }
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 39,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "ReadIOPS", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Read IOPS", "color": "#1f77b4" } ],
+                    [ "AWS/RDS", "WriteIOPS", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Write IOPS", "color": "#ff7f0e" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS IOPS (Read/Write)"
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 39,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "ReadLatency", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Read Latency", "color": "#1f77b4" } ],
+                    [ "AWS/RDS", "WriteLatency", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Write Latency", "color": "#ff7f0e" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS Latency (seconds)"
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 45,
+            "x": 0,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Freeable Memory (bytes)", "color": "#2ca02c" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS Freeable Memory"
+            }
+        },
+        {
+            "height": 6,
+            "width": 12,
+            "y": 45,
+            "x": 12,
+            "type": "metric",
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "SwapUsage", "DBInstanceIdentifier", "neuroreach-ai-db", { "label": "Swap Usage (bytes)", "color": "#d62728" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-2",
+                "stat": "Average",
+                "period": 300,
+                "title": "RDS Swap Usage (should be ~0)"
+            }
+        }
+    ]
+}

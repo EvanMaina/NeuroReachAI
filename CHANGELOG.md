@@ -5,6 +5,25 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-03-06
+
+### Added
+- **Monitoring & Alerting — Phase 8 (AWS-Native CloudWatch):** Comprehensive production observability
+  - **SNS Topic:** `neuroreach-ai-alerts` for centralized alarm notifications (email/SMS ready)
+  - **13 CloudWatch Alarms** covering all critical infrastructure:
+    - ECS Backend: CPU > 80%, Memory > 80%, service degraded (running < desired)
+    - ECS Celery: CPU > 80%, Memory > 80%, service degraded (running < desired)
+    - ALB: 5xx error count, target 5xx count, P99 response time > 5s, unhealthy hosts
+    - RDS: CPU > 80%, free storage < 5GB, database connections > 80
+  - All alarms send to SNS on ALARM and OK state (auto-recovery notifications)
+  - **CloudWatch Dashboard** `NeuroReach-AI-Production` with 22 widgets across 4 sections:
+    - Alarm status overview (all 13 alarms at a glance)
+    - ECS Services: CPU/Memory utilization, running vs desired task count, pending tasks
+    - ALB: request count, HTTP status codes (2xx/4xx/5xx), response time (avg/P95/P99), target health, connections
+    - RDS: CPU, free storage, active connections, read/write IOPS, read/write latency, freeable memory, swap usage
+  - **ECS Container Insights** enabled on `neuroreach-ai-cluster` for enhanced task-level metrics (RunningTaskCount, DesiredTaskCount, PendingTaskCount)
+  - `infrastructure/cloudwatch-dashboard.json` — Dashboard definition as code (version-controlled)
+
 ## [1.5.0] - 2026-03-06
 
 ### Added
