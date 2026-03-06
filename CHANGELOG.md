@@ -5,6 +5,26 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-03-06
+
+### Added
+- **Backups & Disaster Recovery (Phase 7):** Comprehensive backup strategy
+  - RDS automated daily snapshots: retention increased from 7→35 days, backup window moved to 02:00-02:30 UTC
+  - RDS point-in-time recovery (PITR) confirmed enabled
+  - ElastiCache Redis daily snapshots: enabled with 7-day retention (was disabled!)
+  - S3 backup bucket `neuroreach-backups-prod` created with:
+    - AES-256 server-side encryption
+    - Versioning enabled
+    - Public access fully blocked
+    - Lifecycle policies: daily backups 90-day retention (→ Standard-IA at 30d → Glacier at 60d), weekly backups 1-year retention, logs 60-day retention, config 180-day retention
+  - `backend/scripts/backup_database.py` — pg_dump + S3 upload script with Python psycopg2 fallback
+  - `.github/workflows/backup.yml` — Automated scheduled backup workflow
+    - Daily at 2:00 AM UTC, Weekly on Sundays at 4:00 AM UTC
+    - Triggers ECS Fargate task in-VPC for pg_dump → S3
+    - Manual trigger via workflow_dispatch
+    - Post-backup S3 verification
+  - IAM role `neuroreach-ecs-task-role` for ECS task S3 backup access
+
 ## [1.4.0] - 2026-03-06
 
 ### Added
