@@ -5,6 +5,29 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-03-06
+
+### Added
+- **Staging Environment (Phase 9):** Complete staging infrastructure on AWS
+  - **RDS:** `neuroreach-staging-db` (db.t3.micro, PostgreSQL 14.22, 20GB gp3, 7-day backup retention)
+  - **ElastiCache:** `neuroreach-staging-redis` (cache.t3.micro, Redis 7.1, TLS enabled, non-cluster mode)
+  - **ALB Host-Based Routing:** `app-staging.tmsinstitute.co` → staging target group on shared ALB (cost-optimized, saves ~$20/month vs separate ALB)
+  - **Target Group:** `neuroreach-staging-backend-tg` with /health check (15s interval, 2 healthy threshold)
+  - **ECS Services:** `neuroreach-staging-backend-service` (1 instance, 256 CPU/512 MB) and `neuroreach-staging-celery-service` (1 instance, 256 CPU/512 MB) — both in same `neuroreach-ai-cluster`
+  - **Task Definitions:** `neuroreach-staging-backend` and `neuroreach-staging-celery` with staging-specific env vars
+  - Staging uses `log` mode for email/SMS (no real emails/SMS sent)
+  - CallRail, Google Ads, Twilio, Paubox all disabled in staging
+  - Separate SECRET_KEY, JWT_SECRET, ENCRYPTION_KEY for staging isolation
+  - `infrastructure/staging-backend-taskdef.json` and `infrastructure/staging-celery-taskdef.json` — task definitions as code
+  - ACM wildcard cert `*.tmsinstitute.co` covers staging domain (no new cert needed)
+
+### Changed
+- `.github/workflows/deploy-staging.yml` — Updated for staging infrastructure:
+  - Now triggers on push to `staging` branch (was disabled pending Phase 9)
+  - Points to staging ECS services, task definitions, and target groups
+  - Frontend builds with `VITE_API_URL=https://app-staging.tmsinstitute.co`
+  - Smoke tests against staging URL
+
 ## [1.6.0] - 2026-03-06
 
 ### Added

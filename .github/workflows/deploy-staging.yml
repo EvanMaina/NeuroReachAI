@@ -1,31 +1,30 @@
 # =============================================================================
 # NeuroReach AI — Deploy to Staging
-# Triggers on push to `staging` branch
+# Triggers on push to `staging` branch or manual dispatch
 # =============================================================================
 name: Deploy to Staging
 
 on:
-  # DISABLED: Staging deploy is disabled until Phase 9 creates staging infrastructure
-  # push:
-  #   branches: [staging]
-  # Manual trigger only — enable push trigger after Phase 9 staging setup
+  push:
+    branches: [staging]
   workflow_dispatch:
 
 concurrency:
   group: deploy-staging
-  cancel-in-progress: false  # Don't cancel in-progress deployments
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 131880217305.dkr.ecr.us-east-2.amazonaws.com
   ECR_REPOSITORY: neuroreach-ai/backend
   ECS_CLUSTER: neuroreach-ai-cluster
-  ECS_SERVICE_BACKEND: neuroreach-ai-backend-service
-  ECS_SERVICE_CELERY: neuroreach-ai-celery-service
-  TASK_DEF_BACKEND: neuroreach-ai-backend
-  TASK_DEF_CELERY: neuroreach-ai-celery
+  ECS_SERVICE_BACKEND: neuroreach-staging-backend-service
+  ECS_SERVICE_CELERY: neuroreach-staging-celery-service
+  TASK_DEF_BACKEND: neuroreach-staging-backend
+  TASK_DEF_CELERY: neuroreach-staging-celery
   CONTAINER_NAME_BACKEND: backend
   CONTAINER_NAME_CELERY: celery-worker
+  STAGING_URL: https://app-staging.tmsinstitute.co
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
 
@@ -35,20 +34,11 @@ permissions:
 
 jobs:
   # ===========================================================================
-  # Run CI checks first
-  # ===========================================================================
-  ci:
-    name: "🔍 CI Checks"
-    uses: ./.github/workflows/ci.yml
-    secrets: inherit
-
-  # ===========================================================================
-  # Build, Push, and Deploy
+  # Build, Push, and Deploy to Staging
   # ===========================================================================
   build-and-deploy:
     name: "🚀 Build & Deploy to Staging"
     runs-on: ubuntu-latest
-    needs: [ci]
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +71,7 @@ jobs:
           npm run build:widget
           npm run build:assessment
         env:
-          VITE_API_URL: "https://api.tmsinstitute.co"
+          VITE_API_URL: ${{ env.STAGING_URL }}
 
       - name: Copy frontend bundles to backend
         run: |
@@ -112,13 +102,13 @@ jobs:
             --file backend/Dockerfile \
             backend/
 
-      # --- Security Scan Docker Image ---
+      # --- Security Scan ---
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ steps.image-tag.outputs.full_image }}
           severity: CRITICAL,HIGH
-          exit-code: 0  # Non-blocking for staging
+          exit-code: 0
           format: table
         continue-on-error: true
 
@@ -130,32 +120,31 @@ jobs:
           echo "✅ Pushed: ${{ steps.image-tag.outputs.full_image }}"
 
       # --- Deploy Backend Service ---
-      - name: Download current backend task definition
+      - name: Download current staging backend task definition
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ env.TASK_DEF_BACKEND }} \
             --query 'taskDefinition' \
-            --output json > backend-task-def.json
-          # Remove fields that can't be re-registered
+            --output json > staging-backend-task-def.json
           python3 -c "
           import json
-          with open('backend-task-def.json') as f:
+          with open('staging-backend-task-def.json') as f:
               td = json.load(f)
           for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
               td.pop(key, None)
-          with open('backend-task-def.json','w') as f:
+          with open('staging-backend-task-def.json','w') as f:
               json.dump(td, f, indent=2)
           "
 
-      - name: Update backend task definition with new image
+      - name: Update staging backend task definition with new image
         id: backend-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: backend-task-def.json
+          task-definition: staging-backend-task-def.json
           container-name: ${{ env.CONTAINER_NAME_BACKEND }}
           image: ${{ steps.image-tag.outputs.full_image }}
 
-      - name: Deploy backend to ECS
+      - name: Deploy staging backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.backend-task-def.outputs.task-definition }}
@@ -165,31 +154,31 @@ jobs:
           wait-for-minutes: 10
 
       # --- Deploy Celery Service ---
-      - name: Download current celery task definition
+      - name: Download current staging celery task definition
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ env.TASK_DEF_CELERY }} \
             --query 'taskDefinition' \
-            --output json > celery-task-def.json
+            --output json > staging-celery-task-def.json
           python3 -c "
           import json
-          with open('celery-task-def.json') as f:
+          with open('staging-celery-task-def.json') as f:
               td = json.load(f)
           for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
               td.pop(key, None)
-          with open('celery-task-def.json','w') as f:
+          with open('staging-celery-task-def.json','w') as f:
               json.dump(td, f, indent=2)
           "
 
-      - name: Update celery task definition with new image
+      - name: Update staging celery task definition with new image
         id: celery-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: celery-task-def.json
+          task-definition: staging-celery-task-def.json
           container-name: ${{ env.CONTAINER_NAME_CELERY }}
           image: ${{ steps.image-tag.outputs.full_image }}
 
-      - name: Deploy celery to ECS
+      - name: Deploy staging celery to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.celery-task-def.outputs.task-definition }}
@@ -199,29 +188,25 @@ jobs:
           wait-for-minutes: 10
 
       # --- Smoke Tests ---
-      - name: Run smoke tests
+      - name: Run staging smoke tests
         run: |
           echo "🔥 Running smoke tests against staging..."
-          
-          # Wait a moment for service to stabilize
           sleep 15
           
-          # Test liveness endpoint
-          HEALTH_STATUS=$(curl -sf https://api.tmsinstitute.co/health/live 2>&1) || {
-            echo "❌ Liveness check failed!"
+          HEALTH_STATUS=$(curl -sf ${{ env.STAGING_URL }}/health/live 2>&1) || {
+            echo "❌ Staging liveness check failed!"
             echo "Response: $HEALTH_STATUS"
             exit 1
           }
           echo "✅ Liveness: $HEALTH_STATUS"
           
-          # Test health endpoint
-          HEALTH_RESPONSE=$(curl -sf https://api.tmsinstitute.co/health 2>&1) || {
-            echo "❌ Health check failed!"
+          HEALTH_RESPONSE=$(curl -sf ${{ env.STAGING_URL }}/health 2>&1) || {
+            echo "❌ Staging health check failed!"
             exit 1
           }
           echo "✅ Health: $HEALTH_RESPONSE"
           
-          echo "🎉 All smoke tests passed!"
+          echo "🎉 All staging smoke tests passed!"
 
       # --- Deployment Summary ---
       - name: Deployment summary
@@ -231,9 +216,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | Staging |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | ${{ env.STAGING_URL }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Image** | \`${{ steps.image-tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Branch** | staging |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Actor** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Cluster** | ${{ env.ECS_CLUSTER }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Backend Service** | ${{ env.ECS_SERVICE_BACKEND }} |" >> $GITHUB_STEP_SUMMARY
@@ -252,10 +239,9 @@ jobs:
         if: needs.build-and-deploy.result == 'success'
         run: |
           echo "✅ Staging deployment successful!"
+          echo "URL: https://app-staging.tmsinstitute.co"
           echo "Image: staging-$(echo ${{ github.sha }} | cut -c1-7)"
           echo "Deployed by: ${{ github.actor }}"
-          # Email notification via GitHub Actions built-in (commit status)
-          # For external email: integrate SendGrid/SES action here
 
       - name: Notify on failure
         if: needs.build-and-deploy.result == 'failure'
