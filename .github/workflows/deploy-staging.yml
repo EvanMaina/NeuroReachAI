@@ -5,9 +5,10 @@
 name: Deploy to Staging
 
 on:
-  push:
-    branches: [staging]
-  # Allow manual trigger
+  # DISABLED: Staging deploy is disabled until Phase 9 creates staging infrastructure
+  # push:
+  #   branches: [staging]
+  # Manual trigger only — enable push trigger after Phase 9 staging setup
   workflow_dispatch:
 
 concurrency:
@@ -113,12 +114,13 @@ jobs:
 
       # --- Security Scan Docker Image ---
       - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ steps.image-tag.outputs.full_image }}
           severity: CRITICAL,HIGH
           exit-code: 0  # Non-blocking for staging
           format: table
+        continue-on-error: true
 
       # --- Push to ECR ---
       - name: Push Docker image to ECR

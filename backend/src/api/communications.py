@@ -170,7 +170,7 @@ async def send_email_to_lead(
         # Send email via dispatcher (Celery async with sync fallback)
         from ..services.sync_notifications import dispatch_coordinator_email
 
-        sync_result = dispatch_coordinator_email(
+        dispatch_result = dispatch_coordinator_email(
             to_email=email,
             subject=email_data.subject,
             body=email_data.body,
@@ -178,6 +178,12 @@ async def send_email_to_lead(
             lead_name=first_name,
             category=email_data.category,
         )
+
+        # Determine success: both "success" (sync) and "queued" (Celery) mean OK
+        result_status = dispatch_result.get("status", "")
+        is_success = result_status in ("success", "queued")
+        provider = dispatch_result.get("provider") or dispatch_result.get("method") or "unknown"
+        message_id = dispatch_result.get("message_id") or dispatch_result.get("task_id")
 
         # Log audit
         audit_service = AuditService(db)
@@ -210,10 +216,19 @@ async def send_email_to_lead(
         lead.last_updated_at = datetime.now(timezone.utc)
         db.commit()
 
+        # Build user-friendly message
+        masked_email = email[:2] + "***@" + email.split("@")[-1] if "@" in email else email
+        if result_status == "queued":
+            msg = f"Email queued for delivery to {masked_email} via {provider}"
+        elif is_success:
+            msg = f"Email sent to {masked_email} via {provider}"
+        else:
+            msg = f"Email delivery failed: {dispatch_result.get('error', 'unknown error')}"
+
         return CommunicationResponse(
-            success=sync_result.get("status") == "success",
-            message=f"Email sent to {email} via {sync_result.get('provider', 'unknown')}",
-            task_id=sync_result.get("message_id"),
+            success=is_success,
+            message=msg,
+            task_id=message_id,
         )
 
     except Exception as e:
@@ -363,10 +378,25 @@ async def send_sms_to_lead(
             lead.last_updated_at = datetime.now(timezone.utc)
         db.commit()
 
+        # Determine success: both "success" (sync) and "queued" (Celery) mean OK
+        sms_status = sms_result.get("status", "")
+        sms_success = sms_status in ("success", "queued")
+        sms_task_id = sms_result.get("message_sid") or sms_result.get("task_id")
+
+        # Mask phone for user-facing message
+        masked_phone = f"***-***-{phone[-4:]}" if phone and len(phone) >= 4 else phone
+
+        if sms_status == "queued":
+            sms_msg = f"SMS queued for delivery to {masked_phone}"
+        elif sms_success:
+            sms_msg = f"SMS sent to {masked_phone}"
+        else:
+            sms_msg = f"SMS failed: {sms_result.get('error', 'unknown error')}"
+
         return CommunicationResponse(
-            success=sms_result.get("status") == "success",
-            message=f"SMS sent to {phone}" if sms_result.get("status") == "success" else f"SMS failed: {sms_result.get('error', 'unknown')}",
-            task_id=sms_result.get("message_sid"),
+            success=sms_success,
+            message=sms_msg,
+            task_id=sms_task_id,
         )
 
     except Exception as e:

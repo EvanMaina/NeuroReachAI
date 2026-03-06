@@ -308,9 +308,13 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
 
             if (result.success) {
                 const recipientName = [lead.firstName, lead.lastName].filter(Boolean).join(' ') || 'recipient';
+                // Check if queued (async via Celery) vs sent directly
+                const isQueued = result.message?.toLowerCase().includes('queued');
                 setSendResult({
                     success: true,
-                    message: `Email sent successfully to ${recipientName}.`,
+                    message: isQueued
+                        ? `Email queued for delivery to ${recipientName}. It will be sent shortly.`
+                        : `Email sent successfully to ${recipientName}.`,
                 });
                 setIsSending(false);
                 // Defer onSendSuccess and close until after user sees confirmation
