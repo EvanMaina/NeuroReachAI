@@ -5,6 +5,23 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-03-06
+
+### Added
+- **CI/CD Pipeline (Phase 5):** Full GitHub Actions automation
+  - `.github/workflows/ci.yml` — Runs on all PRs: Flake8, ESLint, MyPy, TypeScript, Pytest, Vitest, Trivy security scan, Gitleaks secret scan, Docker build verification, changelog check
+  - `.github/workflows/deploy-staging.yml` — Staging deployment on push to `staging`: builds frontend, bundles into backend Docker image, pushes to ECR, deploys to ECS Fargate (backend + celery), runs smoke tests
+  - `.github/workflows/deploy-production.yml` — Production deployment on push to `main`: full CI, build, ECR push, ECS deploy (backend + celery), smoke tests against api.tmsinstitute.co, auto git release tag
+- Dedicated `github-actions-cicd` IAM user with least-privilege policy (ECR push, ECS deploy only)
+- 7 GitHub repository secrets configured for CI/CD pipeline
+- CI summary job with results table in GitHub Actions step summaries
+
+### Security
+- CI/CD IAM user follows least-privilege principle (ECR + ECS only, no admin access)
+- Trivy vulnerability scanning on both filesystem and Docker images
+- Gitleaks secret scanning integrated into PR checks
+- AWS credentials stored as GitHub encrypted secrets (never in code)
+
 ## [1.2.0] - 2026-03-05
 
 ### Fixed
