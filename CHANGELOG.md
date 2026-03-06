@@ -5,6 +5,29 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-06
+
+### Added
+- **High Availability (Phase 6):** Production services now run multi-instance with auto-scaling
+  - Backend ECS service: scaled from 1 to 2 instances (min 2, max 6)
+  - Celery worker ECS service: scaled from 1 to 2 instances (min 2, max 4)
+  - CPU target tracking auto-scaling at 70% threshold (scale out in 60s, scale in after 300s)
+  - Memory target tracking auto-scaling at 75% threshold
+  - 8 CloudWatch alarms auto-created for scaling triggers (high/low for each policy)
+- **ALB Health Check Optimization:** Reduced healthy threshold from 5→2 and interval from 30s→15s — new targets register in ~30s (was ~150s), enabling faster deployments and failover
+- **Health check grace period:** Backend ECS service grace period increased from 60s→120s to prevent premature health check failures during cold starts
+- **Manual Rollback Workflow:** `.github/workflows/rollback.yml` — one-click production rollback via GitHub Actions UI
+  - Rollback to previous task definition revision (instant)
+  - Rollback to specific ECR image tag (e.g., `prod-18513d3`)
+  - Selective rollback: both services, backend-only, or celery-only
+  - Safety confirmation required (must type "ROLLBACK")
+  - Post-rollback health verification
+  - Shares `deploy-production` concurrency group (prevents conflicts)
+
+### Changed
+- ECS deployment circuit breaker with automatic rollback remains enabled on both services
+- ALB target group health check: interval 15s, timeout 5s, healthy threshold 2, unhealthy threshold 3
+
 ## [1.3.1] - 2026-03-06
 
 ### Fixed
