@@ -20,7 +20,6 @@ import { LeadingConditionsCard } from '../components/dashboard/LeadingConditions
 import { TMSTherapyInterestCard } from '../components/dashboard/TMSTherapyInterestCard';
 import { LeadsTrendChart } from '../components/dashboard/LeadsTrendChart';
 import { CohortRetentionAnalysis, type CohortTimeFilter } from '../components/dashboard/CohortRetentionAnalysis';
-import { LeadsFilterModal } from '../components/dashboard/LeadsFilterModal';
 import { KPICardSkeleton } from '../components/common/SkeletonLoader';
 import { RefreshButton } from '../components/common/RefreshButton';
 import {
@@ -29,8 +28,7 @@ import {
   getCohortRetention,
   getTMSInterestDistribution,
 } from '../services/analytics';
-import type { LeadTableRow, ConditionType } from '../types/lead';
-import type { StatsFilterType } from '../types/analytics';
+import type { ConditionType } from '../types/lead';
 
 // =============================================================================
 // Types
@@ -97,12 +95,6 @@ export const Dashboard: React.FC = () => {
   
   const [currentPage, setCurrentPage] = useState('dashboard');
   const queryClient = useQueryClient();
-  
-  // Filter modal states
-  const [filterModalOpen, setFilterModalOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<StatsFilterType | null>(null);
-  const [filteredLeads, setFilteredLeads] = useState<LeadTableRow[]>([]);
-  const [isLoadingFiltered, setIsLoadingFiltered] = useState(false);
 
   // Cohort retention time filter — default "Last 3 Months"
   const [cohortTimeFilter, setCohortTimeFilter] = useState<CohortTimeFilter>({ type: 'months', value: 3 });
@@ -296,53 +288,6 @@ export const Dashboard: React.FC = () => {
   }, [queryClient]);
 
   // ---------------------------------------------------------------------------
-  // KPI Card Click Handlers
-  // ---------------------------------------------------------------------------
-
-  const handleKPICardClick = useCallback((type: 'total' | 'converted' | 'rate' | 'scheduled'): void => {
-    let filterType: StatsFilterType;
-    
-    switch (type) {
-      case 'total':
-        filterType = 'all';
-        break;
-      case 'converted':
-      case 'rate':
-        filterType = 'converted';
-        break;
-      case 'scheduled':
-        filterType = 'converted';
-        break;
-      default:
-        filterType = 'all';
-    }
-    
-    setActiveFilter(filterType);
-    setFilterModalOpen(true);
-    setIsLoadingFiltered(true);
-    
-    // Simulate loading - in production, fetch filtered leads from API
-    setTimeout(() => {
-      setFilteredLeads([]);
-      setIsLoadingFiltered(false);
-    }, 300);
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Modal Close Handlers
-  // ---------------------------------------------------------------------------
-
-  const handleCloseFilter = useCallback((): void => {
-    setFilterModalOpen(false);
-    setActiveFilter(null);
-  }, []);
-
-  const handleViewFromFilter = useCallback((id: string): void => {
-    setFilterModalOpen(false);
-    window.location.href = `/coordinator?lead=${id}`;
-  }, []);
-
-  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
@@ -406,7 +351,6 @@ export const Dashboard: React.FC = () => {
             conversionRate={kpiStats.conversionRate}
             scheduledAppointments={kpiStats.scheduledAppointments}
             trends={kpiStats.trends}
-            onCardClick={handleKPICardClick}
           />
         )}
 
@@ -451,16 +395,6 @@ export const Dashboard: React.FC = () => {
         </div>
 
       </main>
-
-      {/* Leads Filter Modal */}
-      <LeadsFilterModal
-        isOpen={filterModalOpen}
-        onClose={handleCloseFilter}
-        filterType={activeFilter || 'all'}
-        leads={filteredLeads}
-        isLoading={isLoadingFiltered}
-        onViewLead={handleViewFromFilter}
-      />
     </div>
   );
 };

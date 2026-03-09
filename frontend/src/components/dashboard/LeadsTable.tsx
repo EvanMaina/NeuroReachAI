@@ -11,7 +11,7 @@
  * @version 2.0.0
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, createRef } from 'react';
 import {
   Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Filter, Flame, Zap, CircleDot, Calendar, Users,
@@ -245,6 +245,94 @@ const DEFAULT_VISIBLE: ReadonlyArray<string> = [
   'leadId', 'patient', 'condition', 'priority', 'status',
   'scheduledFor', 'submitted', 'lastActivity', 'preferred', 'actions',
 ];
+
+// =============================================================================
+// TruncatedCell Component — Click-to-expand popover for long text
+// =============================================================================
+
+const TruncatedCell: React.FC<{
+  text: string;
+  maxWidth?: number;
+  className?: string;
+}> = ({ text, maxWidth = 200, className = '' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const cellRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  // Detect if text is actually truncated
+  useEffect(() => {
+    const el = cellRef.current;
+    if (el) {
+      setIsTruncated(el.scrollWidth > el.clientWidth);
+    }
+  }, [text, maxWidth]);
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        cellRef.current && !cellRef.current.contains(e.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen]);
+
+  return (
+    <div className="relative">
+      <div
+        ref={cellRef}
+        onClick={(e) => {
+          if (isTruncated) {
+            e.stopPropagation();
+            setIsOpen(prev => !prev);
+          }
+        }}
+        className={`
+          overflow-hidden text-ellipsis whitespace-nowrap
+          ${isTruncated ? 'cursor-pointer hover:text-indigo-600' : ''}
+          ${className}
+        `}
+        style={{ maxWidth }}
+        title={isTruncated ? 'Click to see full text' : undefined}
+      >
+        {text}
+      </div>
+      {isOpen && isTruncated && (
+        <div
+          ref={popoverRef}
+          className="absolute z-50 left-0 top-full mt-1 max-w-xs min-w-[200px] bg-white border border-gray-200 rounded-lg shadow-xl p-3 text-sm text-gray-800 whitespace-normal break-words animate-in fade-in duration-150"
+          style={{ maxWidth: '320px' }}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <p className="leading-relaxed flex-1">{text}</p>
+            <button
+              onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
+              className="flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // =============================================================================
 // Pagination
@@ -931,15 +1019,14 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </td>
                   )}
                   {visibleColumns.has('condition') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span 
-                      className="text-sm text-gray-700"
-                      title={lead.conditions?.length ? lead.conditions.join(', ') : lead.condition}
-                    >
-                      {lead.conditions?.length 
+                  <td className="px-6 py-4" style={{ overflow: 'visible', position: 'relative' }}>
+                    <TruncatedCell
+                      text={lead.conditions?.length 
                         ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
                         : formatConditionDisplay(lead.condition)}
-                    </span>
+                      maxWidth={Math.max(columnWidths.condition - 48, 100)}
+                      className="text-sm text-gray-700"
+                    />
                   </td>
                   )}
                   {visibleColumns.has('priority') && (

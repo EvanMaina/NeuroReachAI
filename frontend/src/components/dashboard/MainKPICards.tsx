@@ -30,7 +30,6 @@ interface KPICardProps {
     isPositive: boolean;
   };
   gradient: string;
-  onClick?: () => void;
 }
 
 const KPICard: React.FC<KPICardProps> = ({
@@ -40,17 +39,13 @@ const KPICard: React.FC<KPICardProps> = ({
   icon,
   trend,
   gradient,
-  onClick,
 }) => (
   <div
     className={`
-      relative overflow-hidden rounded-2xl shadow-lg cursor-pointer
+      relative overflow-hidden rounded-2xl shadow-lg cursor-default
       ${gradient}
       p-6 min-h-[160px]
-      transform transition-all duration-300
-      hover:scale-[1.02] hover:shadow-xl
     `}
-    onClick={onClick}
   >
     {/* Background decorative elements */}
     <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
@@ -112,7 +107,6 @@ export interface MainKPICardsProps {
     conversionRate?: number;
     scheduledAppointments?: number;
   };
-  onCardClick?: (type: 'total' | 'converted' | 'rate' | 'scheduled') => void;
 }
 
 export const MainKPICards: React.FC<MainKPICardsProps> = ({
@@ -121,7 +115,6 @@ export const MainKPICards: React.FC<MainKPICardsProps> = ({
   conversionRate,
   scheduledAppointments,
   trends = {},
-  onCardClick,
 }) => {
   const cards = [
     {
@@ -173,7 +166,6 @@ export const MainKPICards: React.FC<MainKPICardsProps> = ({
           icon={card.icon}
           trend={card.trend}
           gradient={card.gradient}
-          onClick={() => onCardClick?.(card.id)}
         />
       ))}
     </div>

@@ -26,6 +26,13 @@ USERS = [
         "password": "TMS@2025!Change",
     },
     {
+        "email": "rlpatel@tmsinstitute.co",
+        "first_name": "RL",
+        "last_name": "Patel",
+        "role": "primary_admin",
+        "password": "TMS@2025!Change",
+    },
+    {
         "email": "emwaniki@tmsinstitute.co",
         "first_name": "Evans",
         "last_name": "Mwaniki",

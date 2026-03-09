@@ -1,14 +1,15 @@
 /**
  * Premium Floating Card Widget — TMS Institute of Arizona
- * v17.0.0 — 6-tier responsive, premium animations, WCAG accessible
+ * v18.0.0 — 6-tier responsive, far-right edge positioning, WCAG accessible
  * 
- * Tier 1: Large Desktop ≥1440px  → 280px, right:140px
- * Tier 2: Desktop 1280-1439px    → 260px, right:120px
- * Tier 3: Small Laptop 1025-1279 → 240px, right:80px
- * Tier 4: Tablet 769-1024px      → 200px, right:40px
- * Tier 5: Mobile 376-768px       → 150px, right:8px
- * Tier 6: Small Mobile ≤375px    → 130px, right:6px
+ * Tier 1: Large Desktop ≥1440px  → 280px, right:8px
+ * Tier 2: Desktop 1280-1439px    → 260px, right:8px
+ * Tier 3: Small Laptop 1025-1279 → 240px, right:8px
+ * Tier 4: Tablet 769-1024px      → 200px, right:8px
+ * Tier 5: Mobile 376-768px       → 150px, bottom-right
+ * Tier 6: Small Mobile ≤375px    → 130px, bottom-right
  * 
+ * Positioned at far-right edge to avoid overlapping page content.
  * Montserrat font, glassmorphism, premium 3D float, breathing glow,
  * color wave brand bars, shadow depth pulse, arrow nudge
  * 
@@ -56,8 +57,8 @@ function injectStyles(): void {
        ============================================================ */
     #nr-card-widget {
       position: fixed;
-      top: 480px;
-      right: 120px;
+      top: 50%;
+      right: 8px;
       z-index: 999;
       width: 260px;
       border-radius: 12px;
@@ -231,7 +232,7 @@ function injectStyles(): void {
        Tier 1: Large Desktop (≥1440px)
        ============================================================ */
     @media (min-width: 1440px) {
-      #nr-card-widget { width: 280px; right: 140px; top: 480px; }
+      #nr-card-widget { width: 280px; right: 8px; top: 50%; }
       .nr-card-body { padding: 44px 28px 40px; gap: 40px; }
       .nr-card-headline { font-size: 22px; }
       .nr-card-cta { font-size: 15px; padding: 14px 20px; }
@@ -243,7 +244,7 @@ function injectStyles(): void {
        Tier 3: Small Laptop (1025px - 1279px)
        ============================================================ */
     @media (min-width: 1025px) and (max-width: 1279px) {
-      #nr-card-widget { width: 240px; right: 80px; top: 480px; }
+      #nr-card-widget { width: 240px; right: 8px; top: 50%; }
       .nr-card-body { padding: 36px 22px 32px; gap: 32px; }
       .nr-card-headline { font-size: 19px; }
       .nr-card-cta { font-size: 14px; padding: 12px 16px; }
@@ -254,7 +255,7 @@ function injectStyles(): void {
        Tier 4: Tablet (769px - 1024px)
        ============================================================ */
     @media (min-width: 769px) and (max-width: 1024px) {
-      #nr-card-widget { width: 200px; right: 40px; top: 480px; border-radius: 10px; }
+      #nr-card-widget { width: 200px; right: 8px; top: 50%; border-radius: 10px; }
       .nr-card-inner { border-radius: 10px; }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
       .nr-card-body { padding: 28px 18px 24px; gap: 24px; }
@@ -278,9 +279,9 @@ function injectStyles(): void {
       #nr-card-widget {
         position: fixed;
         top: auto;
-        bottom: 0;
-        left: 0;
-        right: 0;
+        bottom: 16px;
+        left: auto;
+        right: 8px;
         width: 150px;
         border-radius: 10px;
         transform: translateX(30px) scale(0.95);
@@ -331,9 +332,9 @@ function injectStyles(): void {
       #nr-card-widget {
         position: fixed;
         top: auto;
-        bottom: 0;
-        left: 0;
-        right: 0;
+        bottom: 12px;
+        left: auto;
+        right: 6px;
         width: 130px;
         border-radius: 8px;
         z-index: 999;
@@ -482,7 +483,7 @@ function initWidget(): void {
   injectStyles();
   createWidget(c);
   scheduleCleanup();
-  if (NR_DEBUG) console.log(P, 'v17.0.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
+  if (NR_DEBUG) console.log(P, 'v18.0.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
 }
 
 (function () {
