@@ -1,17 +1,17 @@
 /**
  * Premium Floating Card Widget — TMS Institute of Arizona
- * v18.0.0 — 6-tier responsive, far-right edge positioning, WCAG accessible
+ * v18.1.0 — 6-tier responsive, flush-right, nav-safe z-index
  * 
- * Tier 1: Large Desktop ≥1440px  → 280px, right:8px
- * Tier 2: Desktop 1280-1439px    → 260px, right:8px
- * Tier 3: Small Laptop 1025-1279 → 240px, right:8px
- * Tier 4: Tablet 769-1024px      → 200px, right:8px
- * Tier 5: Mobile 376-768px       → 150px, bottom-right
- * Tier 6: Small Mobile ≤375px    → 130px, bottom-right
+ * Tier 1: Large Desktop ≥1440px  → 210px, right:0
+ * Tier 2: Desktop 1280-1439px    → 200px, right:0
+ * Tier 3: Small Laptop 1025-1279 → 185px, right:0
+ * Tier 4: Tablet 769-1024px      → 170px, right:0
+ * Tier 5: Mobile 376-768px       → 145px, bottom-right
+ * Tier 6: Small Mobile ≤375px    → 125px, bottom-right
  * 
- * Positioned at far-right edge to avoid overlapping page content.
- * Montserrat font, glassmorphism, premium 3D float, breathing glow,
- * color wave brand bars, shadow depth pulse, arrow nudge
+ * z-index: 99 — sits BELOW site navigation (Avada nav uses 500+)
+ * overflow: hidden — prevents ghost/empty box rendering
+ * Flush right edge to avoid overlapping page content.
  * 
  * @module widget-embed
  */
@@ -54,59 +54,43 @@ function injectStyles(): void {
   style.textContent = `
     /* ============================================================
        BASE — Tier 2: Desktop/Laptop (1280-1439px) as default
+       z-index: 99 — BELOW site navigation dropdowns
+       overflow: hidden — no ghost boxes
        ============================================================ */
     #nr-card-widget {
       position: fixed;
       top: 50%;
-      right: 8px;
-      z-index: 999;
-      width: 260px;
-      border-radius: 12px;
-      overflow: visible;
+      right: 0;
+      z-index: 99;
+      width: 200px;
+      border-radius: 12px 0 0 12px;
+      overflow: hidden;
       border: 1px solid rgba(26,107,90,0.1);
+      border-right: none;
       background: rgba(255,255,255,0.97);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
-      /* entrance: hidden offscreen */
       opacity: 0;
-      transform: translateX(60px) scale(0.9);
+      transform: translateX(60px);
       pointer-events: none;
-      /* shadow depth pulse applied after entrance */
-      box-shadow: 0 4px 8px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.08), 0 24px 48px rgba(0,0,0,0.12);
+      box-shadow: -2px 2px 8px rgba(0,0,0,0.06), -4px 8px 20px rgba(0,0,0,0.08);
     }
 
-    /* --- Premium Entrance --- */
+    /* --- Entrance --- */
     #nr-card-widget.nr-card-visible {
       opacity: 1;
-      transform: translateX(0) scale(1);
+      transform: translateX(0);
       pointer-events: auto;
-      animation:
-        nr-entrance 1s cubic-bezier(0.16,1,0.3,1) both,
-        nr-float 5s ease-in-out 1.8s infinite,
-        nr-shadow 4s ease-in-out 1.8s infinite;
+      animation: nr-entrance 0.8s cubic-bezier(0.16,1,0.3,1) both;
     }
 
     @keyframes nr-entrance {
-      0% { opacity: 0; transform: translateX(60px) scale(0.9); }
-      100% { opacity: 1; transform: translateX(0) scale(1); }
+      0% { opacity: 0; transform: translateX(60px); }
+      100% { opacity: 1; transform: translateX(0); }
     }
 
-    /* --- Premium 3D Float --- */
-    @keyframes nr-float {
-      0%, 100% { transform: translateY(0px) rotate(0deg); }
-      25% { transform: translateY(-5px) rotate(0.3deg); }
-      50% { transform: translateY(-8px) rotate(0deg); }
-      75% { transform: translateY(-5px) rotate(-0.3deg); }
-    }
-
-    /* --- Shadow Depth Pulse --- */
-    @keyframes nr-shadow {
-      0%, 100% { box-shadow: 0 4px 8px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.08), 0 24px 48px rgba(0,0,0,0.12); }
-      50% { box-shadow: 0 6px 12px rgba(0,0,0,0.08), 0 16px 32px rgba(0,0,0,0.10), 0 32px 56px rgba(0,0,0,0.14); }
-    }
-
-    .nr-card-inner { border-radius: 12px; overflow: hidden; }
+    .nr-card-inner { overflow: hidden; }
 
     /* --- Brand Bar Color Wave --- */
     .nr-card-bar-top, .nr-card-bar-bottom {
@@ -123,17 +107,17 @@ function injectStyles(): void {
 
     /* --- Card Body --- */
     .nr-card-body {
-      padding: 40px 26px 36px;
+      padding: 20px 16px 16px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 36px;
+      gap: 14px;
     }
 
     /* --- Headline --- */
     .nr-card-headline {
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
-      font-size: 20px;
+      font-size: 15px;
       font-weight: 300;
       color: ${C.tx};
       text-align: center;
@@ -147,17 +131,17 @@ function injectStyles(): void {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 5px;
       width: 100%;
-      min-height: 44px;
-      padding: 12px 18px;
-      font-size: 14px;
+      min-height: 40px;
+      padding: 10px 12px;
+      font-size: 12px;
       font-weight: 600;
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
       color: ${C.wh};
       background: linear-gradient(135deg, ${C.dk} 0%, ${C.tl} 100%);
       border: none;
-      border-radius: 8px;
+      border-radius: 7px;
       cursor: pointer;
       text-decoration: none;
       white-space: normal;
@@ -166,13 +150,7 @@ function injectStyles(): void {
       position: relative;
       overflow: hidden;
       transition: all 0.3s cubic-bezier(0.16,1,0.3,1);
-      animation: nr-breathe 3s ease-in-out infinite;
-    }
-
-    /* --- CTA Breathing Glow --- */
-    @keyframes nr-breathe {
-      0%, 100% { box-shadow: 0 0 8px rgba(26,107,90,0.2); }
-      50% { box-shadow: 0 0 20px rgba(26,107,90,0.4), 0 0 40px rgba(26,107,90,0.1); }
+      box-shadow: 0 0 8px rgba(26,107,90,0.2);
     }
 
     /* --- CTA Shimmer --- */
@@ -189,21 +167,20 @@ function injectStyles(): void {
     /* --- CTA Hover (desktop) --- */
     .nr-card-cta:hover {
       background: linear-gradient(135deg, ${C.tl} 0%, ${C.dk} 100%);
-      box-shadow: 0 6px 20px rgba(26,107,90,0.35);
-      transform: translateY(-2px);
-      animation: none;
+      box-shadow: 0 4px 14px rgba(26,107,90,0.35);
+      transform: translateY(-1px);
     }
     .nr-card-cta:focus-visible { outline: 3px solid ${C.tl}; outline-offset: 3px; }
-    .nr-card-cta:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(26,107,90,0.2); }
+    .nr-card-cta:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(26,107,90,0.2); }
 
     /* --- Arrow Nudge --- */
     .nr-card-cta-arrow {
-      font-size: 14px;
+      font-size: 12px;
       animation: nr-nudge 4s ease-in-out infinite;
     }
     @keyframes nr-nudge {
       0%, 80%, 100% { transform: translateX(0); }
-      90% { transform: translateX(4px); }
+      90% { transform: translateX(3px); }
     }
 
     /* --- Trust Line --- */
@@ -211,9 +188,9 @@ function injectStyles(): void {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
+      gap: 4px;
       flex-wrap: wrap;
-      font-size: 10px;
+      font-size: 8px;
       color: ${C.mu};
       letter-spacing: 0.02em;
       font-weight: 400;
@@ -224,7 +201,7 @@ function injectStyles(): void {
     /* --- Desktop hover glow --- */
     @media (hover: hover) and (pointer: fine) {
       #nr-card-widget:hover {
-        box-shadow: 0 8px 16px rgba(0,0,0,0.10), 0 20px 40px rgba(0,0,0,0.12), 0 36px 60px rgba(0,0,0,0.16);
+        box-shadow: -3px 4px 12px rgba(0,0,0,0.10), -6px 12px 28px rgba(0,0,0,0.12);
       }
     }
 
@@ -232,48 +209,41 @@ function injectStyles(): void {
        Tier 1: Large Desktop (≥1440px)
        ============================================================ */
     @media (min-width: 1440px) {
-      #nr-card-widget { width: 280px; right: 8px; top: 50%; }
-      .nr-card-body { padding: 44px 28px 40px; gap: 40px; }
-      .nr-card-headline { font-size: 22px; }
-      .nr-card-cta { font-size: 15px; padding: 14px 20px; }
-      .nr-card-cta-arrow { font-size: 15px; }
-      .nr-card-trust { font-size: 11px; }
+      #nr-card-widget { width: 210px; right: 0; top: 50%; }
+      .nr-card-body { padding: 24px 18px 18px; gap: 16px; }
+      .nr-card-headline { font-size: 16px; }
+      .nr-card-cta { font-size: 13px; padding: 11px 14px; }
+      .nr-card-cta-arrow { font-size: 13px; }
+      .nr-card-trust { font-size: 9px; }
     }
 
     /* ============================================================
        Tier 3: Small Laptop (1025px - 1279px)
        ============================================================ */
     @media (min-width: 1025px) and (max-width: 1279px) {
-      #nr-card-widget { width: 240px; right: 8px; top: 50%; }
-      .nr-card-body { padding: 36px 22px 32px; gap: 32px; }
-      .nr-card-headline { font-size: 19px; }
-      .nr-card-cta { font-size: 14px; padding: 12px 16px; }
-      .nr-card-trust { font-size: 10px; }
+      #nr-card-widget { width: 185px; right: 0; top: 50%; }
+      .nr-card-body { padding: 18px 14px 14px; gap: 12px; }
+      .nr-card-headline { font-size: 14px; }
+      .nr-card-cta { font-size: 11px; padding: 9px 10px; }
+      .nr-card-trust { font-size: 8px; }
     }
 
     /* ============================================================
        Tier 4: Tablet (769px - 1024px)
        ============================================================ */
     @media (min-width: 769px) and (max-width: 1024px) {
-      #nr-card-widget { width: 200px; right: 8px; top: 50%; border-radius: 10px; }
-      .nr-card-inner { border-radius: 10px; }
+      #nr-card-widget { width: 170px; right: 0; top: 50%; border-radius: 10px 0 0 10px; }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 28px 18px 24px; gap: 24px; }
-      .nr-card-headline { font-size: 16px; }
-      .nr-card-cta { font-size: 13px; padding: 10px 14px; border-radius: 7px; }
-      .nr-card-cta-arrow { font-size: 13px; }
-      .nr-card-trust { font-size: 9px; gap: 4px; }
-      #nr-card-widget.nr-card-visible {
-        animation:
-          nr-entrance 1s cubic-bezier(0.16,1,0.3,1) both,
-          nr-float 5s ease-in-out 1.8s infinite,
-          nr-shadow 4s ease-in-out 1.8s infinite;
-      }
+      .nr-card-body { padding: 16px 12px 12px; gap: 10px; }
+      .nr-card-headline { font-size: 13px; }
+      .nr-card-cta { font-size: 11px; padding: 8px 10px; border-radius: 6px; min-height: 38px; }
+      .nr-card-cta-arrow { font-size: 11px; }
+      .nr-card-trust { font-size: 7px; gap: 3px; }
     }
 
     /* ============================================================
        Tier 5: Mobile (376px - 768px)
-       Small floating badge — non-intrusive
+       Bottom-right floating badge
        ============================================================ */
     @media (max-width: 768px) {
       #nr-card-widget {
@@ -281,52 +251,37 @@ function injectStyles(): void {
         top: auto;
         bottom: 16px;
         left: auto;
-        right: 8px;
-        width: 150px;
-        border-radius: 10px;
-        transform: translateX(30px) scale(0.95);
+        right: 0;
+        width: 145px;
+        border-radius: 10px 0 0 10px;
+        transform: translateX(30px);
         transform-origin: top right;
-        z-index: 999;
+        z-index: 99;
       }
       #nr-card-widget.nr-card-visible {
-        transform: translateX(0) scale(1);
-        animation:
-          nr-entrance-m 1s cubic-bezier(0.16,1,0.3,1) both,
-          nr-float-m 6s ease-in-out 1.8s infinite;
+        transform: translateX(0);
+        animation: nr-entrance-m 0.8s cubic-bezier(0.16,1,0.3,1) both;
       }
       @keyframes nr-entrance-m {
-        0% { opacity: 0; transform: translateX(30px) scale(0.95); }
-        100% { opacity: 1; transform: translateX(0) scale(1); }
+        0% { opacity: 0; transform: translateX(30px); }
+        100% { opacity: 1; transform: translateX(0); }
       }
-      @keyframes nr-float-m {
-        0%, 100% { transform: translateY(0px) rotate(0deg); }
-        25% { transform: translateY(-3px) rotate(0.2deg); }
-        50% { transform: translateY(-4px) rotate(0deg); }
-        75% { transform: translateY(-3px) rotate(-0.2deg); }
-      }
-      .nr-card-inner { border-radius: 10px; }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 16px 12px 14px; gap: 14px; }
-      .nr-card-headline { font-size: 13px; line-height: 1.35; }
+      .nr-card-body { padding: 14px 10px 10px; gap: 10px; }
+      .nr-card-headline { font-size: 12px; line-height: 1.35; }
       .nr-card-cta {
-        font-size: 11px; padding: 8px 10px; border-radius: 6px; min-height: 44px; gap: 4px;
-        animation: nr-breathe-m 3s ease-in-out infinite;
+        font-size: 10px; padding: 8px 8px; border-radius: 6px; min-height: 38px; gap: 4px;
       }
-      @keyframes nr-breathe-m {
-        0%, 100% { box-shadow: 0 0 4px rgba(26,107,90,0.15); }
-        50% { box-shadow: 0 0 10px rgba(26,107,90,0.25), 0 0 20px rgba(26,107,90,0.05); }
-      }
-      .nr-card-cta-arrow { font-size: 11px; animation: nr-nudge 5s ease-in-out infinite; }
-      .nr-card-trust { font-size: 8px; gap: 3px; }
-      /* Mobile shadow: lighter */
+      .nr-card-cta-arrow { font-size: 10px; }
+      .nr-card-trust { font-size: 7px; gap: 3px; }
       #nr-card-widget {
-        box-shadow: 0 2px 4px rgba(0,0,0,0.04), 0 6px 12px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.08);
+        box-shadow: -2px 2px 6px rgba(0,0,0,0.06), -3px 6px 14px rgba(0,0,0,0.08);
       }
     }
 
     /* ============================================================
        Tier 6: Small Mobile (≤375px)
-       Ultra compact
+       Ultra compact bottom-right
        ============================================================ */
     @media (max-width: 375px) {
       #nr-card-widget {
@@ -334,18 +289,17 @@ function injectStyles(): void {
         top: auto;
         bottom: 12px;
         left: auto;
-        right: 6px;
-        width: 130px;
-        border-radius: 8px;
-        z-index: 999;
+        right: 0;
+        width: 125px;
+        border-radius: 8px 0 0 8px;
+        z-index: 99;
       }
-      .nr-card-inner { border-radius: 8px; }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 1px; }
-      .nr-card-body { padding: 14px 10px 12px; gap: 12px; }
-      .nr-card-headline { font-size: 12px; }
-      .nr-card-cta { font-size: 10px; padding: 7px 8px; border-radius: 5px; min-height: 44px; }
-      .nr-card-cta-arrow { font-size: 10px; }
-      .nr-card-trust { font-size: 7px; gap: 2px; }
+      .nr-card-body { padding: 12px 8px 8px; gap: 8px; }
+      .nr-card-headline { font-size: 11px; }
+      .nr-card-cta { font-size: 9px; padding: 7px 6px; border-radius: 5px; min-height: 36px; }
+      .nr-card-cta-arrow { font-size: 9px; }
+      .nr-card-trust { font-size: 6px; gap: 2px; }
     }
 
     /* ============================================================
@@ -413,14 +367,8 @@ function createWidget(config: { apiUrl: string }): void {
   const trust = document.createElement('div');
   trust.className = 'nr-card-trust';
 
-  // Adaptive trust text based on screen size
-  if (isSmallMobile()) {
-    trust.innerHTML = `<span>🔒 HIPAA</span>`;
-  } else if (isMobile()) {
-    trust.innerHTML = `<span>🔒 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>256-bit</span>`;
-  } else {
-    trust.innerHTML = `<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🛡️ HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>256-bit</span>`;
-  }
+  // Always show all trust badges on all screen sizes
+  trust.innerHTML = `<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🟢 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>🔐 256-bit</span>`;
 
   body.appendChild(headline);
   body.appendChild(cta);
@@ -483,7 +431,7 @@ function initWidget(): void {
   injectStyles();
   createWidget(c);
   scheduleCleanup();
-  if (NR_DEBUG) console.log(P, 'v18.0.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
+  if (NR_DEBUG) console.log(P, 'v18.1.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
 }
 
 (function () {
