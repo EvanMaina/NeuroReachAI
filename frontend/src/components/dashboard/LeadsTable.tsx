@@ -11,7 +11,7 @@
  * @version 2.0.0
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef, createRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Filter, Flame, Zap, CircleDot, Calendar, Users,
