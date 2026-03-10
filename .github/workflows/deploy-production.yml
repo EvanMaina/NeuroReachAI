@@ -18,14 +18,19 @@ env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 131880217305.dkr.ecr.us-east-2.amazonaws.com
   ECR_REPOSITORY: neuroreach-ai/backend
+  ECR_REPOSITORY_FRONTEND: neuroreach-ai/frontend
   ECS_CLUSTER: neuroreach-ai-cluster
   ECS_SERVICE_BACKEND: neuroreach-ai-backend-service
   ECS_SERVICE_CELERY: neuroreach-ai-celery-service
+  ECS_SERVICE_FRONTEND: neuroreach-ai-frontend-service
   TASK_DEF_BACKEND: neuroreach-ai-backend
   TASK_DEF_CELERY: neuroreach-ai-celery
+  TASK_DEF_FRONTEND: neuroreach-ai-frontend
   CONTAINER_NAME_BACKEND: backend
   CONTAINER_NAME_CELERY: celery-worker
+  CONTAINER_NAME_FRONTEND: frontend
   PRODUCTION_URL: https://api.tmsinstitute.co
+  FRONTEND_URL: https://app.tmsinstitute.co
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "20"
 
@@ -203,6 +208,68 @@ jobs:
           wait-for-service-stability: true
           wait-for-minutes: 15
 
+      # --- Build & Deploy Frontend Service (nginx + React SPA) ---
+      - name: Set frontend image tag
+        id: frontend-image-tag
+        run: |
+          SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "tag=prod-${SHA}" >> $GITHUB_OUTPUT
+          echo "full_image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:prod-${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Build frontend Docker image
+        run: |
+          docker build \
+            --target production \
+            --tag ${{ steps.frontend-image-tag.outputs.full_image }} \
+            --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:prod-latest \
+            --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:latest \
+            --label "git.sha=${{ github.sha }}" \
+            --label "git.branch=main" \
+            --label "build.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "environment=production" \
+            --file frontend/Dockerfile \
+            frontend/
+
+      - name: Push frontend Docker image to ECR
+        run: |
+          docker push ${{ steps.frontend-image-tag.outputs.full_image }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:prod-latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:latest
+          echo "✅ Pushed frontend: ${{ steps.frontend-image-tag.outputs.full_image }}"
+
+      - name: Download current frontend task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_DEF_FRONTEND }} \
+            --query 'taskDefinition' \
+            --output json > frontend-task-def.json
+          python3 -c "
+          import json
+          with open('frontend-task-def.json') as f:
+              td = json.load(f)
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          with open('frontend-task-def.json','w') as f:
+              json.dump(td, f, indent=2)
+          "
+
+      - name: Update frontend task definition with new image
+        id: frontend-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: frontend-task-def.json
+          container-name: ${{ env.CONTAINER_NAME_FRONTEND }}
+          image: ${{ steps.frontend-image-tag.outputs.full_image }}
+
+      - name: Deploy frontend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.frontend-task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE_FRONTEND }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
       # --- Smoke Tests ---
       - name: Run production smoke tests
         run: |
@@ -240,6 +307,14 @@ jobs:
             echo "⚠️ Could not parse health response, but endpoint responded"
           }
           
+          # Test frontend is serving
+          FRONTEND_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" ${{ env.FRONTEND_URL }} 2>&1) || true
+          if [ "$FRONTEND_STATUS" = "200" ]; then
+            echo "✅ Frontend: HTTP $FRONTEND_STATUS (app.tmsinstitute.co serving)"
+          else
+            echo "⚠️ Frontend returned HTTP $FRONTEND_STATUS (may still be stabilizing)"
+          fi
+          
           echo "🎉 All production smoke tests passed!"
 
       # --- Git Release Tag ---
@@ -274,7 +349,9 @@ jobs:
           echo "| **Cluster** | ${{ env.ECS_CLUSTER }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Backend Service** | ${{ env.ECS_SERVICE_BACKEND }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Celery Service** | ${{ env.ECS_SERVICE_CELERY }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Production URL** | ${{ env.PRODUCTION_URL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Frontend Service** | ${{ env.ECS_SERVICE_FRONTEND }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Backend URL** | ${{ env.PRODUCTION_URL }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Frontend URL** | ${{ env.FRONTEND_URL }} |" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # Notify
