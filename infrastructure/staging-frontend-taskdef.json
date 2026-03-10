@@ -1,0 +1,38 @@
+{
+    "family": "neuroreach-staging-frontend",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "256",
+    "memory": "512",
+    "executionRoleArn": "arn:aws:iam::131880217305:role/ecsTaskExecutionRole",
+    "containerDefinitions": [
+        {
+            "name": "frontend",
+            "image": "131880217305.dkr.ecr.us-east-2.amazonaws.com/neuroreach-ai/frontend:staging-latest",
+            "portMappings": [
+                {
+                    "containerPort": 80,
+                    "hostPort": 80,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "healthCheck": {
+                "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 10
+            },
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/neuroreach-staging-frontend",
+                    "awslogs-create-group": "true",
+                    "awslogs-region": "us-east-2",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            }
+        }
+    ]
+}
