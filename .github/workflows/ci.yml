@@ -1,10 +1,12 @@
 # =============================================================================
 # NeuroReach AI — Continuous Integration
-# Runs on ALL pull requests to dev, staging, and main
+# Runs on ALL pull requests AND pushes to dev, staging, and main
 # =============================================================================
 name: CI
 
 on:
+  push:
+    branches: [dev]
   pull_request:
     branches: [main, staging, dev]
   # Allow reusable workflow calls from deploy workflows

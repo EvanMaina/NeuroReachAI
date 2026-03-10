@@ -1,0 +1,181 @@
+# =============================================================================
+# NeuroReach AI — Promote Dev → Staging → Production
+#
+# FLOW: Push to dev → CI checks → merge to staging → deploy staging
+#       → merge to main → deploy production
+#
+# This eliminates the need to push to each branch separately.
+# One push to dev cascades to all environments automatically.
+#
+# SAFETY: CI must pass before any promotion occurs.
+# =============================================================================
+name: "🔄 Promote to All Environments"
+
+on:
+  # Auto-trigger when CI passes on dev push
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [dev]
+  # Allow manual trigger for any-time promotion
+  workflow_dispatch:
+    inputs:
+      skip_staging_deploy:
+        description: "Skip staging deployment (merge only)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: promote-environments
+  cancel-in-progress: false  # Never cancel in-progress promotions
+
+permissions:
+  contents: write
+
+jobs:
+  # ===========================================================================
+  # Gate: Only promote if CI passed
+  # ===========================================================================
+  gate:
+    name: "🔒 Promotion Gate"
+    runs-on: ubuntu-latest
+    # For workflow_run: only proceed if CI succeeded
+    # For workflow_dispatch: always proceed (manual override)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      should_promote: ${{ steps.check.outputs.promote }}
+    steps:
+      - name: Check promotion eligibility
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "✅ Manual promotion triggered"
+            echo "promote=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+            echo "✅ CI passed on dev — promoting to staging and production"
+            echo "promote=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CI did not pass — skipping promotion"
+            echo "promote=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ===========================================================================
+  # Step 1: Promote dev → staging
+  # ===========================================================================
+  promote-to-staging:
+    name: "⬆️ Promote dev → staging"
+    runs-on: ubuntu-latest
+    needs: [gate]
+    if: needs.gate.outputs.should_promote == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge dev into staging
+        run: |
+          echo "📦 Fetching latest branches..."
+          git fetch origin dev staging main
+
+          echo "🔀 Checking out staging..."
+          git checkout staging
+
+          echo "🔀 Merging dev into staging..."
+          git merge origin/dev --no-edit \
+            -m "chore: auto-promote dev → staging [skip ci]"
+
+          echo "📤 Pushing staging..."
+          git push origin staging
+
+          echo "✅ dev merged into staging successfully"
+
+      - name: Trigger staging deployment
+        run: |
+          echo "🚀 Triggering staging deployment workflow..."
+          gh workflow run "Deploy to Staging" --ref staging
+          echo "✅ Staging deployment triggered"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # Step 2: Promote staging → main (production)
+  # ===========================================================================
+  promote-to-production:
+    name: "🚀 Promote staging → main"
+    runs-on: ubuntu-latest
+    needs: [promote-to-staging]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge staging into main
+        run: |
+          echo "📦 Fetching latest branches..."
+          git fetch origin staging main
+
+          echo "🔀 Checking out main..."
+          git checkout main
+
+          echo "🔀 Merging staging into main..."
+          git merge origin/staging --no-edit \
+            -m "chore: auto-promote staging → main [skip ci]"
+
+          echo "📤 Pushing main..."
+          git push origin main
+
+          echo "✅ staging merged into main successfully"
+
+      - name: Trigger production deployment
+        run: |
+          echo "🚀 Triggering production deployment workflow..."
+          gh workflow run "Deploy to Production" --ref main
+          echo "✅ Production deployment triggered"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ===========================================================================
+  # Summary
+  # ===========================================================================
+  summary:
+    name: "📊 Promotion Summary"
+    runs-on: ubuntu-latest
+    needs: [promote-to-staging, promote-to-production]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## 🔄 Environment Promotion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Dev → Staging | ${{ needs.promote-to-staging.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Staging → Production | ${{ needs.promote-to-production.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.promote-to-production.result }}" = "success" ]; then
+            echo "🎉 **All environments promoted successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Deployments triggered:" >> $GITHUB_STEP_SUMMARY
+            echo "- 🟢 Staging: deploy-staging workflow running" >> $GITHUB_STEP_SUMMARY
+            echo "- 🟢 Production: deploy-production workflow running" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Promotion incomplete — check logs above**" >> $GITHUB_STEP_SUMMARY
+          fi
