@@ -158,6 +158,55 @@ export async function getQueueMetrics(
   return response.data;
 }
 
+// =============================================================================
+// Manual Lead Creation
+// =============================================================================
+
+/**
+ * Manual lead creation request — coordinator entry
+ */
+export interface IManualLeadRequest {
+  first_name: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  condition?: string;
+  condition_other?: string;
+  symptom_duration?: string;
+  prior_treatments?: string[];
+  has_insurance?: boolean;
+  insurance_provider?: string;
+  zip_code?: string;
+  urgency?: string;
+  notes?: string;
+}
+
+/**
+ * Manual lead creation response
+ */
+export interface IManualLeadResponse {
+  success: boolean;
+  message: string;
+  lead_id: string;
+  lead_number: string;
+}
+
+/**
+ * Create a lead manually from the coordinator dashboard.
+ * Only first_name is required — all other fields are optional.
+ *
+ * @param data - Manual lead form data
+ * @returns Promise with creation response including lead_id and lead_number
+ */
+export async function createManualLead(
+  data: IManualLeadRequest
+): Promise<IManualLeadResponse> {
+  const response = await apiClient.post<IManualLeadResponse>(
+    '/api/leads/manual',
+    data
+  );
+  return response.data;
+}
 /**
  * Get monthly lead trends.
  * 
@@ -335,8 +384,15 @@ function mapLeadResponse(lead: Record<string, unknown>): ILeadListItem {
     conditions: lead.conditions as string[] | undefined,
     otherConditionText: lead.other_condition_text as string | undefined,
     preferredContactMethod: lead.preferred_contact_method as string | undefined,
+    // Lead source — widget, jotform, manual, etc.
+    // CRITICAL: Must be mapped here so checkNewHotLeads() can read lead.source !== 'manual'
+    // and suppress notifications for coordinator-added leads.
+    // Without this mapping, source is always undefined, and undefined !== 'manual' = true,
+    // causing every manual lead to fire a notification.
+    source: lead.source as string | undefined,
   };
 }
+
 
 /**
  * Get paginated list of leads for dashboard.

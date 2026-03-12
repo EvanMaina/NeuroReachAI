@@ -5,9 +5,23 @@
  * (NOT React Query) to detect new lead arrivals without adding query-cache
  * churn.  When the total count increases it:
  *   1. Dispatches a toast notification via the global CustomEvent bus.
- *   2. Plays the professional two-tone chime.
+ *   2. Plays the professional two-tone chime (via the toast system).
  *   3. Invalidates the React Query leads cache so every mounted dashboard
  *      picks up the new data on its next render cycle.
+ *
+ * MANUAL LEAD SUPPRESSION (v2.0.0 — Source-Based):
+ *   The polling endpoint (`/api/leads/latest-check`) returns a `recent_sources`
+ *   array containing the `source` column value for every lead created in the
+ *   last 30 seconds.  When a count increase (delta) is detected, we count how
+ *   many of those recent sources are `'manual'` and subtract them from the
+ *   delta.  Only the remaining "organic" delta (widget / jotform / API) fires
+ *   a toast + chime.
+ *
+ *   This is purely data-driven:
+ *   • No module-level counters or mutable state shared across components.
+ *   • Works correctly across page refreshes, multiple browser tabs, and
+ *     multiple coordinators — the server is the single source of truth.
+ *   • Zero coupling between ManualLeadModal and this component.
  *
  * Design constraints:
  *   • Zero UI — renders `null`.
@@ -19,14 +33,13 @@
  *     token refresh, etc.).
  *
  * @module components/common/NewLeadWatcher
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStoredToken } from '../../services/api';
 import { showToast } from './ToastContainer';
-import { playNotificationChime } from '../../utils/notificationSound';
 
 // Polling interval (ms) — 15 seconds balances freshness vs. load.
 const POLL_INTERVAL_MS = 15_000;
@@ -37,6 +50,8 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '';
 interface LatestCheckResponse {
   total: number;
   latest_at: string | null;
+  /** Source values for leads created in the last 30 seconds. */
+  recent_sources: string[];
 }
 
 /**
@@ -90,23 +105,35 @@ const NewLeadWatcher: React.FC = () => {
         }
 
         // Detect new arrivals.
-        const delta = newTotal - prevTotalRef.current;
+        const rawDelta = newTotal - prevTotalRef.current;
 
-        if (delta > 0) {
-          // 1. Toast notification
-          if (delta === 1) {
-            showToast('new-lead', '🔥 New Lead', 'A new lead just arrived!');
-          } else {
-            showToast('new-lead', '🔥 New Leads', `${delta} new leads just arrived!`);
+        if (rawDelta > 0) {
+          // ---------------------------------------------------------------
+          // Source-based suppression: count how many of the recently-created
+          // leads are manual (coordinator-created) and subtract them from
+          // the raw delta.  Only "organic" arrivals fire a notification.
+          // ---------------------------------------------------------------
+          const manualCount = (data.recent_sources || []).filter(
+            (s) => s === 'manual'
+          ).length;
+
+          const organicDelta = Math.max(0, rawDelta - manualCount);
+
+          if (organicDelta > 0) {
+            // 1. Toast notification — only for organic leads
+            if (organicDelta === 1) {
+              showToast('new-lead', '🔥 New Lead', 'A new lead just arrived!');
+            } else {
+              showToast('new-lead', '🔥 New Leads', `${organicDelta} new leads just arrived!`);
+            }
+
+            // 2. Sound is played by ToastContainer when it receives a
+            //    'new-lead' type toast, so no need for a duplicate call here.
           }
 
-          // 2. Sound
-          playNotificationChime();
-
-          // 3. Invalidate React Query leads cache — only actively mounted
-          //    queries will refetch immediately. Inactive cached queries are
-          //    marked stale but won't fire network requests until remounted.
-          //    This prevents cache churn from background polling.
+          // 3. ALWAYS invalidate React Query leads cache when count changes,
+          //    even for manual leads — the table should show the new row.
+          //    Only actively mounted queries will refetch immediately.
           queryClient.invalidateQueries({
             queryKey: ['leads'],
             refetchType: 'active',

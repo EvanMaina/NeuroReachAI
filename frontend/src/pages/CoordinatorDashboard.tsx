@@ -21,6 +21,7 @@ import { LeadEditModal } from '../components/dashboard/LeadEditModal';
 import { ScheduleModal } from '../components/dashboard/ScheduleModal';
 import { QuickActionPanel } from '../components/dashboard/QuickActionPanel';
 import { ConsultationPanel } from '../components/dashboard/ConsultationPanel';
+import { ManualLeadModal } from '../components/dashboard/ManualLeadModal';
 import { DeleteConfirmDialog } from '../components/common/DeleteConfirmDialog';
 import { RefreshButton } from '../components/common/RefreshButton';
 import { filterLeadsByQueue, type QueueType } from '../components/dashboard/QueueSidebar';
@@ -124,6 +125,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     name: string;
   } | null>(null);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string | null>(null);
+  
+  // Manual Lead modal state (Task 4 — "Add Lead" button in New Leads queue only)
+  const [isManualLeadModalOpen, setIsManualLeadModalOpen] = useState(false);
   
   // =========================================================================
   // GLOBAL TOAST SYSTEM — Listens for CustomEvent('neuroreach:toast')
@@ -302,8 +306,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     setIsDetailOpen(true);
     
     try {
-      const response = await getLeadById(id) as any;
-      const leadData = mapApiResponseToLead(response as Record<string, unknown>, id);
+      const response = await getLeadById(id);
+      const leadData = mapApiResponseToLead(response as unknown as Record<string, unknown>, id);
       setSelectedLead(leadData);
     } catch (_error) {
       setSelectedLead(null);
@@ -364,8 +368,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     setIsEditModalOpen(true);
     
     try {
-      const response = await getLeadById(leadId) as any;
-      const leadData = mapApiResponseToLead(response as Record<string, unknown>, leadId);
+      const response = await getLeadById(leadId);
+      const leadData = mapApiResponseToLead(response as unknown as Record<string, unknown>, leadId);
       setEditLead(leadData);
     } catch (_error) {
       setEditLead(null);
@@ -674,13 +678,25 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
         {/* Main Content Area — flex-1 fills remaining viewport, min-h-0 enables nested flex scroll */}
         <div className="flex-1 min-h-0 flex flex-col mx-6 mb-2 mt-2 rounded-xl border border-gray-200 shadow-sm bg-white overflow-hidden">
           {/* Queue Title Header — flex-shrink-0 */}
-          <div className={`flex-shrink-0 px-4 py-2 border-b border-gray-200 ${queueConfig.bgColor}`}>
-            <h2 className={`text-base font-semibold ${queueConfig.color}`}>
-              {queueConfig.title}
-            </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {queueConfig.subtitle} • {filteredQueueLeads.length} leads
-            </p>
+          <div className={`flex-shrink-0 px-4 py-2 border-b border-gray-200 ${queueConfig.bgColor} flex items-center justify-between`}>
+            <div>
+              <h2 className={`text-base font-semibold ${queueConfig.color}`}>
+                {queueConfig.title}
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {queueConfig.subtitle} • {filteredQueueLeads.length} leads
+              </p>
+            </div>
+            {/* Add Lead button — only visible in New Leads queue */}
+            {activeQueue === 'new' && (
+              <button
+                onClick={() => setIsManualLeadModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+              >
+                <PlusCircle size={14} />
+                Add Lead
+              </button>
+            )}
           </div>
           
           {/* Clean Table View — flex-1 passes remaining space to LeadsTable */}
@@ -874,6 +890,15 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
           setIsConsultationOpen(false);
           setConsultationLead(null);
           handleViewFullDetails(leadId);
+        }}
+      />
+
+      {/* Manual Lead Modal — Add Lead (New Leads queue only) */}
+      <ManualLeadModal
+        isOpen={isManualLeadModalOpen}
+        onClose={() => setIsManualLeadModalOpen(false)}
+        onSuccess={async () => {
+          await refreshLeads();
         }}
       />
 

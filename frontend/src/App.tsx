@@ -227,8 +227,20 @@ const PageRenderer: React.FC<PageRendererProps> = memo(({ routeInfo }) => {
     }
   }, [routeInfo.page, routeInfo.queueType]);
 
+  // KEY FIX: ErrorBoundary uses `key` derived from the current route.
+  // When the user navigates to a different page/queue, React unmounts the old
+  // ErrorBoundary and mounts a fresh one with hasError=false. This prevents
+  // the "stuck on error page" bug where a transient error on one page
+  // (e.g., coordinator-new) would block ALL subsequent navigation until
+  // the user manually clicked "Reload Page".
+  //
+  // Without this key, the class component's state persists across route
+  // changes because React reuses the same instance (same position in tree).
+  const errorBoundaryKey = `${routeInfo.page}-${routeInfo.queueType || 'default'}`;
+
   return (
     <ErrorBoundary
+      key={errorBoundaryKey}
       fallback={
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 p-6">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
@@ -281,11 +293,12 @@ const AppRouter: React.FC = memo(() => {
 
   // Global navigation function
   useEffect(() => {
-    (window as any).navigateTo = (page: string) => {
+    const win = window as Window & { navigateTo?: (page: string) => void };
+    win.navigateTo = (page: string) => {
       window.location.hash = page;
     };
     return () => {
-      delete (window as any).navigateTo;
+      delete (window as Window & { navigateTo?: (page: string) => void }).navigateTo;
     };
   }, []);
 

@@ -52,11 +52,12 @@ export async function sendEmail(data: SendEmailRequest): Promise<CommunicationRe
   try {
     const response = await apiClient.post<CommunicationResponse>('/api/communications/email/send', data);
     return response.data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (import.meta.env.DEV) console.error('Failed to send email:', error);
+    const axiosErr = error as { response?: { data?: { detail?: string } } };
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to send email. Please try again.',
+      message: axiosErr.response?.data?.detail || 'Failed to send email. Please try again.',
     };
   }
 }
@@ -68,11 +69,12 @@ export async function sendSMS(data: SendSMSRequest): Promise<CommunicationRespon
   try {
     const response = await apiClient.post<CommunicationResponse>('/api/communications/sms/send', data);
     return response.data;
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (import.meta.env.DEV) console.error('Failed to send SMS:', error);
+    const axiosErr = error as { response?: { data?: { detail?: string } } };
     return {
       success: false,
-      message: error.response?.data?.detail || 'Failed to send SMS. Please try again.',
+      message: axiosErr.response?.data?.detail || 'Failed to send SMS. Please try again.',
     };
   }
 }

@@ -16,7 +16,7 @@ from sqlalchemy import desc, func, or_
 
 from ..core.config import settings
 from ..core.database import get_db
-from ..models.lead import Lead, PriorityType, LeadStatus, ContactOutcome
+from ..models.lead import Lead, PriorityType, LeadStatus, ContactOutcome, LeadSource, ConditionType, DurationType, UrgencyType
 from ..models.provider import ReferringProvider
 from ..schemas.lead import (
     LeadCreate,
@@ -28,6 +28,7 @@ from ..schemas.lead import (
     LogContactAttemptRequest,
     ScheduledLeadResponse,
     UpdateContactOutcomeRequest,
+    ManualLeadCreate,
 )
 from ..schemas.common import PaginatedResponse, ErrorResponse
 from ..services.lead_scoring import (
@@ -49,6 +50,7 @@ from ..services.audit import AuditService
 from ..services.lead_number import generate_unique_lead_number
 from ..services.cache import get_cache
 from ..core.auth import get_current_user, require_role
+from ..services.lead_scoring_v2 import is_in_service_area as _check_service_area
 
 
 router = APIRouter(prefix="/api/leads", tags=["Leads"])
@@ -80,7 +82,7 @@ def clear_lead_transition_fields(lead: Lead) -> None:
     that gets a callback scheduled should NOT still show "Cancelled Appointment".
     
     This clears:
-    - contact_outcome (reset to NEW baseline)
+    - contact_outcome (reset to NEW baseline — NOT None, column is NOT NULL)
     - follow_up_reason (e.g., "No Answer", "Callback Requested", "No Show")
     - follow_up_date (follow-up schedule)
     - scheduled_callback_at (callback/consultation datetime)
@@ -94,10 +96,15 @@ def clear_lead_transition_fields(lead: Lead) -> None:
     - source, UTM data, referral data (attribution)
     - status (caller sets this after clearing)
     
+    NOTE: Callers MUST set contact_outcome to the appropriate value after
+    calling this function. The baseline is ContactOutcome.NEW but most
+    callers will immediately override it with the new outcome.
+    
     Args:
         lead: Lead model instance to clear transition fields on
     """
-    lead.contact_outcome = None
+    # CRITICAL: Set to NEW (not None) — contact_outcome column is NOT NULL
+    lead.contact_outcome = ContactOutcome.NEW
     lead.follow_up_reason = None
     lead.follow_up_date = None
     lead.scheduled_callback_at = None
@@ -321,7 +328,21 @@ async def latest_check(
         total = result[0] or 0 if result else 0
         latest_at = result[1].isoformat() if result and result[1] else None
 
-        payload = {"total": total, "latest_at": latest_at}
+        # Fetch source values for leads created in the last 30 seconds.
+        # This allows the frontend NewLeadWatcher to determine whether new
+        # leads are organic (widget/jotform) or manual (coordinator-created)
+        # and suppress notifications for manual leads — purely data-driven,
+        # no in-memory counters, works across page refreshes and multiple
+        # coordinators on different browsers.
+        recent_sources_result = db.execute(
+            __import__("sqlalchemy").text(
+                "SELECT COALESCE(source, 'widget') FROM leads "
+                "WHERE deleted_at IS NULL AND created_at >= NOW() - INTERVAL '30 seconds'"
+            )
+        ).fetchall()
+        recent_sources = [row[0] for row in recent_sources_result] if recent_sources_result else []
+
+        payload = {"total": total, "latest_at": latest_at, "recent_sources": recent_sources}
 
         # Cache for 5 seconds
         try:
@@ -919,6 +940,8 @@ async def list_leads(
                 referring_provider_id=lead.referring_provider_id,
                 referring_provider_name=lead.referring_provider.name if lead.referring_provider else None,
                 follow_up_reason=lead.follow_up_reason,
+                # Source field — identifies lead origin (widget, jotform, manual, etc.)
+                source=lead.source.value if lead.source else None,
                 last_updated_at=lead.last_updated_at,
             )
 
@@ -1221,6 +1244,208 @@ async def list_deleted_leads(
 
 
 # =============================================================================
+# Manual Lead Creation Endpoint (Coordinator Entry)
+# =============================================================================
+
+@router.post(
+    "/manual",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Lead Manually",
+    description="Allows coordinators to manually add a lead from the dashboard.",
+    dependencies=[Depends(require_role("administrator", "coordinator"))],
+)
+async def create_manual_lead(
+    lead_data: ManualLeadCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Create a new lead manually from the coordinator dashboard.
+
+    Only first_name is required. Missing DB-required fields are filled
+    with sensible placeholder values so the coordinator can add details later.
+
+    - source = manual
+    - priority = HOT (manual leads get immediate attention)
+    - status = NEW
+    - score = 50 (neutral baseline)
+
+    Args:
+        lead_data: ManualLeadCreate schema
+        request: FastAPI request
+        db: Database session
+
+    Returns:
+        Success response with lead_id and lead_number
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Generate unique lead number using the same logic as all other leads
+        lead_number = generate_unique_lead_number(db)
+
+        # Encrypt PHI fields — use placeholder values for missing required fields
+        first_name_enc = EncryptionService.encrypt_field(lead_data.first_name)
+        last_name_enc = EncryptionService.encrypt_field(lead_data.last_name) if lead_data.last_name else None
+        email_enc = EncryptionService.encrypt_field(lead_data.email) if lead_data.email else EncryptionService.encrypt_field("manual-entry@placeholder.local")
+        phone_enc = EncryptionService.encrypt_field(lead_data.phone) if lead_data.phone else EncryptionService.encrypt_field("+10000000000")
+
+        # Determine condition and build conditions array
+        # If coordinator selected a condition, use it; otherwise leave empty = "Not Provided"
+        condition = lead_data.condition if lead_data.condition else ConditionType.OTHER
+
+        # Determine condition_other text ONLY when coordinator explicitly provided it
+        condition_other_text: str | None = None
+        if lead_data.condition_other:
+            # User provided explicit "Other" description
+            condition_other_text = lead_data.condition_other
+
+        # Normalize conditions array to lowercase to match widget-submitted leads
+        # Widget leads store: ["depression", "anxiety", "other"]
+        # Manual leads must follow the same convention.
+        # CRITICAL: When no condition was selected (lead_data.condition is None),
+        # store an EMPTY array [] so the frontend can display "Not Provided"
+        # instead of a placeholder string. Empty array is the agreed signal.
+        if lead_data.condition:
+            normalized_conditions = [condition.value.lower()]
+        else:
+            normalized_conditions = []  # Empty = "Not Provided" in frontend
+
+        # Build lead record with proper defaults for all required NOT NULL columns
+        lead = Lead(
+            lead_number=lead_number,
+            first_name_encrypted=first_name_enc,
+            last_name_encrypted=last_name_enc,
+            email_encrypted=email_enc,
+            phone_encrypted=phone_enc,
+            condition=condition,
+            condition_other=condition_other_text,
+            # Multi-condition support — normalized lowercase to match widget leads
+            conditions=normalized_conditions,
+            # Store "Other" description in BOTH fields so it displays correctly
+            # in every view (pipeline table uses other_condition_text, detail modal uses condition_other)
+            other_condition_text=condition_other_text if condition == ConditionType.OTHER else None,
+            symptom_duration=lead_data.symptom_duration if lead_data.symptom_duration else DurationType.LESS_THAN_6_MONTHS,
+            prior_treatments=lead_data.prior_treatments if lead_data.prior_treatments else [],
+            has_insurance=lead_data.has_insurance if lead_data.has_insurance is not None else False,
+            insurance_provider=lead_data.insurance_provider,
+            zip_code=lead_data.zip_code if lead_data.zip_code else "00000",
+            in_service_area=_check_service_area(lead_data.zip_code),
+            urgency=lead_data.urgency if lead_data.urgency else UrgencyType.EXPLORING,
+            hipaa_consent=True,  # Coordinator-entered leads have implicit consent
+            hipaa_consent_timestamp=datetime.now(timezone.utc),
+            sms_consent=False,  # Explicit default for NOT NULL column
+            # Scoring — neutral baseline for manual leads
+            score=50,
+            lead_score=50,
+            # CRITICAL: All manual leads get HOT priority — enforced at the data layer
+            priority=PriorityType.HOT,
+            # Status
+            status=LeadStatus.NEW,
+            # CRITICAL FIX: contact_outcome must NOT be None — column is NOT NULL
+            # This was the root cause of "Failed to create lead" error
+            contact_outcome=ContactOutcome.NEW,
+            # Source tracking
+            source=LeadSource.manual,
+            # Referral defaults for NOT NULL column
+            is_referral=False,
+            # Notes from coordinator
+            notes=lead_data.notes,
+            # Metadata
+            ip_address_hash=EncryptionService.hash_ip(get_client_ip(request)),
+            user_agent=get_user_agent(request),
+        )
+
+        db.add(lead)
+        db.commit()
+        db.refresh(lead)
+
+        # Invalidate cache
+        try:
+            cache = get_cache()
+            cache.invalidate_on_lead_change()
+        except Exception:
+            pass
+
+        # Audit log
+        try:
+            audit_service = AuditService(db)
+            audit_service.log_create(
+                table_name="leads",
+                record_id=lead.id,
+                ip_address=get_client_ip(request),
+                endpoint="/api/leads/manual",
+                request_method="POST",
+                user_agent=get_user_agent(request),
+                new_values={
+                    "lead_number": lead_number,
+                    "source": "manual",
+                    "priority": "HOT",
+                    "phi_fields": "[REDACTED]",
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Audit log failed for manual lead: {e}")
+
+        return {
+            "success": True,
+            "message": f"Lead {lead_number} created successfully.",
+            "lead_id": str(lead.id),
+            "lead_number": lead_number,
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Manual lead creation error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create lead: {str(e)}",
+        )
+
+
+# =============================================================================
+# Daily Digest Manual Trigger Endpoint (Admin Only)
+# =============================================================================
+
+@router.post(
+    "/digest-trigger",
+    summary="Trigger Daily Digest Email",
+    description="Manually trigger the daily lead digest email. Admin only.",
+    dependencies=[Depends(require_role("administrator"))],
+)
+async def trigger_daily_digest() -> dict:
+    """
+    Manually trigger the daily lead digest email via Celery async task.
+
+    Useful for testing or sending an ad-hoc digest outside the 7AM MST schedule.
+
+    Returns:
+        Success response with Celery task ID
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        from ..tasks.lead_tasks import send_daily_lead_digest
+
+        result = send_daily_lead_digest.delay()
+        logger.info(f"Daily digest triggered manually, task_id={result.id}")
+
+        return {
+            "success": True,
+            "message": "Daily digest email task queued successfully.",
+            "task_id": str(result.id),
+        }
+    except Exception as e:
+        logger.error(f"Failed to trigger daily digest: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to trigger digest: {str(e)}",
+        )
+
+
+# =============================================================================
 # Queue Summary Endpoint — MUST be before /{lead_id} to avoid UUID conflict
 # =============================================================================
 
@@ -1299,8 +1524,6 @@ async def get_lead(
 ) -> LeadResponse:
     """
     Get detailed lead information by ID.
-
-    TODO: Add authentication middleware before production.
 
     Args:
         lead_id: UUID of lead to retrieve
@@ -1750,7 +1973,7 @@ async def update_lead_status(
     """
     Update lead status.
 
-    TODO: Add authentication middleware before production.
+    Protected by role-based authentication via require_role() dependency.
 
     Args:
         lead_id: UUID of lead to update
@@ -1793,8 +2016,8 @@ async def update_lead_status(
     # Update status
     lead.status = new_status
     
-    # CRITICAL: Set contact_outcome to a valid value after clearing.
-    # clear_lead_transition_fields sets contact_outcome=None but column is NOT NULL.
+    # NOTE: clear_lead_transition_fields already sets contact_outcome=ContactOutcome.NEW
+    # This explicit re-assignment is harmless but makes the intent crystal clear.
     lead.contact_outcome = ContactOutcome.NEW
     
     # Mark activity timestamp

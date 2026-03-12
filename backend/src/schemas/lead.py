@@ -740,6 +740,12 @@ class LeadListResponse(BaseModel):
         description="Reason for follow-up (e.g., 'No Answer', 'Not Interested', 'No Show')"
     )
     
+    # Lead source (widget, jotform, manual, etc.)
+    source: Optional[str] = Field(
+        default=None,
+        description="Lead source (widget, jotform, google_ads, referral, manual, etc.)"
+    )
+
     # Last Activity timestamp
     last_updated_at: Optional[datetime] = Field(
         default=None,
@@ -885,6 +891,124 @@ class ScheduledLeadResponse(BaseModel):
 
     model_config = {
         "from_attributes": True
+    }
+
+
+# =============================================================================
+# Manual Lead Creation Schema (Coordinator Entry)
+# =============================================================================
+
+class ManualLeadCreate(BaseModel):
+    """
+    Schema for manually creating a lead from the coordinator dashboard.
+    
+    Only first_name is required. All other fields are optional so coordinators
+    can quickly add a lead with minimal information and fill in details later.
+    """
+    
+    first_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Patient first name (required)"
+    )
+    last_name: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Patient last name"
+    )
+    email: Optional[EmailStr] = Field(
+        default=None,
+        description="Patient email address"
+    )
+    phone: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        description="Patient phone number"
+    )
+    condition: Optional[ConditionType] = Field(
+        default=None,
+        description="Primary mental health condition"
+    )
+    condition_other: Optional[str] = Field(
+        default=None,
+        max_length=500,
+        description="Description if condition is 'OTHER'"
+    )
+    symptom_duration: Optional[DurationType] = Field(
+        default=None,
+        description="How long symptoms have been present"
+    )
+    prior_treatments: Optional[List[TreatmentType]] = Field(
+        default=None,
+        description="List of prior treatments tried"
+    )
+    has_insurance: Optional[bool] = Field(
+        default=None,
+        description="Whether patient has health insurance"
+    )
+    insurance_provider: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Insurance provider name"
+    )
+    zip_code: Optional[str] = Field(
+        default=None,
+        max_length=10,
+        description="Patient ZIP code"
+    )
+    urgency: Optional[UrgencyType] = Field(
+        default=None,
+        description="How urgently patient needs treatment"
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        max_length=5000,
+        description="Coordinator notes about the lead"
+    )
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone_manual(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize phone to E.164 format if provided."""
+        if v is None or v.strip() == "":
+            return None
+        has_plus = v.strip().startswith('+')
+        cleaned = re.sub(r"[\s\-\(\)\.]", "", v)
+        digits_only = re.sub(r"[^\d]", "", cleaned)
+        if len(digits_only) < 7:
+            raise ValueError("Phone number must be at least 7 digits")
+        if len(digits_only) > 15:
+            raise ValueError("Phone number too long (max 15 digits)")
+        if has_plus:
+            return f"+{digits_only}"
+        if len(digits_only) == 10:
+            return f"+1{digits_only}"
+        return f"+{digits_only}"
+
+    @field_validator("zip_code")
+    @classmethod
+    def validate_zip_manual(cls, v: Optional[str]) -> Optional[str]:
+        """Validate US ZIP code format if provided."""
+        if v is None or v.strip() == "":
+            return None
+        cleaned = v.replace(" ", "").replace("-", "")
+        if not cleaned.isdigit():
+            raise ValueError("ZIP code must contain only digits")
+        if len(cleaned) not in (5, 9):
+            raise ValueError("ZIP code must be 5 or 9 digits")
+        return cleaned[:5]
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "first_name": "John",
+                "last_name": "Doe",
+                "phone": "(555) 123-4567",
+                "condition": "DEPRESSION",
+                "notes": "Called in, interested in TMS therapy"
+            }
+        }
     }
 
 

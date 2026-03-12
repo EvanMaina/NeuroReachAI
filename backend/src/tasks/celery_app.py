@@ -122,6 +122,12 @@ _conf = dict(
             "task": "src.tasks.lead_tasks.refresh_platform_analytics_views",
             "schedule": 300.0,  # Every 5 minutes
         },
+        "daily-lead-digest-7am-mst": {
+            "task": "src.tasks.lead_tasks.send_daily_lead_digest",
+            "schedule": __import__("celery.schedules", fromlist=["crontab"]).crontab(
+                hour=14, minute=0,  # 14:00 UTC = 7:00 AM MST (UTC-7)
+            ),
+        },
     },
 )
 

@@ -127,9 +127,9 @@ async function fetchWithRetry<T>(
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       return await fetchFn();
-    } catch (error: any) {
-      lastError = error;
-      if (import.meta.env.DEV) console.warn(`[${operation}] Attempt ${attempt + 1}/${retries} failed:`, error.message);
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (import.meta.env.DEV) console.warn(`[${operation}] Attempt ${attempt + 1}/${retries} failed:`, lastError.message);
       
       if (attempt < retries - 1) {
         // Exponential backoff: 1000ms, 2000ms, 4000ms

@@ -131,6 +131,7 @@ _tmp_*.json
 
 # --- Deployment utility scripts ---
 update_redis_endpoint.py
+generate_favicons.py
 
 # --- Frontend build artifacts (widget/assessment bundles) ---
 frontend/dist-widget/

@@ -28,6 +28,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
+import axios from 'axios';
 import {
   listLeads,
   getQueueMetrics,
@@ -41,7 +42,7 @@ import {
   type IQueueMetricsResponse,
   type IQueueSummary,
 } from '../services/leads';
-import type { LeadTableRow, LeadStatus, ContactOutcome } from '../types/lead';
+import type { LeadTableRow, LeadStatus, ContactOutcome, ILeadResponse } from '../types/lead';
 
 // =============================================================================
 // Query Keys - Centralized for consistency
@@ -93,6 +94,8 @@ interface TransformedLeadItem {
   conditions?: string[];
   otherConditionText?: string;
   preferredContactMethod?: string;
+  // Lead source — widget, jotform, manual, etc.
+  source?: string;
 }
 
 // =============================================================================
@@ -134,6 +137,8 @@ export function transformLeadToTableRow(item: TransformedLeadItem, index: number
     conditions: item.conditions || undefined,
     otherConditionText: item.otherConditionText || undefined,
     preferredContactMethod: item.preferredContactMethod || undefined,
+    // Lead source — passed through for notification filtering
+    source: item.source || undefined,
   };
 }
 
@@ -220,7 +225,7 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
       }
 
       // Transform to table row format
-      return response.items.map((item: any, index: number) =>
+      return response.items.map((item: TransformedLeadItem, index: number) =>
         transformLeadToTableRow(item, index)
       );
     },
@@ -243,12 +248,12 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
     refetchInterval: autoRefresh ? refetchInterval : false,
 
     // Smart retry: skip retrying on auth/validation errors
-    retry: (failureCount, err: any) => {
-      if (err?.response?.status === 401 || err?.response?.status === 403) {
-        return false;
-      }
-      if (err?.response?.status === 422) {
-        return false;
+    retry: (failureCount, err: Error) => {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        if (status === 401 || status === 403 || status === 422) {
+          return false;
+        }
       }
       return failureCount < 3;
     },
@@ -260,7 +265,7 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
 
   // Status update mutation with optimistic update
   const statusMutation = useMutation<
-    any,
+    ILeadResponse,
     Error,
     { leadId: string; newStatus: LeadStatus },
     { previousLeads?: LeadTableRow[] }
@@ -307,7 +312,7 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
 
   // Outcome update mutation with optimistic update
   const outcomeMutation = useMutation<
-    any,
+    ILeadResponse,
     Error,
     { leadId: string; newOutcome: ContactOutcome },
     { previousLeads?: LeadTableRow[] }
@@ -490,7 +495,7 @@ export function usePrefetchLeads() {
       queryFn: async () => {
         const response = await listLeads({ page: 1, page_size: 100 });
         if (!response?.items) return [];
-        return response.items.map((item: any, index: number) =>
+        return response.items.map((item: TransformedLeadItem, index: number) =>
           transformLeadToTableRow(item, index)
         );
       },

@@ -146,8 +146,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
   );
 
   const handleNavigation = (page: string): void => {
-    if ((window as any).navigateTo) {
-      (window as any).navigateTo(page);
+    const win = window as Window & { navigateTo?: (page: string) => void };
+    if (win.navigateTo) {
+      win.navigateTo(page);
     } else {
       onNavigate(page);
     }
