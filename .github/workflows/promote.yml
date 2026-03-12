@@ -86,20 +86,13 @@ jobs:
 
           echo "🔀 Merging dev into staging..."
           git merge origin/dev --no-edit \
-            -m "chore: auto-promote dev → staging [skip ci]"
+            -m "chore: auto-promote dev → staging"
 
           echo "📤 Pushing staging..."
           git push origin staging
 
           echo "✅ dev merged into staging successfully"
-
-      - name: Trigger staging deployment
-        run: |
-          echo "🚀 Triggering staging deployment workflow..."
-          gh workflow run "Deploy to Staging" --ref staging
-          echo "✅ Staging deployment triggered"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "📡 Push to staging will trigger Deploy to Staging workflow automatically"
 
   # ===========================================================================
   # Step 2: Promote staging → main (production)
@@ -130,20 +123,13 @@ jobs:
 
           echo "🔀 Merging staging into main..."
           git merge origin/staging --no-edit \
-            -m "chore: auto-promote staging → main [skip ci]"
+            -m "chore: auto-promote staging → main"
 
           echo "📤 Pushing main..."
           git push origin main
 
           echo "✅ staging merged into main successfully"
-
-      - name: Trigger production deployment
-        run: |
-          echo "🚀 Triggering production deployment workflow..."
-          gh workflow run "Deploy to Production" --ref main
-          echo "✅ Production deployment triggered"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "📡 Push to main will trigger Deploy to Production workflow automatically"
 
   # ===========================================================================
   # Summary
