@@ -155,7 +155,7 @@ jobs:
           service: ${{ env.ECS_SERVICE_BACKEND }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-          wait-for-minutes: 10
+          wait-for-minutes: 15
 
       # --- Deploy Celery Service ---
       - name: Download current staging celery task definition
@@ -189,7 +189,7 @@ jobs:
           service: ${{ env.ECS_SERVICE_CELERY }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-          wait-for-minutes: 10
+          wait-for-minutes: 15
 
       # --- Build & Deploy Frontend Service (nginx + React SPA) ---
       - name: Set frontend image tag
@@ -249,7 +249,7 @@ jobs:
           service: ${{ env.ECS_SERVICE_FRONTEND }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-          wait-for-minutes: 10
+          wait-for-minutes: 15
 
       # --- Smoke Tests ---
       - name: Run staging smoke tests
