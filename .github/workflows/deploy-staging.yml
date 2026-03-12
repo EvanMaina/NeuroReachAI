@@ -1,6 +1,10 @@
 # =============================================================================
 # NeuroReach AI — Deploy to Staging
-# Triggers on push to `staging` branch or manual dispatch
+#
+# Triggers:
+#   1. workflow_call — Called from Promote workflow (primary mechanism)
+#   2. push to staging — Direct push fallback (e.g., hotfix)
+#   3. workflow_dispatch — Manual trigger from Actions tab
 # =============================================================================
 name: Deploy to Staging
 
@@ -8,6 +12,8 @@ on:
   push:
     branches: [staging]
   workflow_dispatch:
+  # Called as a reusable workflow from promote.yml
+  workflow_call:
 
 concurrency:
   group: deploy-staging
@@ -44,8 +50,27 @@ jobs:
     name: "🚀 Build & Deploy to Staging"
     runs-on: ubuntu-latest
     environment: staging
+    outputs:
+      deploy_sha: ${{ steps.deploy-info.outputs.sha_short }}
+      image_tag: ${{ steps.image-tag.outputs.tag }}
     steps:
+      # Always checkout the staging branch explicitly.
+      # This ensures correct code is deployed regardless of trigger type
+      # (push, workflow_dispatch, or workflow_call from promote).
       - uses: actions/checkout@v4
+        with:
+          ref: staging
+
+      # Determine the ACTUAL commit SHA being deployed (from the checked-out branch)
+      - name: Get deployment info
+        id: deploy-info
+        run: |
+          DEPLOY_SHA=$(git rev-parse HEAD)
+          DEPLOY_SHA_SHORT=$(echo $DEPLOY_SHA | cut -c1-7)
+          echo "sha=$DEPLOY_SHA" >> $GITHUB_OUTPUT
+          echo "sha_short=$DEPLOY_SHA_SHORT" >> $GITHUB_OUTPUT
+          echo "📦 Deploying staging from commit: $DEPLOY_SHA_SHORT"
+          echo "   Full SHA: $DEPLOY_SHA"
 
       # --- AWS Authentication ---
       - name: Configure AWS credentials
@@ -90,7 +115,7 @@ jobs:
       - name: Set image tag
         id: image-tag
         run: |
-          SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          SHA=${{ steps.deploy-info.outputs.sha_short }}
           echo "tag=staging-${SHA}" >> $GITHUB_OUTPUT
           echo "full_image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:staging-${SHA}" >> $GITHUB_OUTPUT
 
@@ -100,7 +125,7 @@ jobs:
             --target production \
             --tag ${{ steps.image-tag.outputs.full_image }} \
             --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:staging-latest \
-            --label "git.sha=${{ github.sha }}" \
+            --label "git.sha=${{ steps.deploy-info.outputs.sha }}" \
             --label "git.branch=staging" \
             --label "build.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --file backend/Dockerfile \
@@ -195,7 +220,7 @@ jobs:
       - name: Set frontend image tag
         id: frontend-image-tag
         run: |
-          SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          SHA=${{ steps.deploy-info.outputs.sha_short }}
           echo "tag=staging-${SHA}" >> $GITHUB_OUTPUT
           echo "full_image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:staging-${SHA}" >> $GITHUB_OUTPUT
 
@@ -205,7 +230,7 @@ jobs:
             --target production \
             --tag ${{ steps.frontend-image-tag.outputs.full_image }} \
             --tag ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_FRONTEND }}:staging-latest \
-            --label "git.sha=${{ github.sha }}" \
+            --label "git.sha=${{ steps.deploy-info.outputs.sha }}" \
             --label "git.branch=staging" \
             --label "build.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --label "environment=staging" \
@@ -300,8 +325,8 @@ jobs:
           echo "| **Environment** | Staging |" >> $GITHUB_STEP_SUMMARY
           echo "| **URL** | ${{ env.STAGING_URL }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Image** | \`${{ steps.image-tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ steps.deploy-info.outputs.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | staging |" >> $GITHUB_STEP_SUMMARY
           echo "| **Actor** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Cluster** | ${{ env.ECS_CLUSTER }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Backend Service** | ${{ env.ECS_SERVICE_BACKEND }} |" >> $GITHUB_STEP_SUMMARY
@@ -322,13 +347,14 @@ jobs:
         run: |
           echo "✅ Staging deployment successful!"
           echo "URL: https://app-staging.tmsinstitute.co"
-          echo "Image: staging-$(echo ${{ github.sha }} | cut -c1-7)"
+          echo "Image: ${{ needs.build-and-deploy.outputs.image_tag }}"
+          echo "Commit: ${{ needs.build-and-deploy.outputs.deploy_sha }}"
           echo "Deployed by: ${{ github.actor }}"
 
       - name: Notify on failure
         if: needs.build-and-deploy.result == 'failure'
         run: |
           echo "❌ Staging deployment FAILED!"
-          echo "Commit: ${{ github.sha }}"
+          echo "Commit: ${{ needs.build-and-deploy.outputs.deploy_sha }}"
           echo "Actor: ${{ github.actor }}"
           echo "Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
