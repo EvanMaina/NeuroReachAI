@@ -5,6 +5,20 @@ All notable changes to NeuroReach AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-03-13
+
+### Fixed
+- **CI/CD Pipeline — Permanent fix for GITHUB_TOKEN limitation:** Completely redesigned the promote → deploy pipeline architecture
+  - **Root cause:** GitHub Actions' `GITHUB_TOKEN` pushes do NOT trigger `on: push` workflows (security feature). This meant the Promote workflow's merges to staging/main never triggered Deploy workflows.
+  - **Solution:** Converted deploy workflows to **reusable workflows** (`workflow_call`) and have Promote call them directly. Everything now runs as one cohesive pipeline — no reliance on push events for chaining.
+  - **New pipeline flow:** Push to dev → CI → Promote (auto-trigger) → Merge dev→staging → Deploy Staging (workflow_call) → Merge staging→main → Deploy Production (workflow_call) → Summary
+  - All deployments are guaranteed to run — no more "silent no-deploy" after promotion
+
+### Changed
+- `.github/workflows/promote.yml` — Renamed to "Promote & Deploy All Environments". Now directly invokes deploy workflows via `workflow_call` instead of relying on push events. Added `id-token: write` permission for AWS auth passthrough.
+- `.github/workflows/deploy-staging.yml` — Added `workflow_call` trigger for reusable workflow support. Now explicitly checks out `staging` branch and computes actual deployed SHA (not caller's SHA). Image tags reflect the real commit being deployed.
+- `.github/workflows/deploy-production.yml` — Added `workflow_call` trigger with `skip_ci` input. When called from Promote, CI is skipped (already passed on dev). Explicitly checks out `main` branch. Image tags reflect the real commit being deployed.
+
 ## [1.8.0] - 2026-03-06
 
 ### Added

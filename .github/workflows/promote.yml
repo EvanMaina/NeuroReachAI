@@ -1,17 +1,27 @@
 # =============================================================================
-# NeuroReach AI — Auto-Promote Dev → Staging → Production
+# NeuroReach AI — Auto-Promote & Deploy: Dev → Staging → Production
 #
-# AUTOMATIC CI/CD pipeline — fully hands-off after pushing to dev.
+# FULLY AUTOMATIC CI/CD PIPELINE — hands-off after pushing to dev.
 #
 # YOUR WORKFLOW:
 #   1. Make changes locally, test them thoroughly
 #   2. Push to dev branch
-#   3. CI runs automatically → if it passes → auto-promote everywhere
-#   4. dev → staging (deploy) → main (deploy)
+#   3. CI runs automatically → if it passes → everything happens:
+#      a. dev merges into staging
+#      b. Staging deploys to AWS (ECS)
+#      c. staging merges into main
+#      d. Production deploys to AWS (ECS)
+#   4. That's it. One push, full deployment.
+#
+# WHY THIS ARCHITECTURE:
+#   GitHub's GITHUB_TOKEN pushes do NOT trigger `on: push` workflows.
+#   So instead of relying on push events to chain workflows, we use
+#   `workflow_call` (reusable workflows) to directly invoke deploys.
+#   This runs everything as one cohesive pipeline — reliable and fast.
 #
 # You can also trigger this manually from GitHub Actions if needed.
 # =============================================================================
-name: "🔄 Promote to All Environments"
+name: "🔄 Promote & Deploy All Environments"
 
 on:
   # AUTO-TRIGGER: When CI passes on dev branch
@@ -24,12 +34,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: promote-environments
+  group: promote-and-deploy
   cancel-in-progress: false  # Never cancel in-progress promotions
 
 permissions:
   contents: write
   actions: write
+  id-token: write  # Needed for AWS auth in deploy workflows
 
 jobs:
   # ===========================================================================
@@ -38,8 +49,6 @@ jobs:
   gate:
     name: "🔒 Promotion Gate"
     runs-on: ubuntu-latest
-    # Auto-trigger: only proceed if CI succeeded
-    # Manual trigger: always proceed
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
@@ -57,10 +66,10 @@ jobs:
           echo "promote=true" >> $GITHUB_OUTPUT
 
   # ===========================================================================
-  # Step 1: Promote dev → staging
+  # Step 1: Merge dev → staging
   # ===========================================================================
-  promote-to-staging:
-    name: "⬆️ Promote dev → staging"
+  merge-to-staging:
+    name: "⬆️ Merge dev → staging"
     runs-on: ubuntu-latest
     needs: [gate]
     if: needs.gate.outputs.should_promote == 'true'
@@ -92,15 +101,25 @@ jobs:
           git push origin staging
 
           echo "✅ dev merged into staging successfully"
-          echo "📡 Push to staging will trigger Deploy to Staging workflow automatically"
 
   # ===========================================================================
-  # Step 2: Promote staging → main (production)
+  # Step 2: Deploy to Staging (via reusable workflow)
+  # This directly invokes the deploy workflow — no reliance on push events.
   # ===========================================================================
-  promote-to-production:
-    name: "🚀 Promote staging → main"
+  deploy-staging:
+    name: "🚀 Deploy Staging"
+    needs: [merge-to-staging]
+    uses: ./.github/workflows/deploy-staging.yml
+    secrets: inherit
+
+  # ===========================================================================
+  # Step 3: Merge staging → main (production)
+  # Runs in parallel with staging deploy for speed.
+  # ===========================================================================
+  merge-to-production:
+    name: "⬆️ Merge staging → main"
     runs-on: ubuntu-latest
-    needs: [promote-to-staging]
+    needs: [merge-to-staging]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -129,20 +148,31 @@ jobs:
           git push origin main
 
           echo "✅ staging merged into main successfully"
-          echo "📡 Push to main will trigger Deploy to Production workflow automatically"
+
+  # ===========================================================================
+  # Step 4: Deploy to Production (via reusable workflow)
+  # Skips CI since it already passed on dev before promotion.
+  # ===========================================================================
+  deploy-production:
+    name: "🚀 Deploy Production"
+    needs: [merge-to-production]
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      skip_ci: true
+    secrets: inherit
 
   # ===========================================================================
   # Summary
   # ===========================================================================
   summary:
-    name: "📊 Promotion Summary"
+    name: "📊 Pipeline Summary"
     runs-on: ubuntu-latest
-    needs: [promote-to-staging, promote-to-production]
+    needs: [merge-to-staging, deploy-staging, merge-to-production, deploy-production]
     if: always()
     steps:
       - name: Generate summary
         run: |
-          echo "## 🔄 Environment Promotion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔄 Full Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -154,16 +184,25 @@ jobs:
 
           echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Dev → Staging | ${{ needs.promote-to-staging.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Staging → Production | ${{ needs.promote-to-production.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Merge dev → staging | ${{ needs.merge-to-staging.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy to Staging | ${{ needs.deploy-staging.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Merge staging → main | ${{ needs.merge-to-production.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy to Production | ${{ needs.deploy-production.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.promote-to-production.result }}" = "success" ]; then
-            echo "🎉 **All environments promoted successfully!**" >> $GITHUB_STEP_SUMMARY
+          # Overall status
+          if [ "${{ needs.deploy-production.result }}" = "success" ] && [ "${{ needs.deploy-staging.result }}" = "success" ]; then
+            echo "🎉 **ALL ENVIRONMENTS DEPLOYED SUCCESSFULLY!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Deployments triggered:" >> $GITHUB_STEP_SUMMARY
-            echo "- 🟢 Staging: deploy-staging workflow running" >> $GITHUB_STEP_SUMMARY
-            echo "- 🟢 Production: deploy-production workflow running" >> $GITHUB_STEP_SUMMARY
+            echo "| Environment | URL |" >> $GITHUB_STEP_SUMMARY
+            echo "|-------------|-----|" >> $GITHUB_STEP_SUMMARY
+            echo "| Staging | https://app-staging.tmsinstitute.co |" >> $GITHUB_STEP_SUMMARY
+            echo "| Production (API) | https://api.tmsinstitute.co |" >> $GITHUB_STEP_SUMMARY
+            echo "| Production (App) | https://app.tmsinstitute.co |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deploy-production.result }}" = "success" ]; then
+            echo "⚠️ **Production deployed but staging had issues — check staging logs**" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deploy-staging.result }}" = "success" ]; then
+            echo "⚠️ **Staging deployed but production had issues — check production logs**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ **Promotion incomplete — check logs above**" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Deployments had issues — check logs above**" >> $GITHUB_STEP_SUMMARY
           fi
