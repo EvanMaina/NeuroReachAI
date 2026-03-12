@@ -27,7 +27,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, Field
 
 from ..core.database import get_db
-from ..models.lead import Lead, PriorityType, LeadStatus
+from ..models.lead import Lead, PriorityType, LeadStatus, LeadSource
 from ..services.cache import get_cache
 from ..core.auth import get_current_user
 
@@ -282,7 +282,8 @@ async def get_source_analytics(
             Lead.created_at,
         ).filter(
             Lead.created_at >= cutoff_date,
-            Lead.deleted_at.is_(None)  # Exclude soft-deleted leads
+            Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
+            Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
         ).all()
         
         logger.info(f"[{request_id}] Retrieved {len(leads)} leads for analysis")
@@ -480,7 +481,8 @@ async def get_platform_trend(
             Lead.utm_medium,
         ).filter(
             func.date(Lead.created_at) >= start_date,
-            Lead.deleted_at.is_(None)  # Exclude soft-deleted leads
+            Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
+            Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
         ).all()
         
         # Aggregate by date and platform (all 4 platforms)
@@ -589,7 +591,8 @@ async def get_hot_leads_by_platform(
             and_(
                 Lead.created_at >= cutoff_date,
                 Lead.priority == PriorityType.HOT,
-                Lead.deleted_at.is_(None)  # Exclude soft-deleted leads
+                Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
+                Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
             )
         ).all()
         
@@ -733,6 +736,7 @@ async def get_campaign_performance(
                 Lead.created_at >= cutoff_date,
                 Lead.utm_campaign.isnot(None),
                 Lead.deleted_at.is_(None),
+                Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
             )
         ).group_by(
             Lead.utm_campaign,

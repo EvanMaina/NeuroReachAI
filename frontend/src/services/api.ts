@@ -227,9 +227,10 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 403) {
       if (import.meta.env.DEV) console.warn('⛔ Access forbidden - may indicate session expiry or insufficient permissions');
       // Check if it's a session-related 403
-      const responseData = error.response.data as any;
-      if (responseData?.detail?.toLowerCase().includes('deactivated') || 
-          responseData?.detail?.toLowerCase().includes('session')) {
+      const responseData = error.response.data as Record<string, unknown> | undefined;
+      const detailStr = typeof responseData?.detail === 'string' ? responseData.detail.toLowerCase() : '';
+      if (detailStr.includes('deactivated') || 
+          detailStr.includes('session')) {
         clearStoredTokens();
         window.dispatchEvent(new CustomEvent('session:expired', {
           detail: { reason: 'account_deactivated' }
@@ -349,7 +350,7 @@ export function getErrorMessage(error: unknown): string {
         }
       }
       // FastAPI pydantic validation format
-      const detail = (error.response?.data as any)?.detail;
+      const detail = (error.response?.data as Record<string, unknown> | undefined)?.detail;
       if (Array.isArray(detail) && detail.length > 0) {
         const firstError = detail[0];
         if (typeof firstError === 'object' && firstError.msg) {

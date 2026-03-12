@@ -10,6 +10,21 @@ import type { LeadTableRow } from '../types/lead';
 import { playNotificationChime } from '../utils/notificationSound';
 import { showToast } from '../components/common/ToastContainer';
 
+// ---------------------------------------------------------------------------
+// Module-level singleton — ONE shared set across ALL hook instances
+// ---------------------------------------------------------------------------
+// Problem being solved: React StrictMode + concurrent rendering can mount
+// multiple instances of useNotifications at the same time.  When each
+// instance keeps its own previousLeadsRef, they all "see" the same lead
+// as new → duplicate chimes and duplicate toasts.
+//
+// Fix: promote previousLeadsRef to module scope so it is truly shared.
+// ---------------------------------------------------------------------------
+let _prevLeadIds = new Set<string>();
+let _prevLeadIdsInitialised = false;          // becomes true after first poll
+// ---------------------------------------------------------------------------
+
+
 interface NotificationState {
   permission: NotificationPermission;
   enabled: boolean;
@@ -35,7 +50,10 @@ export const useNotifications = () => {
   });
   
   const [notifications, setNotifications] = useState<HotLeadNotification[]>([]);
-  const previousLeadsRef = useRef<Set<string>>(new Set());
+  // previousLeadsRef kept as instance ref solely for the unsubscribe/cleanup
+  // path — the canonical previous-set used for de-dup is _prevLeadIds above.
+  const previousLeadsRef = useRef<Set<string>>(_prevLeadIds);
+
 
   // Request notification permission
   const requestPermission = useCallback(async () => {
@@ -100,11 +118,17 @@ export const useNotifications = () => {
   const checkNewHotLeads = useCallback((leads: LeadTableRow[]) => {
     const currentLeadIds = new Set(leads.map(l => l.id));
     const hotLeads = leads.filter(l => l.priority === 'hot' && l.status === 'new');
-    
-    // Find new hot leads that weren't in the previous set
-    const newHotLeads = hotLeads.filter(lead => !previousLeadsRef.current.has(lead.id));
 
-    if (newHotLeads.length > 0 && previousLeadsRef.current.size > 0) {
+    // Find new hot leads that:
+    //   1. Were NOT seen in the previous poll cycle (truly new)
+    //   2. Are NOT manual leads — coordinator-added leads must never trigger
+    //      a notification, because the coordinator themselves just created them.
+    const newHotLeads = hotLeads.filter(lead =>
+      lead.source !== 'manual' && !_prevLeadIds.has(lead.id)
+    );
+
+    if (newHotLeads.length > 0 && _prevLeadIdsInitialised) {
+
       // We have new hot leads!
       newHotLeads.forEach(lead => {
         // Show browser notification
@@ -139,9 +163,12 @@ export const useNotifications = () => {
       }
     }
 
-    // Update previous leads reference
-    previousLeadsRef.current = currentLeadIds;
+    // Update the module-level singleton and the instance ref together
+    _prevLeadIds = currentLeadIds;
+    previousLeadsRef.current = _prevLeadIds;
+    _prevLeadIdsInitialised = true;
   }, [showBrowserNotification, playSound]);
+
 
   // Mark notification as read
   const markAsRead = useCallback((notificationId: string) => {

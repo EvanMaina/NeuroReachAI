@@ -1,13 +1,13 @@
 /**
  * Premium Floating Card Widget — TMS Institute of Arizona
- * v19.0.0 — 6-tier responsive, flush-right, floating, premium headline
+ * v20.0.0 — 6-tier responsive, flush-right desktop, flush-LEFT mobile
  * 
  * Tier 1: Large Desktop ≥1440px  → 180px, right:0
  * Tier 2: Desktop 1280-1439px    → 170px, right:0
  * Tier 3: Small Laptop 1025-1279 → 160px, right:0
  * Tier 4: Tablet 769-1024px      → 150px, right:0
- * Tier 5: Mobile 376-768px       → 140px, bottom-right
- * Tier 6: Small Mobile ≤375px    → 120px, bottom-right
+ * Tier 5: Mobile 376-768px       → 160px, bottom-LEFT
+ * Tier 6: Small Mobile ≤375px    → 140px, bottom-LEFT
  * 
  * z-index: 99 — sits BELOW site navigation (Avada nav uses 500+)
  * overflow: hidden — prevents ghost/empty box rendering
@@ -257,34 +257,59 @@ function injectStyles(): void {
     }
 
     /* ============================================================
-       Tier 4: Tablet (769px - 1024px)
+       Tier 4: Tablet (769px - 1023px)
+       Bottom-LEFT flush — same side as mobile for consistency
        ============================================================ */
-    @media (min-width: 769px) and (max-width: 1024px) {
-      #nr-card-widget { width: 150px; right: 0; border-radius: 12px 0 0 12px; }
+    @media (min-width: 769px) and (max-width: 1023px) {
+      #nr-card-widget {
+        position: fixed;
+        top: auto;
+        bottom: 28px;
+        right: auto;
+        left: 0;
+        width: 175px;
+        border-radius: 0 12px 12px 0;
+        border-left: none;
+        border-right: 1px solid rgba(26,107,90,0.12);
+        z-index: 99;
+        transform: translateX(-30px);
+        transform-origin: bottom left;
+      }
+      #nr-card-widget.nr-card-visible {
+        animation:
+          nr-entrance-m 0.9s cubic-bezier(0.16,1,0.3,1) both,
+          nr-float-m 5s ease-in-out 1.2s infinite;
+      }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 22px 12px 18px; gap: 16px; }
-      .nr-card-headline { font-size: 14px; }
-      .nr-card-cta { font-size: 11px; padding: 9px 10px; border-radius: 7px; min-height: 40px; }
-      .nr-card-cta-arrow { font-size: 12px; }
-      .nr-card-trust { font-size: 7px; gap: 3px; }
+      .nr-card-body { padding: 26px 14px 22px; gap: 18px; }
+      .nr-card-headline { font-size: 16.5px; line-height: 1.3; font-weight: 700; }
+      .nr-card-cta { font-size: 13px; padding: 12px 14px; border-radius: 8px; min-height: 46px; font-weight: 700; gap: 5px; }
+      .nr-card-cta-arrow { font-size: 15px; font-weight: 700; }
+      .nr-card-trust { font-size: 8px; gap: 4px; }
+      #nr-card-widget {
+        box-shadow: 2px 3px 10px rgba(0,0,0,0.08), 4px 8px 20px rgba(0,0,0,0.10);
+      }
     }
 
     /* ============================================================
        Tier 5: Mobile (376px - 768px)
-       Bottom-right floating badge — impossible to ignore
+       Bottom-LEFT floating badge — flush to left edge
+       Larger than before, bolder headline, prominent CTA
        ============================================================ */
     @media (max-width: 768px) {
       #nr-card-widget {
         position: fixed;
         top: auto;
         bottom: 20px;
-        left: auto;
-        right: 0;
-        width: 140px;
-        border-radius: 12px 0 0 12px;
+        right: auto;
+        left: 0;
+        width: 160px;
+        border-radius: 0 12px 12px 0;
+        border-left: none;
+        border-right: 1px solid rgba(26,107,90,0.12);
         z-index: 99;
-        transform: translateX(30px);
-        transform-origin: bottom right;
+        transform: translateX(-30px);
+        transform-origin: bottom left;
       }
       #nr-card-widget.nr-card-visible {
         animation:
@@ -292,7 +317,7 @@ function injectStyles(): void {
           nr-float-m 5s ease-in-out 1.2s infinite;
       }
       @keyframes nr-entrance-m {
-        0% { opacity: 0; transform: translateX(30px); }
+        0% { opacity: 0; transform: translateX(-30px); }
         100% { opacity: 1; transform: translateX(0); }
       }
       @keyframes nr-float-m {
@@ -302,44 +327,67 @@ function injectStyles(): void {
         75% { transform: translateX(0) translateY(-3px); }
       }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 20px 10px 16px; gap: 14px; }
-      .nr-card-headline { font-size: 13px; line-height: 1.35; }
+      .nr-card-body { padding: 22px 12px 18px; gap: 16px; }
+      .nr-card-headline { font-size: 15px; line-height: 1.3; font-weight: 700; }
       .nr-card-cta {
-        font-size: 11px; padding: 9px 10px; border-radius: 7px; min-height: 40px; gap: 4px;
+        font-size: 12.5px; padding: 11px 12px; border-radius: 8px; min-height: 44px; gap: 5px;
+        font-weight: 700;
       }
-      .nr-card-cta-arrow { font-size: 11px; }
-      .nr-card-trust { font-size: 7px; gap: 3px; }
+      .nr-card-cta-arrow { font-size: 14px; font-weight: 700; }
+      .nr-card-trust { font-size: 7.5px; gap: 3px; }
       #nr-card-widget {
-        box-shadow: -2px 3px 10px rgba(0,0,0,0.08), -4px 8px 20px rgba(0,0,0,0.10);
+        box-shadow: 2px 3px 10px rgba(0,0,0,0.08), 4px 8px 20px rgba(0,0,0,0.10);
       }
     }
 
     /* ============================================================
+       Tier 5b: Mid-Mobile (481px - 768px) — tablet-ish phones
+       Slightly larger still for bigger phone screens
+       ============================================================ */
+    @media (min-width: 481px) and (max-width: 768px) {
+      #nr-card-widget { width: 170px; bottom: 24px; }
+      .nr-card-body { padding: 24px 14px 20px; gap: 18px; }
+      .nr-card-headline { font-size: 16px; }
+      .nr-card-cta { font-size: 13px; min-height: 46px; padding: 12px 14px; }
+      .nr-card-cta-arrow { font-size: 15px; }
+      .nr-card-trust { font-size: 8px; }
+    }
+
+    /* ============================================================
        Tier 6: Small Mobile (≤375px)
-       Ultra compact bottom-right — still floating, still bold
+       Compact bottom-LEFT — still floating, still bold
        ============================================================ */
     @media (max-width: 375px) {
       #nr-card-widget {
         position: fixed;
         top: auto;
         bottom: 14px;
-        left: auto;
-        right: 0;
-        width: 120px;
-        border-radius: 10px 0 0 10px;
+        right: auto;
+        left: 0;
+        width: 140px;
+        border-radius: 0 10px 10px 0;
+        border-left: none;
+        border-right: 1px solid rgba(26,107,90,0.12);
         z-index: 99;
       }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 16px 8px 12px; gap: 12px; }
-      .nr-card-headline { font-size: 12px; }
-      .nr-card-cta { font-size: 10px; padding: 8px 8px; border-radius: 6px; min-height: 38px; }
-      .nr-card-cta-arrow { font-size: 10px; }
-      .nr-card-trust { font-size: 6px; gap: 2px; }
+      .nr-card-body { padding: 18px 10px 14px; gap: 14px; }
+      .nr-card-headline { font-size: 13.5px; font-weight: 700; }
+      .nr-card-cta { font-size: 11.5px; padding: 10px 10px; border-radius: 7px; min-height: 42px; font-weight: 700; }
+      .nr-card-cta-arrow { font-size: 13px; font-weight: 700; }
+      .nr-card-trust { font-size: 7px; gap: 2px; }
     }
 
     /* ============================================================
        Reduced Motion — respect accessibility
+       Desktop (≥1024px): widget is vertically centred with
+         translateY(-50%), so we keep it.
+       Mobile/Tablet (<1024px): widget is BOTTOM-ANCHORED (top:auto,
+         bottom:Npx), so translateY(-50%) would push it off-screen.
+         Mobile reduced-motion must only use translateX(0).
        ============================================================ */
+
+    /* Desktop (≥1024px) — vertically centred, keep translateY(-50%) */
     @media (prefers-reduced-motion: reduce) {
       #nr-card-widget,
       #nr-card-widget *,
@@ -354,6 +402,24 @@ function injectStyles(): void {
         pointer-events: auto;
       }
     }
+
+    /* Tablet (769px–1023px) reduced-motion override — bottom-anchored,
+       NO translateY. Must come AFTER the generic reduced-motion rule
+       so it wins the specificity race. */
+    @media (min-width: 769px) and (max-width: 1023px) and (prefers-reduced-motion: reduce) {
+      #nr-card-widget.nr-card-visible {
+        transform: translateX(0) !important;
+      }
+    }
+
+    /* Mobile (≤768px) reduced-motion override — bottom-anchored,
+       NO translateY.  translateX(0) is sufficient. */
+    @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+      #nr-card-widget.nr-card-visible {
+        transform: translateX(0) !important;
+      }
+    }
+
   `;
   document.head.appendChild(style);
 }
@@ -466,7 +532,7 @@ function initWidget(): void {
   injectStyles();
   createWidget(c);
   scheduleCleanup();
-  if (NR_DEBUG) console.log(P, 'v19.0.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
+  if (NR_DEBUG) console.log(P, 'v20.0.0 →', c.apiUrl + '/assessment', `screen: ${window.innerWidth}px`);
 }
 
 (function () {

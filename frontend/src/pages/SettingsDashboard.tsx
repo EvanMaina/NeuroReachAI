@@ -27,6 +27,36 @@ import type {
 } from '../services/auth';
 
 // =============================================================================
+// Error Parsing Helper
+// =============================================================================
+
+/**
+ * Safely convert a FastAPI error response to a human-readable string.
+ *
+ * FastAPI raises HTTPException with `detail` as a STRING, but Pydantic
+ * validation errors (HTTP 422) return `detail` as an ARRAY of objects:
+ *   [{ loc: [...], msg: "...", type: "..." }]
+ *
+ * If an array reaches setError() and gets rendered as <p>{error}</p>,
+ * React throws "Objects are not valid as a React child" → ErrorBoundary crash.
+ * This helper guarantees the result is always a plain string.
+ */
+function parseApiError(err: unknown, fallback: string): string {
+  const axiosErr = err as { response?: { data?: { detail?: unknown } } };
+  const detail = axiosErr?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: string; message?: string };
+    const raw = first?.msg ?? first?.message ?? '';
+    return raw.trim()
+      ? `Validation error: ${raw.trim()}`
+      : 'Validation error. Please check your inputs.';
+  }
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+// =============================================================================
 // React Query Keys
 // =============================================================================
 
@@ -176,8 +206,8 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
     try {
       const user = await createUser(form);
       onCreated(user);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to create user');
+    } catch (err: unknown) {
+      setError(parseApiError(err, 'Failed to create user'));
     } finally {
       setLoading(false);
     }
@@ -307,8 +337,8 @@ function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
     try {
       const updated = await updateUser(user.id, form);
       onSaved(updated);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to update user');
+    } catch (err: unknown) {
+      setError(parseApiError(err, 'Failed to update user'));
     } finally {
       setLoading(false);
     }
@@ -478,7 +508,7 @@ function UsersTab() {
   });
 
   const users = usersData || [];
-  const error = queryError ? ((queryError as any)?.response?.data?.detail || 'Failed to load users') : actionError;
+  const error = queryError ? parseApiError(queryError, 'Failed to load users') : actionError;
 
   const handleDeactivate = async () => {
     if (!deactivateUser_state) return;
@@ -490,8 +520,8 @@ function UsersTab() {
         prev?.map(u => u.id === deactivateUser_state.id ? { ...u, status: 'inactive' as const } : u) || []
       );
       setDeactivateUser(null);
-    } catch (err: any) {
-      setActionError(err?.response?.data?.detail || 'Failed to deactivate');
+    } catch (err: unknown) {
+      setActionError(parseApiError(err, 'Failed to deactivate user'));
       setDeactivateUser(null);
     } finally {
       setDeactivateLoading(false);
@@ -732,12 +762,12 @@ function SiteSettingsTab() {
   useEffect(() => {
     getClinicSettings()
       .then(d => setClinic(d))
-      .catch(err => setClinicError(err?.response?.data?.detail || 'Failed to load clinic settings'))
+      .catch((err: unknown) => { setClinicError(parseApiError(err, 'Failed to load clinic settings')); })
       .finally(() => setClinicLoading(false));
 
     getMyPreferences()
       .then(d => setPrefs(d))
-      .catch(err => setPrefsError(err?.response?.data?.detail || 'Failed to load preferences'))
+      .catch((err: unknown) => { setPrefsError(parseApiError(err, 'Failed to load preferences')); })
       .finally(() => setPrefsLoading(false));
   }, []);
 
@@ -752,8 +782,8 @@ function SiteSettingsTab() {
       setClinic(updated);
       setClinicSuccess(true);
       setTimeout(() => setClinicSuccess(false), 3000);
-    } catch (err: any) {
-      setClinicError(err?.response?.data?.detail || 'Failed to save');
+    } catch (err: unknown) {
+      setClinicError(parseApiError(err, 'Failed to save clinic settings'));
     } finally {
       setClinicSaving(false);
     }
@@ -766,8 +796,8 @@ function SiteSettingsTab() {
     try {
       const updated = await updateMyPreferences({ [key]: next[key] });
       setPrefs(updated);
-    } catch (err: any) {
-      setPrefsError(err?.response?.data?.detail || 'Failed to save');
+    } catch (err: unknown) {
+      setPrefsError(parseApiError(err, 'Failed to save preferences'));
     } finally {
       setPrefsSaving(false);
     }

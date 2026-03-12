@@ -1021,14 +1021,24 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   {visibleColumns.has('condition') && (
                   <td className="px-6 py-4" style={{ overflow: 'visible', position: 'relative' }}>
                     <TruncatedCell
-                      text={lead.conditions?.length 
-                        ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
-                        : formatConditionDisplay(lead.condition)}
+                      text={
+                        // conditions is an array (new multi-condition leads):
+                        //   • length > 0 → format and display
+                        //   • length === 0 → coordinator didn't select a condition → "Not Provided"
+                        // conditions is undefined (legacy single-condition leads):
+                        //   → fall back to the legacy `condition` string field
+                        Array.isArray(lead.conditions)
+                          ? lead.conditions.length > 0
+                            ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
+                            : 'Not Provided'
+                          : formatConditionDisplay(lead.condition)
+                      }
                       maxWidth={Math.max(columnWidths.condition - 48, 100)}
                       className="text-sm text-gray-700"
                     />
                   </td>
                   )}
+
                   {visibleColumns.has('priority') && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Badge variant="priority" value={lead.priority} />

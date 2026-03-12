@@ -951,6 +951,230 @@ def send_coordinator_sms(
         raise
 
 
+# =============================================================================
+# Daily Lead Digest Email Task
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_daily_lead_digest(self) -> Dict[str, Any]:
+    """
+    Send daily lead digest email at 7:00 AM MST to ask@tmsinstitute.co.
+
+    Queries leads created in the prior 24 hours and sends a summary email
+    with total count and breakdown by condition. Contains NO PII.
+
+    If zero leads were created, still sends a "No new leads" message.
+
+    Uses the shared email_base.py design system (wrap_in_email_layout)
+    for consistent branding across all platform emails.
+
+    Returns:
+        Dict with send status and lead count
+    """
+    from ..services.email_base import wrap_in_email_layout, HEADER_BG_COLOR
+    from ..services.paubox_email_service import send_email_via_paubox
+
+    db = get_db_session()
+
+    try:
+        # Calculate 24-hour window
+        now = datetime.now(timezone.utc)
+        yesterday = now - timedelta(hours=24)
+
+        # Query leads created in last 24 hours (non-deleted)
+        recent_leads = (
+            db.query(Lead)
+            .filter(
+                Lead.created_at >= yesterday,
+                Lead.created_at <= now,
+                Lead.deleted_at.is_(None),
+            )
+            .all()
+        )
+
+        total_count = len(recent_leads)
+
+        # Build priority breakdown ONLY (no condition/source breakdowns per spec)
+        priority_counts: Dict[str, int] = {"HOT": 0, "MEDIUM": 0, "LOW": 0}
+
+        for lead in recent_leads:
+            pri_name = lead.priority.value if lead.priority else "LOW"
+            priority_counts[pri_name] = priority_counts.get(pri_name, 0) + 1
+
+        # Format date for subject line (MST = UTC-7)
+        from datetime import timezone as tz_module
+        mst_offset = timedelta(hours=-7)
+        mst_tz = tz_module(mst_offset)
+        mst_now = now.astimezone(mst_tz)
+        date_str = mst_now.strftime("%B %d, %Y")
+
+        subject = f"NeuroReach Daily Lead Digest — {date_str}"
+
+        # Build email HTML body using the shared design system
+        if total_count == 0:
+            # Zero leads scenario
+            body_html = f"""
+                    <tr>
+                        <td style="padding: 30px 30px 10px 30px;">
+                            <p style="margin: 0 0 16px 0; font-family: Arial, Helvetica, sans-serif; color: #444444; font-size: 15px; line-height: 1.6;">
+                                Good morning! Here is your daily lead summary for <strong>{date_str}</strong>.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0 30px;">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F0F7F7; border-left: 4px solid {HEADER_BG_COLOR}; border-radius: 8px;">
+                                <tr>
+                                    <td style="padding: 20px 24px;">
+                                        <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; color: #1A1A1A; font-size: 16px; font-weight: bold; line-height: 1.4;">
+                                            No new leads in the last 24 hours
+                                        </p>
+                                        <p style="margin: 8px 0 0 0; font-family: Arial, Helvetica, sans-serif; color: #666666; font-size: 14px; line-height: 1.5;">
+                                            There were no new intake submissions during this period. This is normal for weekends and holidays.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+"""
+        else:
+            # Build priority rows ONLY — no condition breakdown, no links, no CTA
+            priority_rows = ""
+            priority_colors = {"HOT": "#EF4444", "MEDIUM": "#F59E0B", "LOW": "#6B7280"}
+            for pri in ["HOT", "MEDIUM", "LOW"]:
+                count = priority_counts.get(pri, 0)
+                color = priority_colors.get(pri, "#6B7280")
+                priority_rows += f"""
+                                            <tr>
+                                                <td style="padding: 6px 0; border-bottom: 1px solid #EEEEEE; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #444444;">
+                                                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: {color}; margin-right: 8px;"></span>
+                                                    {pri}
+                                                </td>
+                                                <td align="right" style="padding: 6px 0; border-bottom: 1px solid #EEEEEE; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1A1A1A; font-weight: bold;">
+                                                    {count}
+                                                </td>
+                                            </tr>"""
+
+            body_html = f"""
+                    <tr>
+                        <td style="padding: 30px 30px 10px 30px;">
+                            <p style="margin: 0 0 16px 0; font-family: Arial, Helvetica, sans-serif; color: #444444; font-size: 15px; line-height: 1.6;">
+                                Good morning! Here is your daily lead summary for <strong>{date_str}</strong>.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Total Count Banner -->
+                    <tr>
+                        <td style="padding: 0 30px;">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: {HEADER_BG_COLOR}; border-radius: 8px;">
+                                <tr>
+                                    <td align="center" style="padding: 24px;">
+                                        <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; color: #FFFFFF; font-size: 42px; font-weight: bold; line-height: 1.1;">
+                                            {total_count}
+                                        </p>
+                                        <p style="margin: 6px 0 0 0; font-family: Arial, Helvetica, sans-serif; color: #FFFFFF; font-size: 14px; opacity: 0.9;">
+                                            New Lead{"s" if total_count != 1 else ""} in the Last 24 Hours
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Priority Breakdown -->
+                    <tr>
+                        <td style="padding: 24px 30px 8px 30px;">
+                            <h3 style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 16px; font-weight: bold; color: #1A1A1A;">
+                                Priority Breakdown
+                            </h3>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0 30px;">
+                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F9FAFB; border-radius: 8px;">
+                                <tr>
+                                    <td style="padding: 16px 20px;">
+                                        <table width="100%" cellpadding="0" cellspacing="0">
+                                            {priority_rows}
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Footer Note -->
+                    <tr>
+                        <td style="padding: 24px 30px 20px 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #999999; line-height: 1.5; text-align: center;">
+                                This digest is sent automatically at 7:00 AM MST. It contains no patient-identifying information.
+                            </p>
+                        </td>
+                    </tr>
+"""
+
+        # Wrap in shared email layout
+        html_content = wrap_in_email_layout(
+            title="Daily Lead Digest",
+            body_html=body_html,
+            subtitle=f"{date_str} — {total_count} new lead{'s' if total_count != 1 else ''}",
+        )
+
+        # Plain text version — priority breakdown only, no PII, no links
+        plain_text = f"NeuroReach Daily Lead Digest — {date_str}\n\n"
+        plain_text += f"Total new leads (last 24 hours): {total_count}\n\n"
+        if total_count > 0:
+            plain_text += "Priority Breakdown:\n"
+            for pri in ["HOT", "MEDIUM", "LOW"]:
+                count = priority_counts.get(pri, 0)
+                if count > 0:
+                    plain_text += f"  - {pri}: {count}\n"
+        else:
+            plain_text += "No new leads were submitted in the last 24 hours.\n"
+        plain_text += "\nThis digest is sent automatically at 7:00 AM MST."
+
+        # Send email via Paubox (HIPAA-compliant) with SMTP fallback
+        recipient = "ask@tmsinstitute.co"
+
+        result = send_email_via_paubox(
+            to_email=recipient,
+            subject=subject,
+            html_content=html_content,
+            text_content=plain_text,
+        )
+
+        success = result.get("success", False)
+        provider = result.get("provider", "unknown")
+
+        logger.info(
+            f"Daily lead digest sent to {recipient} via {provider}: "
+            f"success={success}, total_leads={total_count}"
+        )
+
+        return {
+            "status": "success" if success else "failed",
+            "total_leads": total_count,
+            "priorities": priority_counts,
+            "recipient": recipient,
+            "provider": provider,
+            "date": date_str,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to send daily lead digest: {e}")
+        raise
+
+    finally:
+        db.close()
+
+
 @shared_task
 def refresh_platform_analytics_views() -> Dict[str, Any]:
     """

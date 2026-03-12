@@ -13,6 +13,7 @@ Caching: The widget JS is cached with appropriate headers for performance.
 CORS: Served with permissive CORS headers since it needs to load from any origin.
 """
 
+import hashlib
 import os
 import time
 import logging
@@ -68,6 +69,32 @@ def _get_external_base_url(request: Request) -> str:
         or request.url.netloc
     )
     return f"{proto}://{host}"
+
+
+# ---------------------------------------------------------------------------
+# Widget Content Hash Cache — auto-versioning without manual bumps
+# ---------------------------------------------------------------------------
+# Computed once at startup (or on first request) from the file contents.
+# When the file changes after a rebuild, the hash changes automatically.
+# Used as an ETag and X-Widget-Version header value.
+# ---------------------------------------------------------------------------
+_widget_content_hash: str | None = None
+_widget_file_mtime: float = 0.0
+
+
+def _compute_widget_hash(bundle_path: Path) -> str:
+    """Compute SHA-256 content hash of the widget bundle for ETag."""
+    global _widget_content_hash, _widget_file_mtime
+    current_mtime = bundle_path.stat().st_mtime
+    if _widget_content_hash is None or current_mtime != _widget_file_mtime:
+        content = bundle_path.read_bytes()
+        _widget_content_hash = hashlib.sha256(content).hexdigest()[:16]
+        _widget_file_mtime = current_mtime
+        logger.info(
+            "Widget bundle hash computed: %s (%.1f KB)",
+            _widget_content_hash, len(content) / 1024,
+        )
+    return _widget_content_hash
 
 
 def _find_widget_bundle() -> Path | None:
@@ -143,6 +170,9 @@ async def serve_widget_bundle(request: Request):
             },
         )
     
+    # Compute content hash for automatic versioning (changes on every rebuild)
+    content_hash = _compute_widget_hash(bundle_path)
+
     return FileResponse(
         path=str(bundle_path),
         media_type="application/javascript",
@@ -150,9 +180,19 @@ async def serve_widget_bundle(request: Request):
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "*",
-            # no-cache: browser revalidates on every request — ensures
-            # updated widget JS is picked up immediately after rebuilds.
-            "Cache-Control": "no-cache",
+            # AGGRESSIVE NO-CACHE: Force browsers, CDNs, WP Rocket, and
+            # proxies (ngrok, CloudFront) to NEVER serve a cached copy.
+            # - no-cache: revalidate on every request
+            # - no-store: do not store in any cache at all
+            # - must-revalidate: stale copies must not be used
+            # - Pragma/Expires: legacy HTTP/1.0 compatibility
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            # AUTO-VERSIONING: Content-hash ETag changes automatically on
+            # every rebuild — no manual version bumping needed.
+            "ETag": f'"{content_hash}"',
+            "X-Widget-Version": content_hash,
             "X-Content-Type-Options": "nosniff",
             "ngrok-skip-browser-warning": "true",
         },

@@ -26,6 +26,8 @@ import {
   getDailyTrends,
   type TrendPeriod, 
   type DailyTrendPeriod,
+  type IMonthlyTrendDataPoint,
+  type IDailyTrendDataPoint,
   type IMonthlyTrendsResponse,
   type IDailyTrendsResponse 
 } from '../../services/leads';
@@ -131,103 +133,214 @@ const generateAreaPath = (points: { x: number; y: number }[]): string => {
 // Memoized Sub-Components for Optimal Re-rendering
 // =============================================================================
 
+/**
+ * DataPoint — purely visual dot; NO mouse handlers.
+ * Hover detection is handled by a single overlay rect (see HoverOverlay).
+ * This eliminates tooltip flickering caused by per-element enter/leave races.
+ */
 interface DataPointProps {
   point: ChartPoint;
-  index: number;
   isHovered: boolean;
   color: string;
+}
+
+const DataPoint = memo<DataPointProps>(({ point, isHovered, color }) => (
+  <circle
+    cx={point.x}
+    cy={point.y}
+    r={isHovered ? 6 : 4}
+    fill="#fff"
+    stroke={color}
+    strokeWidth="2"
+    style={{ transition: 'r 0.15s ease-out', pointerEvents: 'none' }}
+  />
+));
+DataPoint.displayName = 'DataPoint';
+
+/**
+ * HoverOverlay — single invisible rect covering the entire chart area.
+ *
+ * WHY THIS FIXES FLICKERING PERMANENTLY:
+ * Previously, each data point had its own transparent <circle r="15"> with
+ * onMouseEnter/onMouseLeave handlers. When the SVG viewBox (600×200) was
+ * scaled to the actual container width (~800-1200px), those hit areas became
+ * unpredictable. The tooltip render caused a React re-render, which could
+ * momentarily shift DOM elements, firing a spurious onMouseLeave→onMouseEnter
+ * cycle — resulting in visible flicker.
+ *
+ * The overlay approach:
+ * 1. A single <rect> covers the entire chart area — there are no gaps.
+ * 2. onMouseMove calculates the nearest data point by X coordinate.
+ * 3. onMouseLeave cleanly clears the hovered state.
+ * 4. No per-point event handlers = no enter/leave races = zero flicker.
+ */
+interface HoverOverlayProps {
+  points: ChartPoint[];
   onHover: (index: number | null) => void;
 }
 
-const DataPoint = memo<DataPointProps>(({ point, index, isHovered, color, onHover }) => (
-  <g>
-    <circle
-      cx={point.x}
-      cy={point.y}
-      r="15"
+const HoverOverlay = memo<HoverOverlayProps>(({ points, onHover }) => {
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGRectElement>) => {
+      if (points.length === 0) {
+        onHover(null);
+        return;
+      }
+      // Get mouse X in SVG coordinate space
+      const svg = (e.target as SVGRectElement).ownerSVGElement;
+      if (!svg) return;
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const svgPt = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+      const mouseX = svgPt.x;
+
+      // Find the nearest data point by X distance
+      let nearestIdx = 0;
+      let nearestDist = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const dist = Math.abs(points[i].x - mouseX);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestIdx = i;
+        }
+      }
+
+      // Only highlight if mouse is reasonably close to a point (within half the gap)
+      const gap = points.length > 1
+        ? Math.abs(points[1].x - points[0].x)
+        : CHART_WIDTH;
+      if (nearestDist <= gap * 0.6) {
+        onHover(nearestIdx);
+      } else {
+        onHover(null);
+      }
+    },
+    [points, onHover]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    onHover(null);
+  }, [onHover]);
+
+  return (
+    <rect
+      x={CHART_PADDING.left}
+      y={CHART_PADDING.top}
+      width={CHART_WIDTH}
+      height={CHART_INNER_HEIGHT}
       fill="transparent"
-      onMouseEnter={() => onHover(index)}
-      onMouseLeave={() => onHover(null)}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'crosshair' }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     />
-    <circle
-      cx={point.x}
-      cy={point.y}
-      r={isHovered ? 6 : 4}
-      fill="#fff"
-      stroke={color}
-      strokeWidth="2"
-      style={{ transition: 'r 0.15s ease-out' }}
-    />
-  </g>
-));
-DataPoint.displayName = 'DataPoint';
+  );
+});
+HoverOverlay.displayName = 'HoverOverlay';
 
 interface TooltipProps {
   point: ChartPoint;
   color: string;
 }
 
-const Tooltip = memo<TooltipProps>(({ point, color }) => (
-  <g style={{ transition: 'all 0.15s ease-out' }}>
-    <line
-      x1={point.x}
-      y1={CHART_PADDING.top}
-      x2={point.x}
-      y2={CHART_HEIGHT - CHART_PADDING.bottom}
-      stroke={color}
-      strokeWidth="1"
-      strokeDasharray="4,4"
-      opacity="0.5"
-    />
-    <rect
-      x={Math.max(70, Math.min(point.x - 70, 530))}
-      y={Math.max(10, point.y - 75)}
-      width="140"
-      height="65"
-      rx="6"
-      fill="#1F2937"
-    />
-    <text
-      x={Math.max(140, Math.min(point.x, 460))}
-      y={Math.max(27, point.y - 58)}
-      textAnchor="middle"
-      fill="white"
-      fontSize="12"
-      fontWeight="bold"
-    >
-      {point.value.toLocaleString()} leads
-    </text>
-    <text
-      x={Math.max(140, Math.min(point.x, 460))}
-      y={Math.max(42, point.y - 43)}
-      textAnchor="middle"
-      fill="#9CA3AF"
-      fontSize="10"
-    >
-      🔥 {point.hotLeads} | ⚡ {point.mediumLeads} | 💤 {point.lowLeads}
-    </text>
-    <text
-      x={Math.max(140, Math.min(point.x, 460))}
-      y={Math.max(57, point.y - 28)}
-      textAnchor="middle"
-      fill="#9CA3AF"
-      fontSize="10"
-    >
-      {point.label}
-      {point.dayOfWeek && ` (${point.dayOfWeek})`}
-    </text>
-    <text
-      x={Math.max(140, Math.min(point.x, 460))}
-      y={Math.max(72, point.y - 13)}
-      textAnchor="middle"
-      fill="#9CA3AF"
-      fontSize="10"
-    >
-      {point.conversionRate}% converted
-    </text>
-  </g>
-));
+const Tooltip = memo<TooltipProps>(({ point, color }) => {
+  // Smart positioning: if tooltip would go above viewBox, show it BELOW the point instead
+  const TOOLTIP_W = 160;
+  const TOOLTIP_H = 72;
+  const TOOLTIP_OFFSET = 12;
+  const showBelow = point.y - TOOLTIP_H - TOOLTIP_OFFSET < 0;
+  const tooltipY = showBelow
+    ? point.y + TOOLTIP_OFFSET
+    : point.y - TOOLTIP_H - TOOLTIP_OFFSET;
+  // Clamp horizontally to stay within 0..600
+  const tooltipX = Math.max(2, Math.min(point.x - TOOLTIP_W / 2, 600 - TOOLTIP_W - 2));
+  const textCenterX = tooltipX + TOOLTIP_W / 2;
+
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      {/* Vertical crosshair line */}
+      <line
+        x1={point.x}
+        y1={CHART_PADDING.top}
+        x2={point.x}
+        y2={CHART_HEIGHT - CHART_PADDING.bottom}
+        stroke={color}
+        strokeWidth="1"
+        strokeDasharray="4,4"
+        opacity="0.5"
+      />
+      {/* Drop shadow for tooltip */}
+      <rect
+        x={tooltipX + 2}
+        y={tooltipY + 2}
+        width={TOOLTIP_W}
+        height={TOOLTIP_H}
+        rx="8"
+        fill="rgba(0,0,0,0.15)"
+      />
+      {/* Tooltip background */}
+      <rect
+        x={tooltipX}
+        y={tooltipY}
+        width={TOOLTIP_W}
+        height={TOOLTIP_H}
+        rx="8"
+        fill="#1F2937"
+      />
+      {/* Arrow pointer */}
+      {showBelow ? (
+        <polygon
+          points={`${point.x - 5},${tooltipY} ${point.x + 5},${tooltipY} ${point.x},${tooltipY - 5}`}
+          fill="#1F2937"
+        />
+      ) : (
+        <polygon
+          points={`${point.x - 5},${tooltipY + TOOLTIP_H} ${point.x + 5},${tooltipY + TOOLTIP_H} ${point.x},${tooltipY + TOOLTIP_H + 5}`}
+          fill="#1F2937"
+        />
+      )}
+      <text
+        x={textCenterX}
+        y={tooltipY + 17}
+        textAnchor="middle"
+        fill="white"
+        fontSize="12"
+        fontWeight="bold"
+      >
+        {point.value.toLocaleString()} leads
+      </text>
+      <text
+        x={textCenterX}
+        y={tooltipY + 33}
+        textAnchor="middle"
+        fill="#9CA3AF"
+        fontSize="10"
+      >
+      Hot {point.hotLeads} | Med {point.mediumLeads} | Low {point.lowLeads}
+      </text>
+      <text
+        x={textCenterX}
+        y={tooltipY + 49}
+        textAnchor="middle"
+        fill="#D1D5DB"
+        fontSize="10"
+        fontWeight="500"
+      >
+        {point.label}
+        {point.dayOfWeek && ` (${point.dayOfWeek})`}
+      </text>
+      <text
+        x={textCenterX}
+        y={tooltipY + 64}
+        textAnchor="middle"
+        fill="#9CA3AF"
+        fontSize="10"
+      >
+        {point.conversionRate}% converted
+      </text>
+    </g>
+  );
+});
 Tooltip.displayName = 'Tooltip';
 
 // =============================================================================
@@ -333,16 +446,16 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
         setIsLoading(false);
         return; // Success - exit retry loop
         
-      } catch (err: any) {
-        lastError = err;
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err : new Error(String(err));
         
         // Don't retry if request was aborted
-        if (err.name === 'AbortError') {
+        if (lastError.name === 'AbortError') {
           setIsLoading(false);
           return;
         }
         
-        if (import.meta.env.DEV) console.warn(`[LeadsTrendChart] Attempt ${attempt + 1}/${MAX_RETRIES} failed:`, err.message);
+        if (import.meta.env.DEV) console.warn(`[LeadsTrendChart] Attempt ${attempt + 1}/${MAX_RETRIES} failed:`, lastError.message);
         
         // Wait before retry (exponential backoff)
         if (attempt < MAX_RETRIES - 1) {
@@ -386,6 +499,9 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current);
       }
+      // Cancel any in-flight network request so it cannot call setState
+      // after the component unmounts (navigation away from Analytics page).
+      abortControllerRef.current?.abort();
     };
   }, [viewMode, monthlyTimeRange, dailyTimeRange, currentCacheKey, fetchTrends]);
 
@@ -418,8 +534,8 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
       y: CHART_PADDING.top + CHART_INNER_HEIGHT - ((d.total_leads - min) / range) * CHART_INNER_HEIGHT,
       value: d.total_leads,
       label: d.label,
-      identifier: viewMode === 'monthly' ? (d as any).month : (d as any).date,
-      dayOfWeek: viewMode === 'daily' ? (d as any).day_of_week : undefined,
+      identifier: viewMode === 'monthly' ? (d as IMonthlyTrendDataPoint).month : (d as IDailyTrendDataPoint).date,
+      dayOfWeek: viewMode === 'daily' ? (d as IDailyTrendDataPoint).day_of_week : undefined,
       hotLeads: d.hot_leads,
       mediumLeads: d.medium_leads,
       lowLeads: d.low_leads,
@@ -428,11 +544,11 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
 
     const summary = cachedData.summary;
     const avg = viewMode === 'monthly' 
-      ? (summary as any).monthly_average 
-      : (summary as any).daily_average;
+      ? (summary as IMonthlyTrendsResponse['summary']).monthly_average 
+      : (summary as IDailyTrendsResponse['summary']).daily_average;
     const peakLabel = viewMode === 'monthly'
-      ? (summary as any).peak_month
-      : (summary as any).peak_day;
+      ? (summary as IMonthlyTrendsResponse['summary']).peak_month
+      : (summary as IDailyTrendsResponse['summary']).peak_day;
 
     return { 
       points, 
@@ -638,6 +754,8 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
                   viewBox={`0 0 600 ${CHART_HEIGHT}`}
                   className="w-full h-auto"
                   preserveAspectRatio="xMidYMid meet"
+                  overflow="visible"
+                  style={{ overflow: 'visible' }}
                 >
                   {/* Gradient Definition */}
                   <defs>
@@ -697,15 +815,13 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
                     style={{ transition: 'd 0.3s ease-out, stroke 0.2s ease-out' }}
                   />
 
-                  {/* Data Points */}
+                  {/* Data Points (visual only — no mouse handlers) */}
                   {chartData.points.map((point, i) => (
                     <DataPoint
                       key={`${point.identifier}-${i}`}
                       point={point}
-                      index={i}
                       isHovered={hoveredPoint === i}
                       color={chartColor}
-                      onHover={handleHover}
                     />
                   ))}
 
@@ -722,6 +838,12 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
                       {chartData.points[i].label}
                     </text>
                   ))}
+
+                  {/* Hover Overlay — single rect for flicker-free tooltip detection */}
+                  <HoverOverlay
+                    points={chartData.points}
+                    onHover={handleHover}
+                  />
 
                   {/* Tooltip */}
                   {hoveredPoint !== null && chartData.points[hoveredPoint] && (

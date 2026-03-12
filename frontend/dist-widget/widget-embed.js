@@ -1,4 +1,4 @@
-(function(){"use strict";function f(){const e=document.querySelectorAll('script[src*="widget-embed"]'),t=e[e.length-1];let n="";if(t)try{const a=new URL(t.src);n=t.getAttribute("data-api-url")||`${a.protocol}//${a.host}`}catch(a){n=t.getAttribute("data-api-url")||""}return{apiUrl:n||window.location.origin}}const r={dk:"#1B3A4B",tl:"#1a6b5a",tl2:"#2d8a7a",wh:"#FFFFFF",mu:"#888"};function u(){if(document.querySelector("style[data-nr-card-widget]"))return;if(!document.querySelector('link[href*="Montserrat"]')){const t=document.createElement("link");t.rel="stylesheet",t.href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap",document.head.appendChild(t)}const e=document.createElement("style");e.setAttribute("data-nr-card-widget",""),e.textContent=`
+(function(){"use strict";function f(){const e=document.querySelectorAll('script[src*="widget-embed"]'),t=e[e.length-1];let n="";if(t)try{const a=new URL(t.src);n=t.getAttribute("data-api-url")||`${a.protocol}//${a.host}`}catch(a){n=t.getAttribute("data-api-url")||""}return{apiUrl:n||window.location.origin}}const r={dk:"#1B3A4B",tl:"#1a6b5a",tl2:"#2d8a7a",wh:"#FFFFFF",mu:"#888"};function h(){if(document.querySelector("style[data-nr-card-widget]"))return;if(!document.querySelector('link[href*="Montserrat"]')){const t=document.createElement("link");t.rel="stylesheet",t.href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap",document.head.appendChild(t)}const e=document.createElement("style");e.setAttribute("data-nr-card-widget",""),e.textContent=`
     /* ============================================================
        BASE — Tier 2: Desktop/Laptop (1280-1439px) as default
        z-index: 99 — BELOW site navigation dropdowns
@@ -203,34 +203,59 @@
     }
 
     /* ============================================================
-       Tier 4: Tablet (769px - 1024px)
+       Tier 4: Tablet (769px - 1023px)
+       Bottom-LEFT flush — same side as mobile for consistency
        ============================================================ */
-    @media (min-width: 769px) and (max-width: 1024px) {
-      #nr-card-widget { width: 150px; right: 0; border-radius: 12px 0 0 12px; }
+    @media (min-width: 769px) and (max-width: 1023px) {
+      #nr-card-widget {
+        position: fixed;
+        top: auto;
+        bottom: 28px;
+        right: auto;
+        left: 0;
+        width: 175px;
+        border-radius: 0 12px 12px 0;
+        border-left: none;
+        border-right: 1px solid rgba(26,107,90,0.12);
+        z-index: 99;
+        transform: translateX(-30px);
+        transform-origin: bottom left;
+      }
+      #nr-card-widget.nr-card-visible {
+        animation:
+          nr-entrance-m 0.9s cubic-bezier(0.16,1,0.3,1) both,
+          nr-float-m 5s ease-in-out 1.2s infinite;
+      }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 22px 12px 18px; gap: 16px; }
-      .nr-card-headline { font-size: 14px; }
-      .nr-card-cta { font-size: 11px; padding: 9px 10px; border-radius: 7px; min-height: 40px; }
-      .nr-card-cta-arrow { font-size: 12px; }
-      .nr-card-trust { font-size: 7px; gap: 3px; }
+      .nr-card-body { padding: 26px 14px 22px; gap: 18px; }
+      .nr-card-headline { font-size: 16.5px; line-height: 1.3; font-weight: 700; }
+      .nr-card-cta { font-size: 13px; padding: 12px 14px; border-radius: 8px; min-height: 46px; font-weight: 700; gap: 5px; }
+      .nr-card-cta-arrow { font-size: 15px; font-weight: 700; }
+      .nr-card-trust { font-size: 8px; gap: 4px; }
+      #nr-card-widget {
+        box-shadow: 2px 3px 10px rgba(0,0,0,0.08), 4px 8px 20px rgba(0,0,0,0.10);
+      }
     }
 
     /* ============================================================
        Tier 5: Mobile (376px - 768px)
-       Bottom-right floating badge — impossible to ignore
+       Bottom-LEFT floating badge — flush to left edge
+       Larger than before, bolder headline, prominent CTA
        ============================================================ */
     @media (max-width: 768px) {
       #nr-card-widget {
         position: fixed;
         top: auto;
         bottom: 20px;
-        left: auto;
-        right: 0;
-        width: 140px;
-        border-radius: 12px 0 0 12px;
+        right: auto;
+        left: 0;
+        width: 160px;
+        border-radius: 0 12px 12px 0;
+        border-left: none;
+        border-right: 1px solid rgba(26,107,90,0.12);
         z-index: 99;
-        transform: translateX(30px);
-        transform-origin: bottom right;
+        transform: translateX(-30px);
+        transform-origin: bottom left;
       }
       #nr-card-widget.nr-card-visible {
         animation:
@@ -238,7 +263,7 @@
           nr-float-m 5s ease-in-out 1.2s infinite;
       }
       @keyframes nr-entrance-m {
-        0% { opacity: 0; transform: translateX(30px); }
+        0% { opacity: 0; transform: translateX(-30px); }
         100% { opacity: 1; transform: translateX(0); }
       }
       @keyframes nr-float-m {
@@ -248,44 +273,67 @@
         75% { transform: translateX(0) translateY(-3px); }
       }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 20px 10px 16px; gap: 14px; }
-      .nr-card-headline { font-size: 13px; line-height: 1.35; }
+      .nr-card-body { padding: 22px 12px 18px; gap: 16px; }
+      .nr-card-headline { font-size: 15px; line-height: 1.3; font-weight: 700; }
       .nr-card-cta {
-        font-size: 11px; padding: 9px 10px; border-radius: 7px; min-height: 40px; gap: 4px;
+        font-size: 12.5px; padding: 11px 12px; border-radius: 8px; min-height: 44px; gap: 5px;
+        font-weight: 700;
       }
-      .nr-card-cta-arrow { font-size: 11px; }
-      .nr-card-trust { font-size: 7px; gap: 3px; }
+      .nr-card-cta-arrow { font-size: 14px; font-weight: 700; }
+      .nr-card-trust { font-size: 7.5px; gap: 3px; }
       #nr-card-widget {
-        box-shadow: -2px 3px 10px rgba(0,0,0,0.08), -4px 8px 20px rgba(0,0,0,0.10);
+        box-shadow: 2px 3px 10px rgba(0,0,0,0.08), 4px 8px 20px rgba(0,0,0,0.10);
       }
     }
 
     /* ============================================================
+       Tier 5b: Mid-Mobile (481px - 768px) — tablet-ish phones
+       Slightly larger still for bigger phone screens
+       ============================================================ */
+    @media (min-width: 481px) and (max-width: 768px) {
+      #nr-card-widget { width: 170px; bottom: 24px; }
+      .nr-card-body { padding: 24px 14px 20px; gap: 18px; }
+      .nr-card-headline { font-size: 16px; }
+      .nr-card-cta { font-size: 13px; min-height: 46px; padding: 12px 14px; }
+      .nr-card-cta-arrow { font-size: 15px; }
+      .nr-card-trust { font-size: 8px; }
+    }
+
+    /* ============================================================
        Tier 6: Small Mobile (≤375px)
-       Ultra compact bottom-right — still floating, still bold
+       Compact bottom-LEFT — still floating, still bold
        ============================================================ */
     @media (max-width: 375px) {
       #nr-card-widget {
         position: fixed;
         top: auto;
         bottom: 14px;
-        left: auto;
-        right: 0;
-        width: 120px;
-        border-radius: 10px 0 0 10px;
+        right: auto;
+        left: 0;
+        width: 140px;
+        border-radius: 0 10px 10px 0;
+        border-left: none;
+        border-right: 1px solid rgba(26,107,90,0.12);
         z-index: 99;
       }
       .nr-card-bar-top, .nr-card-bar-bottom { height: 2px; }
-      .nr-card-body { padding: 16px 8px 12px; gap: 12px; }
-      .nr-card-headline { font-size: 12px; }
-      .nr-card-cta { font-size: 10px; padding: 8px 8px; border-radius: 6px; min-height: 38px; }
-      .nr-card-cta-arrow { font-size: 10px; }
-      .nr-card-trust { font-size: 6px; gap: 2px; }
+      .nr-card-body { padding: 18px 10px 14px; gap: 14px; }
+      .nr-card-headline { font-size: 13.5px; font-weight: 700; }
+      .nr-card-cta { font-size: 11.5px; padding: 10px 10px; border-radius: 7px; min-height: 42px; font-weight: 700; }
+      .nr-card-cta-arrow { font-size: 13px; font-weight: 700; }
+      .nr-card-trust { font-size: 7px; gap: 2px; }
     }
 
     /* ============================================================
        Reduced Motion — respect accessibility
+       Desktop (≥1024px): widget is vertically centred with
+         translateY(-50%), so we keep it.
+       Mobile/Tablet (<1024px): widget is BOTTOM-ANCHORED (top:auto,
+         bottom:Npx), so translateY(-50%) would push it off-screen.
+         Mobile reduced-motion must only use translateX(0).
        ============================================================ */
+
+    /* Desktop (≥1024px) — vertically centred, keep translateY(-50%) */
     @media (prefers-reduced-motion: reduce) {
       #nr-card-widget,
       #nr-card-widget *,
@@ -300,4 +348,22 @@
         pointer-events: auto;
       }
     }
-  `,document.head.appendChild(e)}function m(){return window.location.href.toLowerCase().includes("/assessment")}function h(e){const t=e.apiUrl+"/assessment?utm_source=floating_widget&utm_medium=cta",n=document.createElement("div");n.id="nr-card-widget",n.setAttribute("role","complementary"),n.setAttribute("aria-label","TMS Assessment — free 2-minute confidential check");const a=document.createElement("div");a.className="nr-card-inner";const x=document.createElement("div");x.className="nr-card-bar-top";const o=document.createElement("div");o.className="nr-card-body";const p=document.createElement("h2");p.className="nr-card-headline",p.textContent="Could TMS help me?";const i=document.createElement("a");i.className="nr-card-cta",i.href=t,i.target="_blank",i.rel="noopener noreferrer",i.setAttribute("aria-label","Take a free 2-minute TMS assessment (opens in new tab)"),i.innerHTML='<span>Take Free Assessment</span><span class="nr-card-cta-arrow">&rarr;</span>';const l=document.createElement("div");l.className="nr-card-trust",l.innerHTML='<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🟢 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>🔐 256-bit</span>',o.appendChild(p),o.appendChild(i),o.appendChild(l);const g=document.createElement("div");g.className="nr-card-bar-bottom",a.appendChild(x),a.appendChild(o),a.appendChild(g),n.appendChild(a),document.body.appendChild(n),setTimeout(()=>{n.classList.add("nr-card-visible")},1500)}function s(){const e=document.getElementById("nr-card-widget");e&&e.remove(),["nr-banner-widget","nr-cta-wrapper","nr-cta-widget","nr-assessment-btn","nr-assessment-btn-pulse","nr-cta-tooltip","nr-cta-icon","nr-cta-text"].forEach(t=>{const n=document.getElementById(t);n&&n.remove()}),["style[data-nr-banner-widget]","style[data-nr-cta-widget]","style[data-nr-widget]"].forEach(t=>{document.querySelectorAll(t).forEach(n=>n.remove())}),document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove())}function b(){[500,1e3,2e3,3e3,5e3,8e3].forEach(e=>{setTimeout(()=>{try{document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove()),document.querySelectorAll("style[data-nr-cta-widget],style[data-nr-widget]").forEach(t=>t.remove())}catch(t){}},e)})}const w=(()=>{try{return new URLSearchParams(window.location.search).get("nr-debug")==="1"}catch(e){return!1}})(),d="[NR Widget]";function c(){if(document.getElementById("nr-card-widget"))return;if(m()){s();return}s();const e=f();u(),h(e),b(),w&&console.log(d,"v19.0.0 →",e.apiUrl+"/assessment",`screen: ${window.innerWidth}px`)}(function(){try{document.readyState==="loading"?document.addEventListener("DOMContentLoaded",()=>{try{c()}catch(e){console.error(d,e)}}):c(),window.addEventListener("popstate",()=>{setTimeout(()=>{try{m()?s():document.getElementById("nr-card-widget")||c()}catch(e){console.error(d,e)}},100)})}catch(e){console.error(d,e)}})()})();
+
+    /* Tablet (769px–1023px) reduced-motion override — bottom-anchored,
+       NO translateY. Must come AFTER the generic reduced-motion rule
+       so it wins the specificity race. */
+    @media (min-width: 769px) and (max-width: 1023px) and (prefers-reduced-motion: reduce) {
+      #nr-card-widget.nr-card-visible {
+        transform: translateX(0) !important;
+      }
+    }
+
+    /* Mobile (≤768px) reduced-motion override — bottom-anchored,
+       NO translateY.  translateX(0) is sufficient. */
+    @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+      #nr-card-widget.nr-card-visible {
+        transform: translateX(0) !important;
+      }
+    }
+
+  `,document.head.appendChild(e)}function x(){return window.location.href.toLowerCase().includes("/assessment")}function u(e){const t=e.apiUrl+"/assessment?utm_source=floating_widget&utm_medium=cta",n=document.createElement("div");n.id="nr-card-widget",n.setAttribute("role","complementary"),n.setAttribute("aria-label","TMS Assessment — free 2-minute confidential check");const a=document.createElement("div");a.className="nr-card-inner";const m=document.createElement("div");m.className="nr-card-bar-top";const o=document.createElement("div");o.className="nr-card-body";const p=document.createElement("h2");p.className="nr-card-headline",p.textContent="Could TMS help me?";const i=document.createElement("a");i.className="nr-card-cta",i.href=t,i.target="_blank",i.rel="noopener noreferrer",i.setAttribute("aria-label","Take a free 2-minute TMS assessment (opens in new tab)"),i.innerHTML='<span>Take Free Assessment</span><span class="nr-card-cta-arrow">&rarr;</span>';const l=document.createElement("div");l.className="nr-card-trust",l.innerHTML='<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🟢 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>🔐 256-bit</span>',o.appendChild(p),o.appendChild(i),o.appendChild(l);const g=document.createElement("div");g.className="nr-card-bar-bottom",a.appendChild(m),a.appendChild(o),a.appendChild(g),n.appendChild(a),document.body.appendChild(n),setTimeout(()=>{n.classList.add("nr-card-visible")},1500)}function s(){const e=document.getElementById("nr-card-widget");e&&e.remove(),["nr-banner-widget","nr-cta-wrapper","nr-cta-widget","nr-assessment-btn","nr-assessment-btn-pulse","nr-cta-tooltip","nr-cta-icon","nr-cta-text"].forEach(t=>{const n=document.getElementById(t);n&&n.remove()}),["style[data-nr-banner-widget]","style[data-nr-cta-widget]","style[data-nr-widget]"].forEach(t=>{document.querySelectorAll(t).forEach(n=>n.remove())}),document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove())}function b(){[500,1e3,2e3,3e3,5e3,8e3].forEach(e=>{setTimeout(()=>{try{document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove()),document.querySelectorAll("style[data-nr-cta-widget],style[data-nr-widget]").forEach(t=>t.remove())}catch(t){}},e)})}const w=(()=>{try{return new URLSearchParams(window.location.search).get("nr-debug")==="1"}catch(e){return!1}})(),d="[NR Widget]";function c(){if(document.getElementById("nr-card-widget"))return;if(x()){s();return}s();const e=f();h(),u(e),b(),w&&console.log(d,"v20.0.0 →",e.apiUrl+"/assessment",`screen: ${window.innerWidth}px`)}(function(){try{document.readyState==="loading"?document.addEventListener("DOMContentLoaded",()=>{try{c()}catch(e){console.error(d,e)}}):c(),window.addEventListener("popstate",()=>{setTimeout(()=>{try{x()?s():document.getElementById("nr-card-widget")||c()}catch(e){console.error(d,e)}},100)})}catch(e){console.error(d,e)}})()})();

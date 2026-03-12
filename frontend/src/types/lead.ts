@@ -234,6 +234,9 @@ export interface LeadTableRow {
   isReferral?: boolean;
   referringProviderName?: string;
   referringProviderId?: string;
+  // Lead source — identifies origin (widget, jotform, manual, etc.)
+  // Used to suppress notifications for coordinator-added manual leads
+  source?: string;
 }
 
 /**
