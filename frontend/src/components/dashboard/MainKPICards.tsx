@@ -30,6 +30,7 @@ interface KPICardProps {
     isPositive: boolean;
   };
   gradient: string;
+  onClick?: () => void;
 }
 
 const KPICard: React.FC<KPICardProps> = ({
@@ -39,10 +40,12 @@ const KPICard: React.FC<KPICardProps> = ({
   icon,
   trend,
   gradient,
+  onClick,
 }) => (
   <div
+    onClick={onClick}
     className={`
-      relative overflow-hidden rounded-2xl shadow-lg cursor-default
+      relative overflow-hidden rounded-2xl shadow-lg ${onClick ? 'cursor-pointer' : 'cursor-default'}
       ${gradient}
       p-6 min-h-[160px]
     `}
@@ -50,7 +53,7 @@ const KPICard: React.FC<KPICardProps> = ({
     {/* Background decorative elements */}
     <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
     <div className="absolute bottom-0 left-0 w-24 h-24 bg-black/5 rounded-full translate-y-1/2 -translate-x-1/2" />
-    
+
     <div className="relative z-10">
       {/* Header with icon */}
       <div className="flex items-start justify-between mb-4">
@@ -61,8 +64,8 @@ const KPICard: React.FC<KPICardProps> = ({
           <div className={`
             flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold
             backdrop-blur-sm border
-            ${trend.isPositive 
-              ? 'bg-emerald-100/80 text-emerald-700 border-emerald-200' 
+            ${trend.isPositive
+              ? 'bg-emerald-100/80 text-emerald-700 border-emerald-200'
               : 'bg-red-100/80 text-red-700 border-red-200'
             }
           `}>
@@ -75,17 +78,17 @@ const KPICard: React.FC<KPICardProps> = ({
           </div>
         )}
       </div>
-      
+
       {/* Value */}
       <div className="text-4xl font-bold text-white tracking-tight mb-1">
         {value}
       </div>
-      
+
       {/* Title */}
       <div className="text-white/90 font-medium">
         {title}
       </div>
-      
+
       {/* Subtitle */}
       {subtitle && (
         <div className="text-white/70 text-sm mt-1">
@@ -166,6 +169,7 @@ export const MainKPICards: React.FC<MainKPICardsProps> = ({
           icon={card.icon}
           trend={card.trend}
           gradient={card.gradient}
+          onClick={card.id === 'total' ? () => { window.location.hash = 'leads'; } : undefined}
         />
       ))}
     </div>

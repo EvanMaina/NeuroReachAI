@@ -275,7 +275,7 @@ export const AnalyticsDashboard: React.FC = () => {
             </select>
 
             <span className="text-xs text-gray-400">Updated: {formatTimeAgo(lastRefresh)}</span>
-            
+
             <RefreshButton
               onRefresh={() => { handleRefresh(); }}
               isRefreshing={isAnyFetching}
@@ -334,7 +334,10 @@ export const AnalyticsDashboard: React.FC = () => {
                 { label: 'Conversion Rate', value: `${totals.overall_conversion_rate}%`, icon: <PieChart size={20} />, color: 'from-purple-500 to-indigo-500', bg: 'bg-purple-50' },
                 { label: 'Platforms', value: totals.platform_count, icon: <Globe size={20} />, color: 'from-amber-500 to-orange-500', bg: 'bg-amber-50' },
               ].map((kpi, idx) => (
-                <div key={idx} className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg transition-shadow">
+                <div
+                  key={idx}
+                  className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg transition-shadow"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${kpi.color} flex items-center justify-center text-white shadow-lg`}>
                       {kpi.icon}
@@ -456,11 +459,10 @@ export const AnalyticsDashboard: React.FC = () => {
                       return (
                         <div
                           key={platform.platform}
-                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                            isTop
-                              ? 'border-amber-200 bg-amber-50/40'
-                              : 'border-gray-100 bg-gray-50/40 hover:bg-gray-50'
-                          }`}
+                          className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isTop
+                            ? 'border-amber-200 bg-amber-50/40'
+                            : 'border-gray-100 bg-gray-50/40 hover:bg-gray-50'
+                            }`}
                         >
                           <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white flex-shrink-0`}>
                             {icon}

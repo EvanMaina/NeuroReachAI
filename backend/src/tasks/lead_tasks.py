@@ -768,6 +768,244 @@ def warm_dashboard_cache() -> Dict[str, Any]:
 
 
 # =============================================================================
+# Automated Follow-Up System (SMS + Email every 6 hours)
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_automated_follow_ups(self) -> Dict[str, Any]:
+    """
+    Automated follow-up system: sends SMS + email every 6 hours to eligible leads.
+
+    Eligibility rules:
+    - Lead is NOT in 'SCHEDULED' status (once scheduled, follow-ups stop)
+    - Lead is NOT soft-deleted
+    - Lead was created at least 6 hours ago (first follow-up is 6h after submission)
+    - last_follow_up_sent_at is NULL (never sent) OR > 6 hours ago
+    - Lead has an email or phone to contact
+
+    Sends both SMS and email to each eligible lead, then updates
+    last_follow_up_sent_at to prevent duplicate sends in the same window.
+
+    Returns:
+        Dict with follow-up stats
+    """
+    from ..services.email_templates import send_follow_up_email
+    from ..services.sms_service import sms_service
+    from ..services.encryption import EncryptionService
+
+    db = get_db_session()
+
+    try:
+        now = datetime.now(timezone.utc)
+        six_hours_ago = now - timedelta(hours=6)
+
+        # Query eligible leads:
+        # - Not scheduled (follow-ups stop once scheduled)
+        # - Not deleted
+        # - Created at least 6 hours ago
+        # - last_follow_up_sent_at is NULL or older than 6 hours
+        eligible_leads = (
+            db.query(Lead)
+            .filter(
+                Lead.status != LeadStatus.SCHEDULED,
+                Lead.deleted_at.is_(None),
+                Lead.created_at <= six_hours_ago,
+            )
+            .filter(
+                (Lead.last_follow_up_sent_at.is_(None)) |
+                (Lead.last_follow_up_sent_at <= six_hours_ago)
+            )
+            .all()
+        )
+
+        total = len(eligible_leads)
+        sent_email = 0
+        sent_sms = 0
+        errors = []
+
+        logger.info(f"Automated follow-up: found {total} eligible leads")
+
+        for lead in eligible_leads:
+            lead_id = str(lead.id)
+            try:
+                # Decrypt PHI for sending
+                decrypted = EncryptionService.decrypt_lead_phi(lead)
+                first_name = decrypted.get("first_name", "")
+                email = decrypted.get("email", "")
+                phone = decrypted.get("phone", "")
+
+                # Send follow-up email
+                if email:
+                    email_result = send_follow_up_email({
+                        "first_name": first_name,
+                        "email": email,
+                        "lead_id": lead_id,
+                    })
+                    if email_result.get("success"):
+                        sent_email += 1
+                    else:
+                        errors.append({
+                            "lead_id": lead_id,
+                            "type": "email",
+                            "error": email_result.get("error", "unknown"),
+                        })
+
+                # Send follow-up SMS
+                if phone:
+                    sms_content = sms_service.render_template("follow_up", {
+                        "first_name": first_name,
+                    })
+                    sms_result = sms_service.send_sms(
+                        to_number=phone,
+                        message=sms_content,
+                    )
+                    if sms_result.get("success"):
+                        sent_sms += 1
+                    else:
+                        errors.append({
+                            "lead_id": lead_id,
+                            "type": "sms",
+                            "error": sms_result.get("error", "unknown"),
+                        })
+
+                # Update last_follow_up_sent_at to prevent duplicates
+                lead.last_follow_up_sent_at = now
+                db.commit()
+
+            except Exception as e:
+                logger.error(f"Follow-up failed for lead {lead_id}: {e}")
+                errors.append({"lead_id": lead_id, "type": "both", "error": str(e)})
+                db.rollback()
+
+        logger.info(
+            f"Automated follow-up complete: {total} eligible, "
+            f"{sent_email} emails sent, {sent_sms} SMS sent, "
+            f"{len(errors)} errors"
+        )
+
+        return {
+            "status": "success",
+            "eligible_leads": total,
+            "emails_sent": sent_email,
+            "sms_sent": sent_sms,
+            "errors": errors[:10],  # First 10 errors only
+            "error_count": len(errors),
+        }
+
+    except Exception as e:
+        logger.error(f"Automated follow-up task failed: {e}")
+        raise
+
+    finally:
+        db.close()
+
+
+@shared_task(
+    bind=True,
+    max_retries=1,
+)
+def send_test_follow_up(self, lead_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Test task: send a single follow-up to verify templates.
+
+    If lead_id is provided, sends to that specific lead.
+    If not, picks the most recent non-scheduled, non-deleted lead.
+
+    Args:
+        self: Celery task instance
+        lead_id: Optional specific lead UUID to send to
+
+    Returns:
+        Dict with test send results
+    """
+    from ..services.email_templates import send_follow_up_email
+    from ..services.sms_service import sms_service
+    from ..services.encryption import EncryptionService
+
+    db = get_db_session()
+
+    try:
+        # Find the lead
+        if lead_id:
+            lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        else:
+            # Pick the most recent non-scheduled, non-deleted lead
+            lead = (
+                db.query(Lead)
+                .filter(
+                    Lead.status != LeadStatus.SCHEDULED,
+                    Lead.deleted_at.is_(None),
+                )
+                .order_by(Lead.created_at.desc())
+                .first()
+            )
+
+        if not lead:
+            return {"status": "error", "message": "No eligible lead found for test"}
+
+        # Decrypt PHI
+        decrypted = EncryptionService.decrypt_lead_phi(lead)
+        first_name = decrypted.get("first_name", "")
+        email = decrypted.get("email", "")
+        phone = decrypted.get("phone", "")
+        lead_id_str = str(lead.id)
+
+        results = {"lead_id": lead_id_str, "lead_number": lead.lead_number}
+
+        # Send test follow-up email
+        if email:
+            email_result = send_follow_up_email({
+                "first_name": first_name,
+                "email": email,
+                "lead_id": lead_id_str,
+            })
+            results["email"] = {
+                "sent_to": f"{email[:3]}***@{email.split('@')[-1] if '@' in email else '***'}",
+                "success": email_result.get("success", False),
+                "provider": email_result.get("provider", "unknown"),
+            }
+        else:
+            results["email"] = {"skipped": True, "reason": "No email address"}
+
+        # Send test follow-up SMS
+        if phone:
+            sms_content = sms_service.render_template("follow_up", {
+                "first_name": first_name,
+            })
+            sms_result = sms_service.send_sms(
+                to_number=phone,
+                message=sms_content,
+            )
+            results["sms"] = {
+                "sent_to": f"***{phone[-4:]}",
+                "success": sms_result.get("success", False),
+                "message_sid": sms_result.get("message_sid"),
+            }
+        else:
+            results["sms"] = {"skipped": True, "reason": "No phone number"}
+
+        # Update timestamp
+        lead.last_follow_up_sent_at = datetime.now(timezone.utc)
+        db.commit()
+
+        logger.info(f"Test follow-up sent for lead {lead.lead_number}: {results}")
+        return {"status": "success", "results": results}
+
+    except Exception as e:
+        logger.error(f"Test follow-up failed: {e}")
+        db.rollback()
+        return {"status": "error", "message": str(e)}
+
+    finally:
+        db.close()
+
+
+# =============================================================================
 # Platform Analytics Tasks
 # =============================================================================
 

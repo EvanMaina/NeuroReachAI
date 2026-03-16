@@ -142,7 +142,176 @@ def build_lead_confirmation_email(lead_data: Dict[str, Any]) -> str:
 
 
 # =============================================================================
-# Unified Sending Function
+# Follow-Up Email Builder
+# =============================================================================
+
+FOLLOW_UP_EMAIL_SUBJECT = "Following Up on Your TMS Therapy Inquiry"
+FOLLOW_UP_EMAIL_FROM = "support@tmsinstitute.co"
+
+
+def build_follow_up_email(lead_data: Dict[str, Any]) -> str:
+    """
+    Build the automated follow-up email HTML.
+
+    Reuses the shared email_base layout (same TMS logo header, footer, styling)
+    with follow-up specific body content.
+
+    Args:
+        lead_data: Dict with keys:
+            - first_name (str): Patient's first name
+
+    Returns:
+        Fully rendered HTML string for the follow-up email.
+    """
+    first_name = lead_data.get("first_name", "").strip() or "there"
+
+    body_html = f"""
+{email_divider()}
+
+                    <!-- Greeting -->
+                    <tr>
+                        <td style="padding: 20px 30px 0 30px;">
+                            <h2 style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: bold; color: #1A1A1A; line-height: 1.3;">
+                                Hi {first_name},
+                            </h2>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                I hope this message finds you well. I wanted to follow up on your recent inquiry about TMS therapy.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                We understand that taking the first step toward treatment can feel overwhelming, and we're here to support you every step of the way.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                If you have any questions about TMS therapy or would like to schedule a consultation, please don't hesitate to reach out. You can call us at <a href="tel:4806683599" style="color: #1A1A1A; font-weight: bold; text-decoration: none;">(480) 668-3599</a>.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                We look forward to hearing from you.
+                            </p>
+                        </td>
+                    </tr>
+
+{email_divider()}
+
+                    <!-- Sign-off -->
+                    <tr>
+                        <td style="padding: 0 30px;">
+                            <p style="margin: 0 0 4px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                Warm regards,
+                            </p>
+                            <p style="margin: 0 0 4px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: bold; color: #1A1A1A; line-height: 1.6;">
+                                TMS Institute of Arizona
+                            </p>
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                <a href="tel:4806683599" style="color: #1A1A1A; font-weight: bold; text-decoration: none;">(480) 668-3599</a>
+                            </p>
+                        </td>
+                    </tr>
+"""
+
+    return wrap_in_email_layout(
+        title="Following Up on Your TMS Therapy Inquiry",
+        body_html=body_html,
+    )
+
+
+def send_follow_up_email(lead_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build and send the automated follow-up email.
+
+    Args:
+        lead_data: Dict with keys:
+            - first_name (str): Patient's first name
+            - email (str): Patient's email address
+            - lead_id (str, optional): For logging
+
+    Returns:
+        Dict with:
+            - success (bool)
+            - provider (str): "paubox" or "smtp"
+            - error (str, optional): Error message if failed
+    """
+    email = lead_data.get("email", "")
+    first_name = lead_data.get("first_name", "")
+    lead_id = lead_data.get("lead_id", "unknown")
+
+    if not email:
+        logger.warning(
+            f"Cannot send follow-up email — no email address for lead {lead_id}"
+        )
+        return {"success": False, "error": "No email address provided"}
+
+    # Build the HTML
+    html_content = build_follow_up_email(lead_data)
+
+    # Build plain-text fallback
+    text_content = f"""Hi {first_name or 'there'},
+
+I hope this message finds you well. I wanted to follow up on your recent inquiry about TMS therapy.
+
+We understand that taking the first step toward treatment can feel overwhelming, and we're here to support you every step of the way.
+
+If you have any questions about TMS therapy or would like to schedule a consultation, please don't hesitate to reach out. You can call us at (480) 668-3599.
+
+We look forward to hearing from you.
+
+Warm regards,
+TMS Institute of Arizona
+(480) 668-3599
+
+---
+TMS Institute of Arizona
+5150 N 16th St, Suite A-114, Phoenix, AZ 85016
+(480) 668-3599 | support@tmsinstitute.co | tmsinstitute.co
+
+This email contains protected health information (PHI). Your privacy is protected under HIPAA.
+© 2026 TMS Institute of Arizona. All rights reserved."""
+
+    try:
+        from .paubox_email_service import send_email_via_paubox
+
+        result = send_email_via_paubox(
+            to_email=email,
+            subject=FOLLOW_UP_EMAIL_SUBJECT,
+            html_content=html_content,
+            text_content=text_content,
+            lead_id=lead_data.get("lead_id"),
+        )
+
+        if result.get("success"):
+            logger.info(
+                f"Follow-up email sent to {email[:3]}***@{email.split('@')[-1] if '@' in email else '***'} "
+                f"via {result.get('provider', 'unknown')} for lead {lead_id}"
+            )
+        else:
+            logger.error(
+                f"Failed to send follow-up email for lead {lead_id}: "
+                f"{result.get('error', 'unknown error')}"
+            )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Exception sending follow-up email for {lead_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# =============================================================================
+# Unified Sending Function (Lead Confirmation)
 # =============================================================================
 
 EMAIL_SUBJECT = "We've Received Your Request \u2014 TMS Institute of Arizona"

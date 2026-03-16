@@ -248,7 +248,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="text"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="Jane"
+                      placeholder=""
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
                       autoFocus
                       required
@@ -262,7 +262,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="text"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Doe"
+                      placeholder=""
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
                     />
                   </div>
@@ -278,7 +278,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="jane@example.com"
+                      placeholder=""
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
                     />
                   </div>
@@ -290,7 +290,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="tel"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      placeholder="(480) 555-0123"
+                      placeholder=""
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
                     />
                   </div>
@@ -342,7 +342,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="text"
                       value={conditionOther}
                       onChange={(e) => setConditionOther(e.target.value)}
-                      placeholder="Describe condition..."
+                      placeholder=""
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
                     />
                   </div>
@@ -375,7 +375,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="text"
                       value={insuranceProvider}
                       onChange={(e) => setInsuranceProvider(e.target.value)}
-                      placeholder="e.g. Aetna"
+                      placeholder=""
                       disabled={!hasInsurance}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors disabled:bg-gray-50 disabled:text-gray-400"
                     />
@@ -388,7 +388,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                       type="text"
                       value={zipCode}
                       onChange={(e) => setZipCode(e.target.value)}
-                      placeholder="85001"
+                      placeholder=""
                       maxLength={10}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
                     />
@@ -403,7 +403,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Any additional context (e.g., referral source, call notes)..."
+                    placeholder=""
                     rows={2}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors resize-none"
                   />
