@@ -214,6 +214,8 @@ class SMSService:
 SMS_TEMPLATES = {
     "lead_receipt": """Hi {first_name}! Thank you for your interest in TMS therapy. We've received your consultation request (Ref: {lead_number}). A care coordinator will personally reach out to you within {response_time}. Questions? Call us at {phone_number} - TMS Institute of Arizona""",
 
+    "follow_up": """Hi {first_name}, this is TMS Institute of Arizona following up on your inquiry. We'd love to answer any questions about TMS therapy. Call us at (480) 668-3599""",
+
 }
 
 

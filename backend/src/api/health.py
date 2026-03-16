@@ -280,3 +280,42 @@ async def invalidate_all_caches() -> Dict[str, Any]:
         "message": "All caches have been invalidated",
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@router.post(
+    "/api/admin/test-follow-up",
+    summary="Test Follow-Up Send",
+    description="Trigger a test follow-up SMS + email to the most recent eligible lead (admin only).",
+    dependencies=[Depends(require_role("administrator"))],
+)
+async def test_follow_up(lead_id: str = None) -> Dict[str, Any]:
+    """
+    Trigger a single test follow-up send to verify SMS and email templates.
+    
+    If lead_id is provided, sends to that specific lead.
+    Otherwise picks the most recent non-scheduled, non-deleted lead.
+    
+    Args:
+        lead_id: Optional UUID of a specific lead to send to
+    
+    Returns:
+        Dict with test results (email provider, SMS SID, etc.)
+    """
+    try:
+        from ..tasks.lead_tasks import send_test_follow_up
+        
+        # Run synchronously for immediate feedback (not via Celery delay)
+        result = send_test_follow_up(lead_id=lead_id)
+        
+        return {
+            "status": "completed",
+            "result": result,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Test follow-up failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat(),
+        }

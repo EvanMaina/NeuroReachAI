@@ -128,6 +128,12 @@ _conf = dict(
                 hour=14, minute=0,  # 14:00 UTC = 7:00 AM MST (UTC-7)
             ),
         },
+        "automated-follow-ups-every-6h": {
+            "task": "src.tasks.lead_tasks.send_automated_follow_ups",
+            "schedule": __import__("celery.schedules", fromlist=["crontab"]).crontab(
+                hour="1,7,13,19", minute=0,  # Every 6 hours: 1:00, 7:00, 13:00, 19:00 UTC
+            ),
+        },
     },
 )
 

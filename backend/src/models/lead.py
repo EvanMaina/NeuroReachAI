@@ -346,6 +346,9 @@ class Lead(Base):
     follow_up_reason = Column(String(100), nullable=True)  # e.g., "No Answer", "Not Interested", "No Show"
     follow_up_date = Column(DateTime(timezone=True), nullable=True)  # When to follow up
     
+    # Automated follow-up tracking (6-hour SMS + email cycle)
+    last_follow_up_sent_at = Column(DateTime(timezone=True), nullable=True)
+    
     # ==========================================================================
     # Referral Information
     # ==========================================================================
