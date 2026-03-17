@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { 
+import {
   Bell, BellOff, Volume2, VolumeX,
   Flame, Users, Calendar, Clock, CheckCircle2,
   X, ChevronRight, PlusCircle, MessageCircle, Target
@@ -45,6 +45,7 @@ const QUEUE_CONFIG: Record<string, { title: string; subtitle: string; color: str
   'scheduled': { title: 'Scheduled Consultations', subtitle: 'Consultation booked - Ready for appointment', color: 'text-green-600', bgColor: 'bg-green-50' },
   'completed': { title: 'Completed Leads', subtitle: 'Consultation complete or treatment started', color: 'text-teal-600', bgColor: 'bg-teal-50' },
   'unreachable': { title: 'Unreachable Leads', subtitle: 'Unable to contact - Needs review', color: 'text-slate-600', bgColor: 'bg-slate-50' },
+  'not_interested': { title: 'Not Interested', subtitle: 'Lead declined — Auto follow-up every 3 weeks', color: 'text-orange-600', bgColor: 'bg-orange-50' },
   // Priority Queues (Cross-cutting views)
   'hot': { title: 'Hot Priority Leads', subtitle: 'Urgent - Contact within 1 hour', color: 'text-red-600', bgColor: 'bg-red-50' },
   'medium': { title: 'Medium Priority Leads', subtitle: 'Standard - Contact within 24 hours', color: 'text-amber-600', bgColor: 'bg-amber-50' },
@@ -58,51 +59,55 @@ interface CoordinatorDashboardProps {
 export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queueType = 'all' }) => {
   const { hasPermission } = useAuth();
   const [currentPage, setCurrentPage] = useState('coordinator');
-  
+
   // =========================================================================
   // GLOBAL STATE: Use React Query hook for data persistence across navigation
   // This prevents data loss when switching between queues/pages
   // =========================================================================
-  const { 
-    leads, 
-    isLoading: isLeadsLoading, 
+  const {
+    leads,
+    isLoading: isLeadsLoading,
     error: leadsError,
     dataUpdatedAt,
     refresh: refreshLeads,
     updateStatus: updateLeadStatus,
   } = useLeads({ autoRefresh: true, refetchInterval: 30000 });
-  
+
   // Dashboard summary hook - also globally cached
   const { summary: dashboardSummaryData } = useDashboardSummary();
-  
+
   // Queue summary hook — server-side counts, Redis-cached 10s, resolves analytics/coordinator mismatch
   const { summary: queueSummary } = useQueueSummary();
-  
+
   // Local UI states (not data)
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lastRefresh = new Date(dataUpdatedAt || Date.now());
   const isLoading = isLeadsLoading && leads.length === 0;
-  
+
   // Convert queueType prop to QueueType
-  const activeQueue: QueueType = (queueType === 'followup' ? 'follow_up' : queueType) as QueueType;
+  const activeQueue: QueueType = (
+    queueType === 'followup' ? 'follow_up'
+      : queueType === 'not-interested' ? 'not_interested'
+        : queueType
+  ) as QueueType;
   const queueConfig = QUEUE_CONFIG[activeQueue] || QUEUE_CONFIG['all'];
-  
+
   // Detail panel state
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  
+
   // Quick Action Panel state (for rapid outcome recording - priority leads)
   const [quickActionLead, setQuickActionLead] = useState<LeadTableRow | null>(null);
   const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
-  
+
   // Consultation Panel state (for scheduled leads)
   const [consultationLead, setConsultationLead] = useState<LeadTableRow | null>(null);
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
-  
+
   // Notification panel state
   const [isNotificationPanelOpen, setIsNotificationPanelOpen] = useState(false);
-  
+
   // Schedule modal state
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [scheduleLeadInfo, setScheduleLeadInfo] = useState<{
@@ -112,12 +117,12 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     priority?: 'hot' | 'medium' | 'low';
     scheduleType?: 'callback' | 'consultation';
   } | null>(null);
-  
+
   // Edit modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editLead, setEditLead] = useState<Lead | null>(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(false);
-  
+
   // Delete dialog state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteLeadInfo, setDeleteLeadInfo] = useState<{
@@ -125,10 +130,10 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     name: string;
   } | null>(null);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string | null>(null);
-  
+
   // Manual Lead modal state (Task 4 — "Add Lead" button in New Leads queue only)
   const [isManualLeadModalOpen, setIsManualLeadModalOpen] = useState(false);
-  
+
   // =========================================================================
   // GLOBAL TOAST SYSTEM — Listens for CustomEvent('neuroreach:toast')
   // Dispatched by ConsultationPanel, QuickActionPanel, and other components.
@@ -174,16 +179,16 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
    * METRICS CALCULATION UTILITIES
    * These calculate accurate metrics from local data for consistency with table counts.
    */
-  
+
   // Helper: Check if a date is today
   const isToday = (dateString: string): boolean => {
     const date = new Date(dateString);
     const today = new Date();
     return date.getFullYear() === today.getFullYear() &&
-           date.getMonth() === today.getMonth() &&
-           date.getDate() === today.getDate();
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate();
   };
-  
+
   // Helper: Calculate Answer Rate for a set of leads.
   // Answer Rate = ANSWERED / (Leads with any contact attempt) × 100%
   //
@@ -203,33 +208,33 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
       ? Math.round((answeredContacts.length / withContactAttempt.length) * 100)
       : 0;
   };
-  
+
   // Helper: Calculate Conversion Rate for a set of leads (QUEUE-AWARE)
   // - For Scheduled queue: % that completed consultation (COMPLETED / total)
   // - For Completed queue: always 100% (they already converted)
   // - For other queues: % that reached SCHEDULED status
   const calculateConversionRate = (leadsSet: LeadTableRow[], queue?: string): number => {
     if (leadsSet.length === 0) return 0;
-    
+
     if (queue === 'scheduled') {
       // For Scheduled queue: show % that completed their consultation
-      const completedLeads = leadsSet.filter(l => 
+      const completedLeads = leadsSet.filter(l =>
         l.status === 'consultation complete' || l.status === 'treatment started'
       );
       return Math.round((completedLeads.length / leadsSet.length) * 100);
     }
-    
+
     if (queue === 'completed') {
       return 100; // All leads here have already converted
     }
-    
+
     // For all other queues: % that reached scheduled/complete/treatment
-    const scheduledLeads = leadsSet.filter(l => 
+    const scheduledLeads = leadsSet.filter(l =>
       l.status === 'scheduled' || l.status === 'consultation complete' || l.status === 'treatment started'
     );
     return Math.round((scheduledLeads.length / leadsSet.length) * 100);
   };
-  
+
   // Helper: Count leads added to THIS queue today
   // - For 'new' queue: use submittedAt (creation date) — these ARE new leads
   // - For all other queues: use lastUpdatedAt (when the lead was last modified,
@@ -248,7 +253,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     () => filterLeadsByQueue(leads, activeQueue),
     [leads, activeQueue]
   );
-  
+
   // Calculate queue-specific metrics from local data (pass activeQueue for queue-aware logic)
   // inQueue: prefer server-side count (accurate across all 1000+ leads) with local count as fallback
   const queueLocalMetrics = {
@@ -257,10 +262,10 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     responseRate: calculateResponseRate(filteredQueueLeads),
     conversionRate: calculateConversionRate(filteredQueueLeads, activeQueue),
   };
-  
+
   // Calculate global stats (for 'all' queue view)
   const globalResponseRate = calculateResponseRate(leads);
-  
+
   const stats = {
     hotLeads: leads.filter(l => l.priority === 'hot' && l.status !== 'scheduled' && l.status !== 'consultation complete').length,
     totalNew: leads.filter(l => l.contactOutcome === 'NEW' || !l.contactOutcome).length,
@@ -304,7 +309,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     setQuickActionLead(null);
     setIsLoadingDetail(true);
     setIsDetailOpen(true);
-    
+
     try {
       const response = await getLeadById(id);
       const leadData = mapApiResponseToLead(response as unknown as Record<string, unknown>, id);
@@ -366,7 +371,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
   const handleEditLead = useCallback(async (leadId: string) => {
     setIsLoadingEdit(true);
     setIsEditModalOpen(true);
-    
+
     try {
       const response = await getLeadById(leadId);
       const leadData = mapApiResponseToLead(response as unknown as Record<string, unknown>, leadId);
@@ -399,18 +404,18 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
   // Handle delete confirmation — separated delete from refresh to prevent false "Failed" errors
   const handleConfirmDelete = useCallback(async () => {
     if (!deleteLeadInfo) return;
-    
+
     // Step 1: Delete the lead (this is the critical operation)
     const result = await deleteLead(deleteLeadInfo.id);
-    
+
     // Step 2: Close dialog immediately on success (don't wait for refresh)
     setIsDeleteDialogOpen(false);
     setDeleteLeadInfo(null);
-    
+
     // Step 3: Show success toast
     setDeleteSuccessMessage(result.message || `Lead deleted successfully.`);
     setTimeout(() => setDeleteSuccessMessage(null), 4000);
-    
+
     // Step 4: Refresh leads list in background (errors here won't affect UX)
     try {
       await refreshLeads();
@@ -430,7 +435,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     return `${Math.floor(diffMins / 60)}h ago`;
@@ -450,8 +455,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
               {activeQueue === 'all' ? 'All Leads Dashboard' : 'Coordinator Dashboard'}
             </h1>
             <p className="text-gray-500 text-sm mt-1">
-              {activeQueue === 'all' 
-                ? 'View and manage all leads in the system' 
+              {activeQueue === 'all'
+                ? 'View and manage all leads in the system'
                 : 'Manage leads and track progress in real-time'}
             </p>
           </div>
@@ -461,7 +466,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             <span className="text-xs text-gray-400">
               Last updated: {formatTimeAgo(lastRefresh)}
             </span>
-            
+
             {/* Refresh button */}
             <RefreshButton
               onRefresh={handleRefresh}
@@ -473,9 +478,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             {/* Sound toggle */}
             <button
               onClick={toggleSound}
-              className={`p-2 rounded-lg transition-colors ${
-                soundEnabled ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:bg-gray-200'
-              }`}
+              className={`p-2 rounded-lg transition-colors ${soundEnabled ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:bg-gray-200'
+                }`}
               title={soundEnabled ? 'Mute notifications' : 'Enable sound'}
             >
               {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
@@ -484,9 +488,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             {/* Notification toggle */}
             <button
               onClick={toggleNotifications}
-              className={`p-2 rounded-lg transition-colors ${
-                notificationsEnabled ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:bg-gray-200'
-              }`}
+              className={`p-2 rounded-lg transition-colors ${notificationsEnabled ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:bg-gray-200'
+                }`}
               title={notificationsEnabled ? 'Disable notifications' : 'Enable notifications'}
             >
               {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
@@ -509,170 +512,170 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
 
         {/* Quick Stats — flex-shrink-0, fixed above table */}
         <div className="flex-shrink-0 px-6 pb-2 bg-gray-100">
-        {activeQueue !== 'all' ? (
-          // =====================================================================
-          // Queue-Specific Metrics Cards — World-Class Design
-          // Compact, accent-colored, premium SaaS feel (Stripe/Linear/Vercel style)
-          // =====================================================================
-          <div className="grid grid-cols-4 gap-4">
-            {/* In Queue — Indigo accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-indigo-500"
-              title={`${queueLocalMetrics.inQueue} leads currently in this queue`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                  <Users size={18} className="text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.inQueue}</p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">In Queue</p>
+          {activeQueue !== 'all' ? (
+            // =====================================================================
+            // Queue-Specific Metrics Cards — World-Class Design
+            // Compact, accent-colored, premium SaaS feel (Stripe/Linear/Vercel style)
+            // =====================================================================
+            <div className="grid grid-cols-4 gap-4">
+              {/* In Queue — Indigo accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-indigo-500"
+                title={`${queueLocalMetrics.inQueue} leads currently in this queue`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                    <Users size={18} className="text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.inQueue}</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">In Queue</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Added Today — Emerald accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-emerald-500"
-              title="Leads created today (by submission date)"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                  <PlusCircle size={18} className="text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.addedToday}</p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Added Today</p>
+              {/* Added Today — Emerald accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-emerald-500"
+                title="Leads created today (by submission date)"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                    <PlusCircle size={18} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.addedToday}</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Added Today</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Response Rate — Amber accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-amber-500"
-            title="Answer Rate = Leads answered (live voice) / Total with contact attempt in this queue × 100%"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                  <MessageCircle size={18} className="text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.responseRate}%</p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Response Rate</p>
+              {/* Response Rate — Amber accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-amber-500"
+                title="Answer Rate = Leads answered (live voice) / Total with contact attempt in this queue × 100%"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                    <MessageCircle size={18} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.responseRate}%</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Response Rate</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Conversion Rate — Violet accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-violet-500"
-              title="Conversion Rate = Leads that reached Scheduled status / Total in Queue × 100%"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
-                  <Target size={18} className="text-violet-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.conversionRate}%</p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Conversion Rate</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          // =====================================================================
-          // Global Stats (All Leads view) — World-Class Design
-          // Same premium card style with unique accent colors per metric
-          // =====================================================================
-          <div className="grid grid-cols-5 gap-3.5">
-            {/* Active Leads — Indigo accent (MATCHES TABLE COUNT) */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-indigo-500"
-              title="Active leads excluding completed/lost/disqualified — Matches table count"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                  <Users size={18} className="text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">
-                    {dashboardSummary ? dashboardSummary.active_leads : leads.length}
-                  </p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Leads</p>
+              {/* Conversion Rate — Violet accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-violet-500"
+                title="Conversion Rate = Leads that reached Scheduled status / Total in Queue × 100%"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+                    <Target size={18} className="text-violet-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">{queueLocalMetrics.conversionRate}%</p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Conversion Rate</p>
+                  </div>
                 </div>
               </div>
             </div>
+          ) : (
+            // =====================================================================
+            // Global Stats (All Leads view) — World-Class Design
+            // Same premium card style with unique accent colors per metric
+            // =====================================================================
+            <div className="grid grid-cols-5 gap-3.5">
+              {/* Active Leads — Indigo accent (MATCHES TABLE COUNT) */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-indigo-500"
+                title="Active leads excluding completed/lost/disqualified — Matches table count"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                    <Users size={18} className="text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">
+                      {dashboardSummary ? dashboardSummary.active_leads : leads.length}
+                    </p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Active Leads</p>
+                  </div>
+                </div>
+              </div>
 
-            {/* Hot Leads — Red/Rose accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-rose-500"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
-                  <Flame size={18} className="text-rose-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">
-                    {dashboardSummary ? dashboardSummary.hot_leads : stats.hotLeads}
-                  </p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Hot Leads</p>
+              {/* Hot Leads — Red/Rose accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-rose-500"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center flex-shrink-0">
+                    <Flame size={18} className="text-rose-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">
+                      {dashboardSummary ? dashboardSummary.hot_leads : stats.hotLeads}
+                    </p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Hot Leads</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* New Leads — Emerald accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-emerald-500"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                  <Clock size={18} className="text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">
-                    {dashboardSummary ? dashboardSummary.new_leads : stats.totalNew}
-                  </p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">New Leads</p>
+              {/* New Leads — Emerald accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-emerald-500"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                    <Clock size={18} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">
+                      {dashboardSummary ? dashboardSummary.new_leads : stats.totalNew}
+                    </p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">New Leads</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Response Rate — Amber accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-amber-500"
-              title="Answer Rate = Leads answered (live voice) / Total with contact attempt × 100%"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-                  <MessageCircle size={18} className="text-amber-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">
-                    {dashboardSummary ? dashboardSummary.overall_response_rate : stats.responseRate}%
-                  </p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Response Rate</p>
+              {/* Response Rate — Amber accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-amber-500"
+                title="Answer Rate = Leads answered (live voice) / Total with contact attempt × 100%"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+                    <MessageCircle size={18} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">
+                      {dashboardSummary ? dashboardSummary.overall_response_rate : stats.responseRate}%
+                    </p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Response Rate</p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Scheduled Today — Violet accent */}
-            <div
-              className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-violet-500"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
-                  <Calendar size={18} className="text-violet-600" />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-gray-900 leading-tight">
-                    {dashboardSummary ? dashboardSummary.scheduled_today : stats.scheduled}
-                  </p>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Scheduled Today</p>
+              {/* Scheduled Today — Violet accent */}
+              <div
+                className="bg-white rounded-xl px-4 py-3 border border-gray-200 shadow-sm border-l-[3.5px] border-l-violet-500"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+                    <Calendar size={18} className="text-violet-600" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-gray-900 leading-tight">
+                      {dashboardSummary ? dashboardSummary.scheduled_today : stats.scheduled}
+                    </p>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Scheduled Today</p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
 
         {/* Main Content Area — flex-1 fills remaining viewport, min-h-0 enables nested flex scroll */}
@@ -698,7 +701,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
               </button>
             )}
           </div>
-          
+
           {/* Clean Table View — flex-1 passes remaining space to LeadsTable */}
           <div className="flex-1 min-h-0 flex flex-col p-2 lg:p-3">
             <LeadsTable
@@ -721,11 +724,11 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
       {isNotificationPanelOpen && (
         <>
           {/* Backdrop */}
-          <div 
+          <div
             className="fixed inset-0 bg-black/20 z-40"
             onClick={() => setIsNotificationPanelOpen(false)}
           />
-          
+
           {/* Panel */}
           <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-50 overflow-hidden flex flex-col">
             {/* Header */}
@@ -756,7 +759,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
                 </button>
               </div>
             </div>
-            
+
             {/* Notification List */}
             <div className="flex-1 overflow-y-auto">
               {notifications.length === 0 ? (

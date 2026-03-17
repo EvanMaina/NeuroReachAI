@@ -134,6 +134,13 @@ _conf = dict(
                 hour="1,7,13,19", minute=0,  # Every 6 hours: 1:00, 7:00, 13:00, 19:00 UTC
             ),
         },
+        "not-interested-follow-ups-every-21d": {
+            "task": "src.tasks.lead_tasks.send_not_interested_follow_ups",
+            "schedule": __import__("celery.schedules", fromlist=["crontab"]).crontab(
+                hour=15, minute=0,  # 15:00 UTC = 8:00 AM MST
+                day_of_week="monday",  # Run every Monday — ~3 week cadence managed by last_follow_up_sent_at
+            ),
+        },
     },
 )
 

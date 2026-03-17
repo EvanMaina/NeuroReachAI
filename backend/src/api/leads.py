@@ -261,6 +261,16 @@ def apply_queue_filter(query, queue_type: Optional[str]):
             ),
         )
 
+    if queue_type == "not_interested":
+        return query.filter(
+            Lead.status != LeadStatus.SCHEDULED,
+            Lead.status.notin_(TERMINAL),
+            or_(
+                Lead.contact_outcome == ContactOutcome.NOT_INTERESTED,
+                Lead.follow_up_reason == "Not Interested",
+            ),
+        )
+
     if queue_type == "hot":
         return query.filter(
             Lead.priority == PriorityType.HOT,
@@ -1478,7 +1488,8 @@ async def get_queue_summary(
 
     _QUEUE_TYPES = [
         "all", "new", "contacted", "follow_up", "callback",
-        "scheduled", "completed", "unreachable", "hot", "medium", "low",
+        "scheduled", "completed", "unreachable", "not_interested",
+        "hot", "medium", "low",
     ]
 
     try:

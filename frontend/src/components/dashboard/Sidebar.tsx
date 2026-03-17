@@ -57,54 +57,56 @@ const navigation: NavItem[] = [
     href: 'coordinator',
     icon: <Headphones size={20} />,
     children: [
-      { name: 'New Leads',    href: 'coordinator-new',         icon: <Inbox size={16} /> },
-      { name: 'Contacted',    href: 'coordinator-contacted',   icon: <UserCheck size={16} /> },
-      { name: 'Follow-up',    href: 'coordinator-followup',    icon: <RefreshCw size={16} /> },
-      { name: 'Callback',     href: 'coordinator-callback',    icon: <PhoneCall size={16} /> },
-      { name: 'Scheduled',    href: 'coordinator-scheduled',   icon: <Calendar size={16} /> },
-      { name: 'Completed',    href: 'coordinator-completed',   icon: <CheckCircle size={16} /> },
-      { name: 'Unreachable',  href: 'coordinator-unreachable', icon: <PhoneOff size={16} /> },
-      { name: 'Hot Priority', href: 'coordinator-hot',         icon: <Flame size={16} /> },
-      { name: 'Medium Priority', href: 'coordinator-medium',   icon: <Zap size={16} /> },
-      { name: 'Low Priority', href: 'coordinator-low',         icon: <Clock size={16} /> },
+      { name: 'New Leads', href: 'coordinator-new', icon: <Inbox size={16} /> },
+      { name: 'Contacted', href: 'coordinator-contacted', icon: <UserCheck size={16} /> },
+      { name: 'Follow-up', href: 'coordinator-followup', icon: <RefreshCw size={16} /> },
+      { name: 'Callback', href: 'coordinator-callback', icon: <PhoneCall size={16} /> },
+      { name: 'Scheduled', href: 'coordinator-scheduled', icon: <Calendar size={16} /> },
+      { name: 'Completed', href: 'coordinator-completed', icon: <CheckCircle size={16} /> },
+      { name: 'Unreachable', href: 'coordinator-unreachable', icon: <PhoneOff size={16} /> },
+      { name: 'Not Interested', href: 'coordinator-not-interested', icon: <PhoneOff size={16} /> },
+      { name: 'Hot Priority', href: 'coordinator-hot', icon: <Flame size={16} /> },
+      { name: 'Medium Priority', href: 'coordinator-medium', icon: <Zap size={16} /> },
+      { name: 'Low Priority', href: 'coordinator-low', icon: <Clock size={16} /> },
     ]
   },
-  { name: 'All Leads',  href: 'leads',      icon: <Users size={20} /> },
+  { name: 'All Leads', href: 'leads', icon: <Users size={20} /> },
   { name: 'Deleted Leads', href: 'deleted-leads', icon: <Trash2 size={20} />, allowedRoles: ['primary_admin', 'administrator'] },
-  { name: 'Providers',  href: 'providers',   icon: <Building2 size={20} /> },
-  { name: 'Analytics',  href: 'analytics',   icon: <BarChart3 size={20} />, allowedRoles: ['primary_admin', 'administrator', 'coordinator'] },
+  { name: 'Providers', href: 'providers', icon: <Building2 size={20} /> },
+  { name: 'Analytics', href: 'analytics', icon: <BarChart3 size={20} />, allowedRoles: ['primary_admin', 'administrator', 'coordinator'] },
   { name: 'Call Analytics', href: 'call-analytics', icon: <Phone size={20} />, allowedRoles: ['primary_admin', 'administrator', 'coordinator'] },
-  { name: 'Settings',   href: 'settings',    icon: <Settings size={20} />,  allowedRoles: ['primary_admin', 'administrator'] },
+  { name: 'Settings', href: 'settings', icon: <Settings size={20} />, allowedRoles: ['primary_admin', 'administrator'] },
 ];
 
 // Queue colour map (unchanged)
 const queueColors: Record<string, { text: string; bg: string; indicator: string }> = {
-  'coordinator-new':         { text: 'text-emerald-600', bg: 'bg-emerald-50', indicator: 'bg-emerald-500' },
-  'coordinator-contacted':   { text: 'text-blue-600',    bg: 'bg-blue-50',    indicator: 'bg-blue-500' },
-  'coordinator-followup':    { text: 'text-purple-600',  bg: 'bg-purple-50',  indicator: 'bg-purple-500' },
-  'coordinator-callback':    { text: 'text-indigo-600',  bg: 'bg-indigo-50',  indicator: 'bg-indigo-500' },
-  'coordinator-scheduled':   { text: 'text-green-600',   bg: 'bg-green-50',   indicator: 'bg-green-500' },
-  'coordinator-completed':   { text: 'text-teal-600',    bg: 'bg-teal-50',    indicator: 'bg-teal-500' },
-  'coordinator-unreachable': { text: 'text-slate-600',   bg: 'bg-slate-50',   indicator: 'bg-slate-500' },
-  'coordinator-hot':         { text: 'text-red-600',     bg: 'bg-red-50',     indicator: 'bg-red-500' },
-  'coordinator-medium':      { text: 'text-amber-600',   bg: 'bg-amber-50',   indicator: 'bg-amber-500' },
-  'coordinator-low':         { text: 'text-blue-600',    bg: 'bg-blue-50',    indicator: 'bg-blue-500' },
+  'coordinator-new': { text: 'text-emerald-600', bg: 'bg-emerald-50', indicator: 'bg-emerald-500' },
+  'coordinator-contacted': { text: 'text-blue-600', bg: 'bg-blue-50', indicator: 'bg-blue-500' },
+  'coordinator-followup': { text: 'text-purple-600', bg: 'bg-purple-50', indicator: 'bg-purple-500' },
+  'coordinator-callback': { text: 'text-indigo-600', bg: 'bg-indigo-50', indicator: 'bg-indigo-500' },
+  'coordinator-scheduled': { text: 'text-green-600', bg: 'bg-green-50', indicator: 'bg-green-500' },
+  'coordinator-completed': { text: 'text-teal-600', bg: 'bg-teal-50', indicator: 'bg-teal-500' },
+  'coordinator-unreachable': { text: 'text-slate-600', bg: 'bg-slate-50', indicator: 'bg-slate-500' },
+  'coordinator-not-interested': { text: 'text-orange-600', bg: 'bg-orange-50', indicator: 'bg-orange-500' },
+  'coordinator-hot': { text: 'text-red-600', bg: 'bg-red-50', indicator: 'bg-red-500' },
+  'coordinator-medium': { text: 'text-amber-600', bg: 'bg-amber-50', indicator: 'bg-amber-500' },
+  'coordinator-low': { text: 'text-blue-600', bg: 'bg-blue-50', indicator: 'bg-blue-500' },
 };
 
 // Role badge colours for the user profile section
 const roleBadgeStyle: Record<string, string> = {
   primary_admin: 'bg-red-100 text-red-700',
   administrator: 'bg-purple-100 text-purple-700',
-  coordinator:   'bg-blue-100 text-blue-700',
-  specialist:    'bg-emerald-100 text-emerald-700',
+  coordinator: 'bg-blue-100 text-blue-700',
+  specialist: 'bg-emerald-100 text-emerald-700',
 };
 
 // Human-readable role labels (no underscores, proper capitalization)
 const roleDisplayLabels: Record<string, string> = {
   primary_admin: 'Primary Admin',
   administrator: 'Administrator',
-  coordinator:   'Coordinator',
-  specialist:    'Specialist',
+  coordinator: 'Coordinator',
+  specialist: 'Specialist',
 };
 
 /**
@@ -173,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
     const hasChildren = item.children && item.children.length > 0;
     const isExpanded = expandedMenus.includes(item.href.split('-')[0]);
     const isActive = activePage === item.href ||
-                     (hasChildren && item.children?.some(c => activePage === c.href));
+      (hasChildren && item.children?.some(c => activePage === c.href));
     const isChildActive = activePage === item.href;
     const colors = queueColors[item.href];
 
@@ -203,11 +205,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
             </span>
           </button>
 
-          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}>
-            <div className="ml-4 pl-3 mt-1 space-y-0.5 border-l-2 border-gray-100">
+          {isExpanded && (
+            <div className="ml-4 pl-3 mt-1 space-y-0 border-l-2 border-gray-100">
               {item.children?.map(child => renderNavItem(child, true))}
             </div>
-          </div>
+          )}
         </div>
       );
     }
@@ -219,7 +221,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
           key={item.name}
           onClick={() => handleNavigation(item.href)}
           className={`
-            w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm
+            w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm
             transition-colors duration-150 text-left
             ${isChildActive
               ? `${colors?.bg || 'bg-blue-50'} ${colors?.text || 'text-blue-900'} font-medium`
@@ -272,15 +274,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      {/* Navigation — min-h-0 is critical: flex items default to min-height:auto
+          which prevents them from shrinking below content size, breaking overflow scroll */}
+      <nav className="flex-1 min-h-0 px-3 py-4 space-y-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
         {filteredNav.map((item) => renderNavItem(item))}
       </nav>
 
       {/* User profile + logout */}
-      <div className="border-t border-gray-200 p-4 flex-shrink-0">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+      <div className="border-t border-gray-200 p-3 flex-shrink-0">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
             <User size={20} className="text-blue-600" />
           </div>
           <div className="flex-1 min-w-0">

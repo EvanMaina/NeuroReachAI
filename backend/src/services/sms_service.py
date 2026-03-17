@@ -216,6 +216,8 @@ SMS_TEMPLATES = {
 
     "follow_up": """Hi {first_name}, this is TMS Institute of Arizona following up on your inquiry. We'd love to answer any questions about TMS therapy. Call us at (480) 668-3599""",
 
+    "not_interested_follow_up": """Hi {first_name}, it's TMS Institute of Arizona. We just wanted to check in — if anything has changed or you have questions about TMS therapy, we're here for you. No pressure at all. Call us anytime at (480) 668-3599""",
+
 }
 
 

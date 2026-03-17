@@ -1006,6 +1006,153 @@ def send_test_follow_up(self, lead_id: Optional[str] = None) -> Dict[str, Any]:
 
 
 # =============================================================================
+# Automated Not-Interested Follow-Up System (SMS + Email every 3 weeks)
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_not_interested_follow_ups(self) -> Dict[str, Any]:
+    """
+    Automated follow-up for leads marked "Not Interested".
+
+    Sends a softer SMS + email every 3 weeks (21 days) to re-engage
+    leads who initially declined. Uses separate, warmer messaging
+    templates distinct from the standard 6-hour follow-up cadence.
+
+    Eligibility rules:
+    - contact_outcome == NOT_INTERESTED
+    - Lead is NOT soft-deleted (deleted_at IS NULL)
+    - Lead is NOT in SCHEDULED status (if they scheduled, stop follow-ups)
+    - last_follow_up_sent_at is NULL (never sent) OR > 21 days ago
+
+    Follow-ups STOP automatically when:
+    - Lead's contact_outcome changes away from NOT_INTERESTED
+    - Lead gets scheduled (status = SCHEDULED)
+    - Lead is soft-deleted
+
+    Returns:
+        Dict with follow-up stats
+    """
+    from ..services.email_templates import send_not_interested_follow_up_email
+    from ..services.sms_service import sms_service
+    from ..services.encryption import EncryptionService
+    from ..models.lead import ContactOutcome
+
+    db = get_db_session()
+
+    try:
+        now = datetime.now(timezone.utc)
+        twenty_one_days_ago = now - timedelta(days=21)
+
+        # Query eligible "Not Interested" leads
+        eligible_leads = (
+            db.query(Lead)
+            .filter(
+                Lead.contact_outcome == ContactOutcome.NOT_INTERESTED,
+                Lead.deleted_at.is_(None),
+                Lead.status != LeadStatus.SCHEDULED,
+            )
+            .filter(
+                (Lead.last_follow_up_sent_at.is_(None)) |
+                (Lead.last_follow_up_sent_at <= twenty_one_days_ago)
+            )
+            .all()
+        )
+
+        total = len(eligible_leads)
+        sent_email = 0
+        sent_sms = 0
+        skipped = 0
+        errors = []
+
+        logger.info(f"Not-interested follow-up: found {total} eligible leads")
+
+        for lead in eligible_leads:
+            lead_id = str(lead.id)
+            try:
+                # Double-check: if contact_outcome changed since query, skip
+                if lead.contact_outcome != ContactOutcome.NOT_INTERESTED:
+                    skipped += 1
+                    continue
+
+                # Decrypt PHI for sending
+                decrypted = EncryptionService.decrypt_lead_phi(lead)
+                first_name = decrypted.get("first_name", "")
+                email = decrypted.get("email", "")
+                phone = decrypted.get("phone", "")
+
+                # Send softer not-interested follow-up email
+                if email:
+                    email_result = send_not_interested_follow_up_email({
+                        "first_name": first_name,
+                        "email": email,
+                        "lead_id": lead_id,
+                    })
+                    if email_result.get("success"):
+                        sent_email += 1
+                    else:
+                        errors.append({
+                            "lead_id": lead_id,
+                            "type": "email",
+                            "error": email_result.get("error", "unknown"),
+                        })
+
+                # Send softer not-interested follow-up SMS
+                if phone:
+                    sms_content = sms_service.render_template("not_interested_follow_up", {
+                        "first_name": first_name,
+                    })
+                    sms_result = sms_service.send_sms(
+                        to_number=phone,
+                        message=sms_content,
+                    )
+                    if sms_result.get("success"):
+                        sent_sms += 1
+                    else:
+                        errors.append({
+                            "lead_id": lead_id,
+                            "type": "sms",
+                            "error": sms_result.get("error", "unknown"),
+                        })
+
+                # Update last_follow_up_sent_at to prevent duplicates
+                lead.last_follow_up_sent_at = now
+                db.commit()
+
+            except Exception as e:
+                logger.error(f"Not-interested follow-up failed for lead {lead_id}: {e}")
+                errors.append({"lead_id": lead_id, "type": "both", "error": str(e)})
+                db.rollback()
+
+        logger.info(
+            f"Not-interested follow-up complete: {total} eligible, "
+            f"{sent_email} emails sent, {sent_sms} SMS sent, "
+            f"{skipped} skipped (outcome changed), {len(errors)} errors"
+        )
+
+        return {
+            "status": "success",
+            "eligible_leads": total,
+            "emails_sent": sent_email,
+            "sms_sent": sent_sms,
+            "skipped": skipped,
+            "errors": errors[:10],
+            "error_count": len(errors),
+        }
+
+    except Exception as e:
+        logger.error(f"Not-interested follow-up task failed: {e}")
+        raise
+
+    finally:
+        db.close()
+
+
+# =============================================================================
 # Platform Analytics Tasks
 # =============================================================================
 
