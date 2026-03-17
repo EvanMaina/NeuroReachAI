@@ -311,6 +311,166 @@ This email contains protected health information (PHI). Your privacy is protecte
 
 
 # =============================================================================
+# Not Interested Follow-Up Email Builder (Softer Tone — 3-Week Cadence)
+# =============================================================================
+
+NOT_INTERESTED_FOLLOW_UP_EMAIL_SUBJECT = "Checking In — TMS Institute of Arizona"
+NOT_INTERESTED_FOLLOW_UP_EMAIL_FROM = "support@tmsinstitute.co"
+
+
+def build_not_interested_follow_up_email(lead_data: Dict[str, Any]) -> str:
+    """
+    Build the softer "not interested" follow-up email HTML.
+
+    Used for leads who declined initially — sent every 3 weeks.
+    Tone is warm, no-pressure, and inviting without being pushy.
+
+    Args:
+        lead_data: Dict with keys:
+            - first_name (str): Patient's first name
+
+    Returns:
+        Fully rendered HTML string for the not-interested follow-up email.
+    """
+    first_name = lead_data.get("first_name", "").strip() or "there"
+
+    body_html = f"""
+{email_divider()}
+
+                    <!-- Greeting -->
+                    <tr>
+                        <td style="padding: 20px 30px 0 30px;">
+                            <h2 style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: bold; color: #1A1A1A; line-height: 1.3;">
+                                Hi {first_name},
+                            </h2>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                We just wanted to check in and see how you're doing. We completely understand that TMS therapy may not have felt right for you at the time &mdash; and that's perfectly okay.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                If anything has changed, or if you simply have questions about how TMS works, we're always here to help &mdash; no pressure at all.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 16px 30px 0 30px;">
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                You can reach us anytime at <a href="tel:4806683599" style="color: #1A1A1A; font-weight: bold; text-decoration: none;">(480) 668-3599</a>. We'd love to hear from you whenever you're ready.
+                            </p>
+                        </td>
+                    </tr>
+
+{email_divider()}
+
+                    <!-- Sign-off -->
+                    <tr>
+                        <td style="padding: 0 30px;">
+                            <p style="margin: 0 0 4px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                Wishing you well,
+                            </p>
+                            <p style="margin: 0 0 4px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: bold; color: #1A1A1A; line-height: 1.6;">
+                                TMS Institute of Arizona
+                            </p>
+                            <p style="margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; color: #444444; line-height: 1.6;">
+                                <a href="tel:4806683599" style="color: #1A1A1A; font-weight: bold; text-decoration: none;">(480) 668-3599</a>
+                            </p>
+                        </td>
+                    </tr>
+"""
+
+    return wrap_in_email_layout(
+        title="Checking In — TMS Institute of Arizona",
+        body_html=body_html,
+    )
+
+
+def send_not_interested_follow_up_email(lead_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build and send the softer not-interested follow-up email.
+
+    Args:
+        lead_data: Dict with keys:
+            - first_name (str): Patient's first name
+            - email (str): Patient's email address
+            - lead_id (str, optional): For logging
+
+    Returns:
+        Dict with:
+            - success (bool)
+            - provider (str): "paubox" or "smtp"
+            - error (str, optional): Error message if failed
+    """
+    email = lead_data.get("email", "")
+    first_name = lead_data.get("first_name", "")
+    lead_id = lead_data.get("lead_id", "unknown")
+
+    if not email:
+        logger.warning(
+            f"Cannot send not-interested follow-up email — no email address for lead {lead_id}"
+        )
+        return {"success": False, "error": "No email address provided"}
+
+    # Build the HTML
+    html_content = build_not_interested_follow_up_email(lead_data)
+
+    # Build plain-text fallback
+    text_content = f"""Hi {first_name or 'there'},
+
+We just wanted to check in and see how you're doing. We completely understand that TMS therapy may not have felt right for you at the time — and that's perfectly okay.
+
+If anything has changed, or if you simply have questions about how TMS works, we're always here to help — no pressure at all.
+
+You can reach us anytime at (480) 668-3599. We'd love to hear from you whenever you're ready.
+
+Wishing you well,
+TMS Institute of Arizona
+(480) 668-3599
+
+---
+TMS Institute of Arizona
+5150 N 16th St, Suite A-114, Phoenix, AZ 85016
+(480) 668-3599 | support@tmsinstitute.co | tmsinstitute.co
+
+This email contains protected health information (PHI). Your privacy is protected under HIPAA.
+© 2026 TMS Institute of Arizona. All rights reserved."""
+
+    try:
+        from .paubox_email_service import send_email_via_paubox
+
+        result = send_email_via_paubox(
+            to_email=email,
+            subject=NOT_INTERESTED_FOLLOW_UP_EMAIL_SUBJECT,
+            html_content=html_content,
+            text_content=text_content,
+            lead_id=lead_data.get("lead_id"),
+        )
+
+        if result.get("success"):
+            logger.info(
+                f"Not-interested follow-up email sent to {email[:3]}***@{email.split('@')[-1] if '@' in email else '***'} "
+                f"via {result.get('provider', 'unknown')} for lead {lead_id}"
+            )
+        else:
+            logger.error(
+                f"Failed to send not-interested follow-up email for lead {lead_id}: "
+                f"{result.get('error', 'unknown error')}"
+            )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Exception sending not-interested follow-up email for {lead_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# =============================================================================
 # Unified Sending Function (Lead Confirmation)
 # =============================================================================
 

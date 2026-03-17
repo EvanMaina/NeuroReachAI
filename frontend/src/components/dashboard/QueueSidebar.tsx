@@ -39,20 +39,22 @@ import {
   UserCheck,
   PhoneOff,
   Inbox,
+  ThumbsDown,
 } from 'lucide-react';
 import type { LeadTableRow } from '../../types/lead';
 
-export type QueueType = 
+export type QueueType =
   | 'all'
   | 'new'
   | 'contacted'
-  | 'follow_up' 
-  | 'callback' 
+  | 'follow_up'
+  | 'callback'
   | 'scheduled'
   | 'completed'
   | 'unreachable'
-  | 'hot' 
-  | 'medium' 
+  | 'not_interested'
+  | 'hot'
+  | 'medium'
   | 'low';
 
 interface QueueConfig {
@@ -158,6 +160,16 @@ const QUEUE_CONFIG: QueueConfig[] = [
     description: 'Unable to contact - Needs review',
     category: 'outcome',
   },
+  {
+    id: 'not_interested',
+    label: 'Not Interested',
+    icon: <ThumbsDown size={18} />,
+    color: 'text-orange-600',
+    bgColor: 'bg-orange-50',
+    borderColor: 'border-orange-200',
+    description: 'Declined — Auto follow-up every 3 weeks',
+    category: 'outcome',
+  },
   // Priority Queues (Cross-cutting view by urgency)
   {
     id: 'hot',
@@ -251,50 +263,51 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
     scheduled: 0,
     completed: 0,
     unreachable: 0,
+    not_interested: 0,
     hot: 0,
     medium: 0,
     low: 0,
   };
 
   // Filter out lost/disqualified leads for active queues
-  const nonLostLeads = leads.filter(l => 
+  const nonLostLeads = leads.filter(l =>
     !['lost', 'disqualified'].includes(l.status)
   );
 
   // Active leads (not completed/lost) - for most queues
-  const activeLeads = nonLostLeads.filter(l => 
+  const activeLeads = nonLostLeads.filter(l =>
     !['consultation complete', 'treatment started'].includes(l.status)
   );
 
   counts.all = activeLeads.length;
 
   // Count completed leads separately
-  counts.completed = nonLostLeads.filter(l => 
+  counts.completed = nonLostLeads.filter(l =>
     ['consultation complete', 'treatment started'].includes(l.status)
   ).length;
 
   activeLeads.forEach(lead => {
     const outcome = lead.contactOutcome || 'NEW';
-    
+
     // SCHEDULED: Takes priority - if scheduled, count in scheduled queue
     if (lead.status === 'scheduled') {
       counts.scheduled++;
       // Note: scheduled leads are NOT counted in contacted/follow-up queues
       // They've moved past that stage
-      
+
       // But still count in priority queues
       if (lead.priority === 'hot') counts.hot++;
       else if (lead.priority === 'medium') counts.medium++;
       else if (lead.priority === 'low') counts.low++;
       return;
     }
-    
+
     // NEW: TRULY never contacted (contactOutcome='NEW' or null)
     // Lead must have status='new' AND no contact attempt recorded
     if (lead.status === 'new' && (outcome === 'NEW' || !lead.contactOutcome)) {
       counts.new++;
     }
-    
+
     // CONTACTED: ANY contact attempt was made (INCLUSIVE)
     // This now includes ALL leads with any outcome except 'NEW'
     // Leads with NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED, ANSWERED, NOT_INTERESTED all appear here
@@ -302,23 +315,28 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
     if (CONTACTED_OUTCOMES.includes(outcome) || lead.status === 'contacted') {
       counts.contacted++;
     }
-    
+
     // FOLLOW-UP: Needs another contact attempt (OVERLAPPING with Contacted)
     // Includes: contactOutcome in [NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED]
     // OR follow_up_reason in [No Show, Cancelled Appointment, Second Consult Required, etc.]
     if (FOLLOWUP_OUTCOMES.includes(outcome) || (lead.followUpReason && FOLLOWUP_REASONS.includes(lead.followUpReason))) {
       counts.follow_up++;
     }
-    
+
     // CALLBACK: Subset - Lead requested specific callback time
     // Also matches follow_up_reason = 'Callback Requested'
     if (outcome === 'CALLBACK_REQUESTED' || lead.followUpReason === 'Callback Requested') {
       counts.callback++;
     }
-    
+
     // UNREACHABLE: Subset view - UNREACHABLE outcomes or follow_up_reason
     if (outcome === 'UNREACHABLE' || lead.followUpReason === 'Unreachable') {
       counts.unreachable++;
+    }
+
+    // NOT INTERESTED: contactOutcome = NOT_INTERESTED or follow_up_reason = "Not Interested"
+    if (outcome === 'NOT_INTERESTED' || lead.followUpReason === 'Not Interested') {
+      counts.not_interested++;
     }
 
     // Priority queues - cross-cutting views by urgency level
@@ -336,7 +354,7 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
  */
 const getUrgencyIndicator = (count: number): React.ReactNode => {
   if (count === 0) return null;
-  
+
   return (
     <span className="relative flex h-2 w-2">
       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -372,8 +390,8 @@ export const QueueSidebar: React.FC<QueueSidebarProps> = ({
         className={`
           w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
           transition-all duration-200 group
-          ${isActive 
-            ? `${queue.bgColor} ${queue.borderColor} border ${queue.color}` 
+          ${isActive
+            ? `${queue.bgColor} ${queue.borderColor} border ${queue.color}`
             : 'hover:bg-gray-50 text-gray-600 hover:text-gray-900'
           }
         `}
@@ -407,10 +425,10 @@ export const QueueSidebar: React.FC<QueueSidebarProps> = ({
             <div className={`
               flex-shrink-0 min-w-[28px] h-6 px-2 rounded-full
               flex items-center justify-center text-xs font-semibold
-              ${isActive 
-                ? `${queue.color} bg-white` 
-                : count > 0 
-                  ? 'bg-gray-100 text-gray-700' 
+              ${isActive
+                ? `${queue.color} bg-white`
+                : count > 0
+                  ? 'bg-gray-100 text-gray-700'
                   : 'bg-gray-50 text-gray-400'
               }
             `}>
@@ -456,7 +474,7 @@ export const QueueSidebar: React.FC<QueueSidebarProps> = ({
       <nav className="flex-1 overflow-y-auto p-2 space-y-1">
         {/* Overview */}
         {overviewQueues.map(renderQueueButton)}
-        
+
         {/* Divider - Contact Status */}
         {!isCollapsed && (
           <div className="pt-3 pb-1">
@@ -466,7 +484,7 @@ export const QueueSidebar: React.FC<QueueSidebarProps> = ({
           </div>
         )}
         {contactStatusQueues.map(renderQueueButton)}
-        
+
         {/* Divider - Outcomes */}
         {!isCollapsed && (
           <div className="pt-3 pb-1">
@@ -476,7 +494,7 @@ export const QueueSidebar: React.FC<QueueSidebarProps> = ({
           </div>
         )}
         {outcomeQueues.map(renderQueueButton)}
-        
+
         {/* Divider - Priority View */}
         {!isCollapsed && (
           <div className="pt-3 pb-1">
@@ -529,95 +547,103 @@ export const QueueSidebar: React.FC<QueueSidebarProps> = ({
  * - Hot/Medium/Low: Priority-based, excludes scheduled leads
  */
 export const filterLeadsByQueue = (
-  leads: LeadTableRow[], 
+  leads: LeadTableRow[],
   queue: QueueType
 ): LeadTableRow[] => {
   // Filter out completed/lost leads first for most queues
-  const activeLeads = leads.filter(l => 
+  const activeLeads = leads.filter(l =>
     !['consultation complete', 'treatment started', 'lost', 'disqualified'].includes(l.status)
   );
 
   switch (queue) {
     case 'all':
       return activeLeads;
-    
+
     case 'new':
       // Fresh leads - TRULY never contacted
       // Must have status = 'new' AND contactOutcome = 'NEW' or null
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.status === 'new' &&
         (l.contactOutcome === 'NEW' || !l.contactOutcome)
       );
-    
+
     case 'contacted':
       // ALL leads with ANY contact attempt (INCLUSIVE VIEW)
       // Any outcome except 'NEW' means a contact attempt was made
       // Also includes leads where backend set status='contacted' via email/SMS send
       // (contactOutcome may still be 'NEW' in that case)
       // Excludes scheduled leads (they've moved past this stage)
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.status !== 'scheduled' &&
         (
           (l.contactOutcome && CONTACTED_OUTCOMES.includes(l.contactOutcome)) ||
           l.status === 'contacted'
         )
       );
-    
+
     case 'follow_up':
       // Needs another contact attempt (OVERLAPS with Contacted)
       // Includes: contactOutcome in [NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED]
       // OR follow_up_reason in [No Show, Cancelled Appointment, Second Consult Required, etc.]
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.status !== 'scheduled' &&
         (
           (l.contactOutcome && FOLLOWUP_OUTCOMES.includes(l.contactOutcome)) ||
           (l.followUpReason && FOLLOWUP_REASONS.includes(l.followUpReason))
         )
       );
-    
+
     case 'callback':
       // Lead requested specific callback time (subset of follow-up)
       // Also matches follow_up_reason = 'Callback Requested'
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.status !== 'scheduled' &&
         (l.contactOutcome === 'CALLBACK_REQUESTED' || l.followUpReason === 'Callback Requested')
       );
-    
+
     case 'unreachable':
       // Subset view - UNREACHABLE outcomes or follow_up_reason (not scheduled)
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.status !== 'scheduled' &&
         (l.contactOutcome === 'UNREACHABLE' || l.followUpReason === 'Unreachable')
       );
-    
+
     case 'scheduled':
       // Consultation scheduled (status = 'scheduled')
       return activeLeads.filter(l => l.status === 'scheduled');
-    
+
     case 'completed':
       // Consultation complete - Success!
-      return leads.filter(l => 
+      return leads.filter(l =>
         ['consultation complete', 'treatment started'].includes(l.status)
       );
-    
+
+    case 'not_interested':
+      // Lead declined — contactOutcome = NOT_INTERESTED or follow_up_reason = "Not Interested"
+      // Auto follow-up every 3 weeks; stops if status changes away
+      return activeLeads.filter(l =>
+        l.status !== 'scheduled' &&
+        (l.contactOutcome === 'NOT_INTERESTED' || l.followUpReason === 'Not Interested')
+      );
+
     case 'hot':
       // Hot priority - actionable (not scheduled)
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.priority === 'hot' && l.status !== 'scheduled'
       );
-    
+
     case 'medium':
       // Medium priority - actionable (not scheduled)
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.priority === 'medium' && l.status !== 'scheduled'
       );
-    
+
     case 'low':
       // Low priority - actionable (not scheduled)
-      return activeLeads.filter(l => 
+      return activeLeads.filter(l =>
         l.priority === 'low' && l.status !== 'scheduled'
       );
-    
+
     default:
       return activeLeads;
   }

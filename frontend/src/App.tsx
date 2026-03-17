@@ -59,7 +59,7 @@ const PageLoader: React.FC = memo(() => (
         ))}
       </div>
     </div>
-    
+
     {/* Skeleton Main Content */}
     <div className="ml-60 p-8">
       <div className="animate-pulse">
@@ -77,7 +77,7 @@ const PageLoader: React.FC = memo(() => (
             <div className="w-24 h-10 bg-gray-200 rounded-xl"></div>
           </div>
         </div>
-        
+
         {/* KPI Cards skeleton */}
         <div className="grid grid-cols-4 gap-6 mb-8">
           {[1, 2, 3, 4].map((i) => (
@@ -88,7 +88,7 @@ const PageLoader: React.FC = memo(() => (
             </div>
           ))}
         </div>
-        
+
         {/* Main content skeleton */}
         <div className="grid grid-cols-2 gap-8">
           <div className="bg-white rounded-2xl border border-gray-100 p-6 h-80">
@@ -120,7 +120,7 @@ type PageType = 'dashboard' | 'coordinator' | 'leads' | 'deleted-leads' | 'provi
 // Valid coordinator queue types
 const COORDINATOR_QUEUES = [
   'all', 'new', 'contacted', 'followup', 'callback',
-  'scheduled', 'completed', 'unreachable', 'hot', 'medium', 'low',
+  'scheduled', 'completed', 'unreachable', 'not-interested', 'hot', 'medium', 'low',
 ] as const;
 
 interface RouteInfo {
@@ -134,23 +134,23 @@ interface RouteInfo {
 
 const parseHash = (): RouteInfo => {
   const hash = window.location.hash.slice(1) || 'dashboard';
-  
+
   if (hash.startsWith('coordinator-')) {
     const queueType = hash.replace('coordinator-', '');
     if (COORDINATOR_QUEUES.includes(queueType as typeof COORDINATOR_QUEUES[number])) {
       return { page: 'coordinator', queueType };
     }
   }
-  
+
   if (hash === 'coordinator') {
     return { page: 'coordinator', queueType: 'all' };
   }
-  
+
   const validPages: PageType[] = ['dashboard', 'coordinator', 'leads', 'deleted-leads', 'providers', 'analytics', 'call-analytics', 'settings'];
   if (validPages.includes(hash as PageType)) {
     return { page: hash as PageType };
   }
-  
+
   return { page: 'dashboard' };
 };
 
@@ -164,21 +164,21 @@ const queryClient = new QueryClient({
       // Cache settings - Balanced for fresh data while preventing data loss
       staleTime: 60 * 1000,               // Data fresh for 60 seconds — prevents refetch storms during rapid navigation
       gcTime: 5 * 60 * 1000,              // Keep in cache for 5 minutes — data persists across page switches
-      
+
       // Refetch settings — conservative to prevent hanging during rapid navigation
       refetchOnMount: true,                // Refetch only when data is stale (respects staleTime)
       refetchOnWindowFocus: false,         // Don't refetch on tab switch — prevents unexpected loading states
       refetchOnReconnect: true,            // Refetch after network reconnection
       refetchInterval: false,              // No automatic polling (manual refresh instead)
-      
+
       // CRITICAL: Keep previous data while fetching new data
       // This prevents data from disappearing during navigation!
       placeholderData: (previousData: unknown) => previousData,
-      
+
       // Retry settings with exponential backoff
       retry: 3,                            // 3 retries (was 2)
       retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 10000),
-      
+
       // CRITICAL FIX: Use 'always' to match useLeads hook.
       // 'online' caused queries to pause during brief connectivity hiccups
       // after Docker container rebuild, leaving dashboard stuck on "Loading leads..."
@@ -392,21 +392,21 @@ const AuthGate: React.FC = () => {
   return (
     <>
       {/* Connection Status Banner */}
-      <ConnectionStatusBanner 
-        isOnline={isOnline} 
+      <ConnectionStatusBanner
+        isOnline={isOnline}
         isReconnecting={isReconnecting}
         onRetry={retry}
       />
-      
+
       {/* Session Expired Modal */}
-      <SessionExpiredModal 
-        isOpen={sessionExpired} 
+      <SessionExpiredModal
+        isOpen={sessionExpired}
         onLoginClick={dismissSessionExpired}
       />
-      
+
       {/* Background new-lead polling — invisible, fires toasts + cache invalidation */}
       <NewLeadWatcher />
-      
+
       {/* Main App */}
       <AppRouter />
     </>

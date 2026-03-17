@@ -280,6 +280,7 @@ async def get_source_analytics(
             Lead.status,
             Lead.score,
             Lead.created_at,
+            Lead.is_referral,  # REFERRAL OVERRIDE: needed to classify referral leads correctly
         ).filter(
             Lead.created_at >= cutoff_date,
             Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
@@ -307,7 +308,13 @@ async def get_source_analytics(
         
         # Aggregate by platform
         for lead in leads:
-            platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
+            # REFERRAL OVERRIDE: If lead.is_referral is True, classify as Referral
+            # regardless of utm_source/utm_medium. This fixes Widget/Jotform leads
+            # that answered "Yes" to the referral question being misclassified.
+            if lead.is_referral:
+                platform = "Referral"
+            else:
+                platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
             
             # Ensure platform exists (should always be one of the 4)
             if platform not in platform_data:
@@ -479,6 +486,7 @@ async def get_platform_trend(
             func.date(Lead.created_at).label('date'),
             Lead.utm_source,
             Lead.utm_medium,
+            Lead.is_referral,  # REFERRAL OVERRIDE: needed to classify referral leads correctly
         ).filter(
             func.date(Lead.created_at) >= start_date,
             Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
@@ -502,7 +510,12 @@ async def get_platform_trend(
         for lead in leads:
             date_str = lead.date.isoformat() if lead.date else None
             if date_str and date_str in daily_data:
-                platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
+                # REFERRAL OVERRIDE: If lead.is_referral is True, classify as Referral
+                # regardless of utm_source/utm_medium.
+                if lead.is_referral:
+                    platform = "Referral"
+                else:
+                    platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
                 if platform in daily_data[date_str]:
                     daily_data[date_str][platform] += 1
         
@@ -584,6 +597,7 @@ async def get_hot_leads_by_platform(
         hot_leads = db.query(
             Lead.utm_source,
             Lead.utm_medium,
+            Lead.is_referral,  # REFERRAL OVERRIDE: needed to classify referral leads correctly
             Lead.status,
             Lead.score,
             Lead.condition,
@@ -609,7 +623,12 @@ async def get_hot_leads_by_platform(
             }
         
         for lead in hot_leads:
-            platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
+            # REFERRAL OVERRIDE: If lead.is_referral is True, classify as Referral
+            # regardless of utm_source/utm_medium.
+            if lead.is_referral:
+                platform = "Referral"
+            else:
+                platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
             
             if platform not in platform_data:
                 platform = "Widget"
