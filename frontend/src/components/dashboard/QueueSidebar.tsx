@@ -232,7 +232,7 @@ const FOLLOWUP_OUTCOMES = ['NO_ANSWER', 'UNREACHABLE', 'CALLBACK_REQUESTED'];
  * like No Show, Cancelled, or Second Consult Required.
  * Leads with these follow_up_reason values also appear in the Follow-up queue.
  */
-const FOLLOWUP_REASONS = ['No Answer', 'Not Interested', 'No Show', 'Cancelled Appointment'];
+const FOLLOWUP_REASONS = ['No Answer', 'No Show', 'Cancelled Appointment'];
 
 /**
  * Calculate queue counts from leads
@@ -319,7 +319,8 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
     // FOLLOW-UP: Needs another contact attempt (OVERLAPPING with Contacted)
     // Includes: contactOutcome in [NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED]
     // OR follow_up_reason in [No Show, Cancelled Appointment, Second Consult Required, etc.]
-    if (FOLLOWUP_OUTCOMES.includes(outcome) || (lead.followUpReason && FOLLOWUP_REASONS.includes(lead.followUpReason))) {
+    // CRITICAL: NOT_INTERESTED leads are EXCLUDED — they have their own queue and 3-week cadence
+    if (outcome !== 'NOT_INTERESTED' && (FOLLOWUP_OUTCOMES.includes(outcome) || (lead.followUpReason && FOLLOWUP_REASONS.includes(lead.followUpReason)))) {
       counts.follow_up++;
     }
 
@@ -585,8 +586,10 @@ export const filterLeadsByQueue = (
       // Needs another contact attempt (OVERLAPS with Contacted)
       // Includes: contactOutcome in [NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED]
       // OR follow_up_reason in [No Show, Cancelled Appointment, Second Consult Required, etc.]
+      // CRITICAL: NOT_INTERESTED leads are EXCLUDED — they have their own queue and 3-week cadence
       return activeLeads.filter(l =>
         l.status !== 'scheduled' &&
+        l.contactOutcome !== 'NOT_INTERESTED' &&
         (
           (l.contactOutcome && FOLLOWUP_OUTCOMES.includes(l.contactOutcome)) ||
           (l.followUpReason && FOLLOWUP_REASONS.includes(l.followUpReason))

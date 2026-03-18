@@ -782,11 +782,17 @@ def send_automated_follow_ups(self) -> Dict[str, Any]:
     Automated follow-up system: sends SMS + email every 6 hours to eligible leads.
 
     Eligibility rules:
-    - Lead is NOT in 'SCHEDULED' status (once scheduled, follow-ups stop)
+    - Lead status is NEW (uncontacted leads only — once contacted, coordinators manage follow-ups manually)
+    - Lead contact_outcome is NEW (no contact attempt recorded yet)
     - Lead is NOT soft-deleted
     - Lead was created at least 6 hours ago (first follow-up is 6h after submission)
     - last_follow_up_sent_at is NULL (never sent) OR > 6 hours ago
     - Lead has an email or phone to contact
+
+    EXCLUDED from automated follow-ups:
+    - "Not Interested" leads (they have their own 3-week cadence via send_not_interested_follow_ups)
+    - "Contacted" leads (any lead with a contact attempt — coordinators handle these manually)
+    - "Scheduled" leads (consultation already booked)
 
     Sends both SMS and email to each eligible lead, then updates
     last_follow_up_sent_at to prevent duplicate sends in the same window.
@@ -797,6 +803,7 @@ def send_automated_follow_ups(self) -> Dict[str, Any]:
     from ..services.email_templates import send_follow_up_email
     from ..services.sms_service import sms_service
     from ..services.encryption import EncryptionService
+    from ..models.lead import ContactOutcome
 
     db = get_db_session()
 
@@ -805,14 +812,21 @@ def send_automated_follow_ups(self) -> Dict[str, Any]:
         six_hours_ago = now - timedelta(hours=6)
 
         # Query eligible leads:
-        # - Not scheduled (follow-ups stop once scheduled)
+        # - Status is NEW only (uncontacted leads — once contacted, coordinators manage manually)
+        # - Contact outcome is NEW (no contact attempt recorded yet)
         # - Not deleted
         # - Created at least 6 hours ago
         # - last_follow_up_sent_at is NULL or older than 6 hours
+        #
+        # CRITICAL EXCLUSIONS:
+        # - NOT_INTERESTED leads are excluded (they have their own 3-week cadence)
+        # - CONTACTED/SCHEDULED leads are excluded (coordinators handle these)
+        # - Any lead with a contact_outcome other than NEW is excluded
         eligible_leads = (
             db.query(Lead)
             .filter(
-                Lead.status != LeadStatus.SCHEDULED,
+                Lead.status == LeadStatus.NEW,
+                Lead.contact_outcome == ContactOutcome.NEW,
                 Lead.deleted_at.is_(None),
                 Lead.created_at <= six_hours_ago,
             )

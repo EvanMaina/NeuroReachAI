@@ -12,7 +12,7 @@
  * @version 1.0.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     X, MessageSquare, Send, Loader2, CheckCircle, AlertCircle,
     Clock, Calendar, Phone, Heart, AlertTriangle
@@ -131,6 +131,11 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
     const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
     const [editablePhone, setEditablePhone] = useState('');
 
+    // Refs to prevent unnecessary re-renders when lead object reference changes
+    const prevIsOpenRef = useRef(false);
+    const leadRef = useRef(lead);
+    leadRef.current = lead;
+
     // ---------------------------------------------------------------------------
     // Constants
     // ---------------------------------------------------------------------------
@@ -143,34 +148,40 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
     // Effects
     // ---------------------------------------------------------------------------
 
-    // Reset form when dialog opens or lead changes
+    // Reset form ONLY when dialog transitions from closed → open
     useEffect(() => {
-        if (isOpen) {
-            setSelectedCategory(lead ? 'follow_up' : 'custom');
+        const wasOpen = prevIsOpenRef.current;
+        prevIsOpenRef.current = isOpen;
+
+        // Only reset when transitioning from closed to open
+        if (isOpen && !wasOpen) {
+            const currentLead = leadRef.current;
+            setSelectedCategory(currentLead ? 'follow_up' : 'custom');
             setSendResult(null);
-            setEditablePhone(lead?.phone || '');
-            
-            if (lead) {
+            setEditablePhone(currentLead?.phone || '');
+
+            if (currentLead) {
                 const template = SMS_TEMPLATES.find(t => t.id === 'follow_up');
                 if (template) {
-                    setMessage(replaceVariables(template.message, lead));
+                    setMessage(replaceVariables(template.message, currentLead));
                 }
             } else {
                 // General mode - empty message
                 setMessage('');
             }
         }
-    }, [isOpen, lead]);
+    }, [isOpen]);
 
-    // Update message when category changes
+    // Update message when category changes (read lead from ref to avoid re-triggers)
     useEffect(() => {
-        if (lead) {
+        const currentLead = leadRef.current;
+        if (currentLead) {
             const template = SMS_TEMPLATES.find(t => t.id === selectedCategory);
             if (template) {
-                setMessage(replaceVariables(template.message, lead));
+                setMessage(replaceVariables(template.message, currentLead));
             }
         }
-    }, [selectedCategory, lead]);
+    }, [selectedCategory]);
 
     // ---------------------------------------------------------------------------
     // Helpers
@@ -204,12 +215,12 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
 
     const handleSend = async () => {
         const phoneToSend = editablePhone.trim();
-        
+
         if (!phoneToSend) {
             setSendResult({ success: false, message: 'Please enter a phone number' });
             return;
         }
-        
+
         if (!message.trim()) {
             setSendResult({ success: false, message: 'Please enter a message' });
             return;
@@ -320,29 +331,29 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
 
                     {/* Category Selector - Only show for lead mode */}
                     {lead && (
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            SMS Template
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {SMS_TEMPLATES.map(template => (
-                                <button
-                                    key={template.id}
-                                    onClick={() => setSelectedCategory(template.id)}
-                                    className={`
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                SMS Template
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {SMS_TEMPLATES.map(template => (
+                                    <button
+                                        key={template.id}
+                                        onClick={() => setSelectedCategory(template.id)}
+                                        className={`
                                         flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
                                         border transition-all duration-200
                                         ${selectedCategory === template.id
-                                            ? 'bg-green-50 border-green-300 text-green-700'
-                                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
+                                                ? 'bg-green-50 border-green-300 text-green-700'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
                                     `}
-                                >
-                                    {template.icon}
-                                    <span className="truncate">{template.label}</span>
-                                </button>
-                            ))}
+                                    >
+                                        {template.icon}
+                                        <span className="truncate">{template.label}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
                     )}
 
                     {/* Message */}

@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 # Clinic Constants
 # =============================================================================
 CLINIC_NAME = "TMS Institute of Arizona"
-CLINIC_ADDRESS = "5150 N 16th St, Suite A-114, Phoenix, AZ 85016"
+CLINIC_ADDRESS = "9746 N 90th Place Suite 207 Scottsdale, AZ 85258"
 CLINIC_PHONE = "(480) 668-3599"
-CLINIC_EMAIL = "support@tmsinstitute.co"
+CLINIC_EMAIL = "ask@tmsinstitute.co"
 CLINIC_WEBSITE = "tmsinstitute.co"
 HEADER_BG_COLOR = "#3D6B6B"
 FOOTER_BG_COLOR = "#3D6B6B"

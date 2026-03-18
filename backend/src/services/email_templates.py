@@ -275,8 +275,8 @@ TMS Institute of Arizona
 
 ---
 TMS Institute of Arizona
-5150 N 16th St, Suite A-114, Phoenix, AZ 85016
-(480) 668-3599 | support@tmsinstitute.co | tmsinstitute.co
+9746 N 90th Place Suite 207 Scottsdale, AZ 85258
+(480) 668-3599 | ask@tmsinstitute.co | tmsinstitute.co
 
 This email contains protected health information (PHI). Your privacy is protected under HIPAA.
 © 2026 TMS Institute of Arizona. All rights reserved."""
@@ -435,8 +435,8 @@ TMS Institute of Arizona
 
 ---
 TMS Institute of Arizona
-5150 N 16th St, Suite A-114, Phoenix, AZ 85016
-(480) 668-3599 | support@tmsinstitute.co | tmsinstitute.co
+9746 N 90th Place Suite 207 Scottsdale, AZ 85258
+(480) 668-3599 | ask@tmsinstitute.co | tmsinstitute.co
 
 This email contains protected health information (PHI). Your privacy is protected under HIPAA.
 © 2026 TMS Institute of Arizona. All rights reserved."""
@@ -530,8 +530,8 @@ Call us at (480) 668-3599 - we're happy to help.
 
 ---
 TMS Institute of Arizona
-5150 N 16th St, Suite A-114, Phoenix, AZ 85016
-(480) 668-3599 | support@tmsinstitute.co | tmsinstitute.co
+9746 N 90th Place Suite 207 Scottsdale, AZ 85258
+(480) 668-3599 | ask@tmsinstitute.co | tmsinstitute.co
 
 This email contains protected health information (PHI). Your privacy is protected under HIPAA.
 © 2026 TMS Institute of Arizona. All rights reserved."""
