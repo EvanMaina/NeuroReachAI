@@ -74,9 +74,9 @@ CREATE TABLE IF NOT EXISTS clinic_settings (
 -- Seed default clinic settings
 INSERT INTO clinic_settings (key, value) VALUES
     ('clinic_name',    'TMS Institute of Arizona'),
-    ('clinic_address', '5150 N 16th St, Suite A-114, Phoenix, AZ 85016'),
+    ('clinic_address', '9746 N 90th Place Suite 207 Scottsdale, AZ 85258'),
     ('clinic_phone',   '(480) 668-3599'),
-    ('clinic_email',   'support@tmsinstitute.co')
+    ('clinic_email',   'ask@tmsinstitute.co')
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================

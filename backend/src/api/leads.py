@@ -217,13 +217,13 @@ def apply_queue_filter(query, queue_type: Optional[str]):
         ]
         FOLLOWUP_REASONS = [
             "No Answer",
-            "Not Interested",
             "No Show",
             "Cancelled Appointment",
         ]
         return query.filter(
             Lead.status != LeadStatus.SCHEDULED,
             Lead.status.notin_(TERMINAL),
+            Lead.contact_outcome != ContactOutcome.NOT_INTERESTED,
             or_(
                 Lead.contact_outcome.in_(FOLLOWUP_OUTCOMES),
                 Lead.follow_up_reason.in_(FOLLOWUP_REASONS),

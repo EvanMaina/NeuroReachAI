@@ -12,7 +12,7 @@
  * @version 1.0.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     X, Mail, Send, Loader2, CheckCircle, AlertCircle,
     FileText, Calendar, Phone, Clock, Heart
@@ -244,12 +244,24 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
     const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
 
     // ---------------------------------------------------------------------------
+    // Refs — track previous open state to detect open/close transitions
+    // ---------------------------------------------------------------------------
+    const prevIsOpenRef = useRef(false);
+    const leadRef = useRef(lead);
+    leadRef.current = lead;
+
+    // ---------------------------------------------------------------------------
     // Effects
     // ---------------------------------------------------------------------------
 
-    // Reset form when dialog opens or lead changes
+    // Reset form ONLY when dialog transitions from closed → open.
+    // This prevents resetting the form when the parent re-renders and
+    // passes a new lead object reference (same data, different reference).
     useEffect(() => {
-        if (isOpen && lead) {
+        const justOpened = isOpen && !prevIsOpenRef.current;
+        prevIsOpenRef.current = isOpen;
+
+        if (justOpened && lead) {
             setSelectedCategory('follow_up');
             const template = EMAIL_TEMPLATES.find(t => t.id === 'follow_up');
             if (template) {
@@ -260,16 +272,19 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
         }
     }, [isOpen, lead]);
 
-    // Update subject and body when category changes
+    // Update subject and body ONLY when the coordinator explicitly changes the template category.
+    // The lead ref is used so this effect doesn't re-run on lead reference changes.
     useEffect(() => {
-        if (lead) {
+        const currentLead = leadRef.current;
+        if (currentLead) {
             const template = EMAIL_TEMPLATES.find(t => t.id === selectedCategory);
             if (template) {
-                setSubject(replaceVariables(template.subject, lead));
-                setBody(replaceVariables(template.body, lead));
+                setSubject(replaceVariables(template.subject, currentLead));
+                setBody(replaceVariables(template.body, currentLead));
             }
         }
-    }, [selectedCategory, lead]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedCategory]);
 
     // ---------------------------------------------------------------------------
     // Helpers
