@@ -247,14 +247,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scanner (filesystem)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: fs
           scan-ref: .
           severity: CRITICAL,HIGH
-          exit-code: 0  # Non-blocking — report only
+          exit-code: 0 # Non-blocking — report only
           format: table
-        continue-on-error: true  # Don't fail CI if Trivy has install issues
+        continue-on-error: true # Don't fail CI if Trivy has install issues
 
   secret-scan:
     name: "🕵️ Secret Scan (Gitleaks)"
@@ -269,7 +269,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        continue-on-error: true  # Non-blocking — report only
+        continue-on-error: true # Non-blocking — report only
 
   # ===========================================================================
   # Docker Build Verification
