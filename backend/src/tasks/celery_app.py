@@ -141,6 +141,31 @@ _conf = dict(
                 day_of_week="monday",  # Run every Monday — ~3 week cadence managed by last_follow_up_sent_at
             ),
         },
+        # ----- Item 3: Unreachable 24h recurring follow-up -----
+        "unreachable-follow-ups-every-24h": {
+            "task": "src.tasks.lead_tasks.send_unreachable_follow_ups",
+            "schedule": __import__("celery.schedules", fromlist=["crontab"]).crontab(
+                hour=16, minute=0,  # 16:00 UTC = 9:00 AM MST — daily
+            ),
+        },
+        # ----- Item 4: 72-hour social proof email -----
+        "social-proof-72h-hourly-check": {
+            "task": "src.tasks.lead_tasks.send_72h_social_proof_emails",
+            "schedule": 3600.0,  # Every hour — catches leads in the 72-73h window
+        },
+        # ----- Item 5: Day 14 re-engagement email -----
+        "day14-reengagement-hourly-check": {
+            "task": "src.tasks.lead_tasks.send_day14_reengagement_emails",
+            "schedule": 3600.0,  # Every hour — catches leads in the 14d window
+        },
+        # ----- Item 6: Monthly referring physician email -----
+        "monthly-provider-email": {
+            "task": "src.tasks.lead_tasks.send_monthly_provider_emails",
+            "schedule": __import__("celery.schedules", fromlist=["crontab"]).crontab(
+                hour=16, minute=0,  # 16:00 UTC = 9:00 AM MST
+                day_of_month=1,     # 1st of every month
+            ),
+        },
     },
 )
 

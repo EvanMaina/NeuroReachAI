@@ -57,7 +57,7 @@ function injectStyles(): void {
        BASE — Tier 2: Desktop/Laptop (1280-1439px) as default
        z-index: 99 — BELOW site navigation dropdowns
        overflow: hidden — no ghost boxes
-       Premium floating + gradient headline + vertical proportion
+       Tall & narrow vertical banner — stacks heading, CTA, badges
        ============================================================ */
     #nr-card-widget {
       position: fixed;
@@ -65,7 +65,7 @@ function injectStyles(): void {
       right: 0;
       transform: translateY(-50%) translateX(60px);
       z-index: 99;
-      width: 170px;
+      width: 230px;
       border-radius: 14px 0 0 14px;
       overflow: hidden;
       border: 1px solid rgba(26,107,90,0.12);
@@ -116,9 +116,9 @@ function injectStyles(): void {
       100% { background-position: 0% 50%; }
     }
 
-    /* --- Card Body (taller, vertical stretch) --- */
+    /* --- Card Body (tall & narrow vertical stack) --- */
     .nr-card-body {
-      padding: 28px 16px 22px;
+      padding: 28px 20px 24px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -128,7 +128,7 @@ function injectStyles(): void {
     /* --- Premium Gradient Bold Headline --- */
     .nr-card-headline {
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
-      font-size: 16px;
+      font-size: 20px;
       font-weight: 700;
       background: linear-gradient(135deg, ${C.dk} 0%, ${C.tl} 50%, ${C.tl2} 100%);
       -webkit-background-clip: text;
@@ -145,11 +145,11 @@ function injectStyles(): void {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
+      gap: 8px;
       width: 100%;
-      min-height: 42px;
-      padding: 11px 14px;
-      font-size: 12px;
+      min-height: 50px;
+      padding: 14px 16px;
+      font-size: 15px;
       font-weight: 600;
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
       color: ${C.wh};
@@ -201,7 +201,7 @@ function injectStyles(): void {
 
     /* --- Arrow Nudge --- */
     .nr-card-cta-arrow {
-      font-size: 13px;
+      font-size: 17px;
       display: inline-block;
       animation: nr-nudge 3s ease-in-out infinite;
     }
@@ -211,20 +211,20 @@ function injectStyles(): void {
       90% { transform: translateX(2px); }
     }
 
-    /* --- Trust Line --- */
+    /* --- Trust Line (vertical stack on narrow card) --- */
     .nr-card-trust {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 4px;
-      flex-wrap: wrap;
-      font-size: 8px;
+      font-size: 10px;
       color: ${C.mu};
       letter-spacing: 0.02em;
       font-weight: 400;
       line-height: 1.4;
     }
-    .nr-card-trust-sep { color: #ccc; }
+    .nr-card-trust-sep { display: none; }
 
     /* --- Desktop hover glow --- */
     @media (hover: hover) and (pointer: fine) {
@@ -234,26 +234,27 @@ function injectStyles(): void {
     }
 
     /* ============================================================
-       Tier 1: Large Desktop (≥1440px)
+       Tier 1: Large Desktop (≥1440px) — slightly wider
        ============================================================ */
     @media (min-width: 1440px) {
-      #nr-card-widget { width: 180px; right: 0; }
-      .nr-card-body { padding: 32px 18px 26px; gap: 22px; }
-      .nr-card-headline { font-size: 17px; }
-      .nr-card-cta { font-size: 13px; padding: 12px 16px; min-height: 44px; }
-      .nr-card-cta-arrow { font-size: 14px; }
-      .nr-card-trust { font-size: 9px; }
+      #nr-card-widget { width: 240px; right: 0; }
+      .nr-card-body { padding: 32px 22px 28px; gap: 22px; }
+      .nr-card-headline { font-size: 22px; }
+      .nr-card-cta { font-size: 16px; padding: 15px 18px; min-height: 52px; gap: 8px; }
+      .nr-card-cta-arrow { font-size: 18px; }
+      .nr-card-trust { font-size: 11px; gap: 5px; }
     }
 
     /* ============================================================
-       Tier 3: Small Laptop (1025px - 1279px)
+       Tier 3: Small Laptop (1025px - 1279px) — narrower
        ============================================================ */
     @media (min-width: 1025px) and (max-width: 1279px) {
-      #nr-card-widget { width: 160px; right: 0; }
-      .nr-card-body { padding: 24px 14px 20px; gap: 18px; }
-      .nr-card-headline { font-size: 15px; }
-      .nr-card-cta { font-size: 11px; padding: 10px 12px; }
-      .nr-card-trust { font-size: 8px; }
+      #nr-card-widget { width: 210px; right: 0; }
+      .nr-card-body { padding: 24px 18px 22px; gap: 18px; }
+      .nr-card-headline { font-size: 18px; }
+      .nr-card-cta { font-size: 14px; padding: 13px 14px; min-height: 46px; gap: 6px; }
+      .nr-card-cta-arrow { font-size: 16px; }
+      .nr-card-trust { font-size: 9px; gap: 3px; }
     }
 
     /* ============================================================
@@ -495,7 +496,7 @@ function cleanupWidget(): void {
   if (e) e.remove();
   // Clean up any legacy widget elements
   ['nr-banner-widget', 'nr-cta-wrapper', 'nr-cta-widget', 'nr-assessment-btn',
-   'nr-assessment-btn-pulse', 'nr-cta-tooltip', 'nr-cta-icon', 'nr-cta-text'
+    'nr-assessment-btn-pulse', 'nr-cta-tooltip', 'nr-cta-icon', 'nr-cta-text'
   ].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.remove();
@@ -513,7 +514,7 @@ function scheduleCleanup(): void {
       try {
         document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(el => el.remove());
         document.querySelectorAll('style[data-nr-cta-widget],style[data-nr-widget]').forEach(el => el.remove());
-      } catch {}
+      } catch { }
     }, d);
   });
 }
