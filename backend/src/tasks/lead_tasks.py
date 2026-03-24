@@ -1574,6 +1574,396 @@ def send_daily_lead_digest(self) -> Dict[str, Any]:
         db.close()
 
 
+# =============================================================================
+# Item 3: Unreachable 24-Hour Follow-Up (Recurring)
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_unreachable_follow_ups(self) -> Dict[str, Any]:
+    """
+    Automated 24-hour recurring follow-up for Unreachable / No-Answer leads.
+
+    Fires every 24 hours while lead's contact_outcome is NO_ANSWER or UNREACHABLE.
+    Stops automatically when status changes to SCHEDULED, COMPLETED, etc.
+
+    Eligibility:
+    - contact_outcome IN (NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED)
+    - NOT soft-deleted
+    - NOT in SCHEDULED status
+    - last_follow_up_sent_at is NULL or > 24 hours ago
+    """
+    from ..services.email_templates import send_unreachable_follow_up_email
+    from ..services.encryption import EncryptionService
+    from ..models.lead import ContactOutcome
+
+    db = get_db_session()
+
+    try:
+        now = datetime.now(timezone.utc)
+        twenty_four_hours_ago = now - timedelta(hours=24)
+
+        eligible_leads = (
+            db.query(Lead)
+            .filter(
+                Lead.contact_outcome.in_([
+                    ContactOutcome.NO_ANSWER,
+                    ContactOutcome.UNREACHABLE,
+                    ContactOutcome.CALLBACK_REQUESTED,
+                ]),
+                Lead.deleted_at.is_(None),
+                Lead.status != LeadStatus.SCHEDULED,
+            )
+            .filter(
+                (Lead.last_follow_up_sent_at.is_(None)) |
+                (Lead.last_follow_up_sent_at <= twenty_four_hours_ago)
+            )
+            .all()
+        )
+
+        total = len(eligible_leads)
+        sent = 0
+        errors = []
+
+        logger.info(f"Unreachable follow-up: found {total} eligible leads")
+
+        for lead in eligible_leads:
+            lead_id = str(lead.id)
+            try:
+                decrypted = EncryptionService.decrypt_lead_phi(lead)
+                first_name = decrypted.get("first_name", "")
+                email = decrypted.get("email", "")
+
+                if email:
+                    result = send_unreachable_follow_up_email({
+                        "first_name": first_name,
+                        "email": email,
+                        "lead_id": lead_id,
+                    })
+                    if result.get("success"):
+                        sent += 1
+                    else:
+                        errors.append({"lead_id": lead_id, "error": result.get("error")})
+
+                lead.last_follow_up_sent_at = now
+                db.commit()
+
+            except Exception as e:
+                logger.error(f"Unreachable follow-up failed for lead {lead_id}: {e}")
+                errors.append({"lead_id": lead_id, "error": str(e)})
+                db.rollback()
+
+        logger.info(f"Unreachable follow-up complete: {total} eligible, {sent} sent, {len(errors)} errors")
+        return {"status": "success", "eligible": total, "sent": sent, "errors": errors[:10]}
+
+    except Exception as e:
+        logger.error(f"Unreachable follow-up task failed: {e}")
+        raise
+    finally:
+        db.close()
+
+
+# =============================================================================
+# Item 4: 72-Hour Social Proof Email
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_72h_social_proof_emails(self) -> Dict[str, Any]:
+    """
+    Send 72-hour social proof email to leads created ~72 hours ago.
+
+    Eligibility:
+    - Created between 72 and 73 hours ago (1-hour window to avoid duplicates)
+    - contact_outcome NOT in (SCHEDULED, COMPLETED)
+    - NOT soft-deleted
+    - Has an email address
+    """
+    from ..services.email_templates import send_social_proof_72h_email
+    from ..services.encryption import EncryptionService
+    from ..models.lead import ContactOutcome
+
+    db = get_db_session()
+
+    try:
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(hours=73)
+        window_end = now - timedelta(hours=72)
+
+        eligible_leads = (
+            db.query(Lead)
+            .filter(
+                Lead.created_at >= window_start,
+                Lead.created_at <= window_end,
+                Lead.deleted_at.is_(None),
+                Lead.contact_outcome.notin_([
+                    ContactOutcome.SCHEDULED,
+                    ContactOutcome.COMPLETED,
+                ]),
+            )
+            .all()
+        )
+
+        total = len(eligible_leads)
+        sent = 0
+        errors = []
+
+        logger.info(f"72h social proof: found {total} eligible leads")
+
+        for lead in eligible_leads:
+            lead_id = str(lead.id)
+            try:
+                decrypted = EncryptionService.decrypt_lead_phi(lead)
+                email = decrypted.get("email", "")
+                first_name = decrypted.get("first_name", "")
+
+                if email:
+                    result = send_social_proof_72h_email({
+                        "first_name": first_name,
+                        "email": email,
+                        "lead_id": lead_id,
+                    })
+                    if result.get("success"):
+                        sent += 1
+                    else:
+                        errors.append({"lead_id": lead_id, "error": result.get("error")})
+
+            except Exception as e:
+                logger.error(f"72h email failed for lead {lead_id}: {e}")
+                errors.append({"lead_id": lead_id, "error": str(e)})
+
+        logger.info(f"72h social proof complete: {total} eligible, {sent} sent")
+        return {"status": "success", "eligible": total, "sent": sent, "errors": errors[:10]}
+
+    except Exception as e:
+        logger.error(f"72h social proof task failed: {e}")
+        raise
+    finally:
+        db.close()
+
+
+# =============================================================================
+# Item 5: Day 14 Gentle Re-Engagement Email
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_day14_reengagement_emails(self) -> Dict[str, Any]:
+    """
+    Send 14-day re-engagement email to leads created ~14 days ago.
+
+    Eligibility:
+    - Created between 14 days and 14 days + 1 hour ago (window)
+    - contact_outcome NOT in (SCHEDULED, COMPLETED)
+    - NOT soft-deleted
+    - Has an email address
+    """
+    from ..services.email_templates import send_day14_reengagement_email
+    from ..services.encryption import EncryptionService
+    from ..models.lead import ContactOutcome
+
+    db = get_db_session()
+
+    try:
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(days=14, hours=1)
+        window_end = now - timedelta(days=14)
+
+        eligible_leads = (
+            db.query(Lead)
+            .filter(
+                Lead.created_at >= window_start,
+                Lead.created_at <= window_end,
+                Lead.deleted_at.is_(None),
+                Lead.contact_outcome.notin_([
+                    ContactOutcome.SCHEDULED,
+                    ContactOutcome.COMPLETED,
+                ]),
+            )
+            .all()
+        )
+
+        total = len(eligible_leads)
+        sent = 0
+        errors = []
+
+        logger.info(f"Day-14 re-engagement: found {total} eligible leads")
+
+        for lead in eligible_leads:
+            lead_id = str(lead.id)
+            try:
+                decrypted = EncryptionService.decrypt_lead_phi(lead)
+                email = decrypted.get("email", "")
+                first_name = decrypted.get("first_name", "")
+
+                if email:
+                    result = send_day14_reengagement_email({
+                        "first_name": first_name,
+                        "email": email,
+                        "lead_id": lead_id,
+                    })
+                    if result.get("success"):
+                        sent += 1
+                    else:
+                        errors.append({"lead_id": lead_id, "error": result.get("error")})
+
+            except Exception as e:
+                logger.error(f"Day-14 email failed for lead {lead_id}: {e}")
+                errors.append({"lead_id": lead_id, "error": str(e)})
+
+        logger.info(f"Day-14 re-engagement complete: {total} eligible, {sent} sent")
+        return {"status": "success", "eligible": total, "sent": sent, "errors": errors[:10]}
+
+    except Exception as e:
+        logger.error(f"Day-14 re-engagement task failed: {e}")
+        raise
+    finally:
+        db.close()
+
+
+# =============================================================================
+# Item 6: Monthly Referring Physician Email (B2B)
+# =============================================================================
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_monthly_provider_emails(self) -> Dict[str, Any]:
+    """
+    Send monthly email to all ACTIVE referring providers.
+
+    Queries the referring_providers table for ACTIVE providers with email,
+    sends the B2B outreach email from Dr. Patel.
+    """
+    from ..services.email_templates import send_provider_monthly_email
+    from ..models.provider import ReferringProvider
+
+    db = get_db_session()
+
+    try:
+        providers = (
+            db.query(ReferringProvider)
+            .filter(
+                ReferringProvider.status == "ACTIVE",
+                ReferringProvider.email.isnot(None),
+                ReferringProvider.email != "",
+            )
+            .all()
+        )
+
+        total = len(providers)
+        sent = 0
+        errors = []
+
+        logger.info(f"Monthly provider email: found {total} active providers")
+
+        for provider in providers:
+            provider_id = str(provider.id)
+            try:
+                # Split provider name into first/last
+                name_parts = (provider.name or "").strip().split(" ", 1)
+                last_name = name_parts[-1] if len(name_parts) > 1 else name_parts[0]
+
+                result = send_provider_monthly_email({
+                    "last_name": last_name,
+                    "email": provider.email,
+                    "provider_id": provider_id,
+                })
+                if result.get("success"):
+                    sent += 1
+                else:
+                    errors.append({"provider_id": provider_id, "error": result.get("error")})
+
+            except Exception as e:
+                logger.error(f"Provider email failed for {provider_id}: {e}")
+                errors.append({"provider_id": provider_id, "error": str(e)})
+
+        logger.info(f"Monthly provider email complete: {total} providers, {sent} sent")
+        return {"status": "success", "total_providers": total, "sent": sent, "errors": errors[:10]}
+
+    except Exception as e:
+        logger.error(f"Monthly provider email task failed: {e}")
+        raise
+    finally:
+        db.close()
+
+
+# =============================================================================
+# Test Task: Trigger any email template manually
+# =============================================================================
+
+@shared_task(bind=True, max_retries=1)
+def send_test_email(self, template: str = "confirmation", to_email: str = "", first_name: str = "Test") -> Dict[str, Any]:
+    """
+    Test task: send a specific email template to a given address.
+    
+    Templates: confirmation, unreachable, social_proof, day14, provider, follow_up, not_interested
+    """
+    from ..services.email_templates import (
+        send_lead_confirmation_email,
+        send_unreachable_follow_up_email,
+        send_social_proof_72h_email,
+        send_day14_reengagement_email,
+        send_provider_monthly_email,
+        send_follow_up_email,
+        send_not_interested_follow_up_email,
+    )
+
+    if not to_email:
+        return {"status": "error", "message": "to_email is required"}
+
+    template_map = {
+        "confirmation": lambda: send_lead_confirmation_email({
+            "first_name": first_name, "email": to_email, "lead_number": "TEST-0001", "lead_id": "test",
+        }),
+        "unreachable": lambda: send_unreachable_follow_up_email({
+            "first_name": first_name, "email": to_email, "lead_id": "test",
+        }),
+        "social_proof": lambda: send_social_proof_72h_email({
+            "first_name": first_name, "email": to_email, "lead_id": "test",
+        }),
+        "day14": lambda: send_day14_reengagement_email({
+            "first_name": first_name, "email": to_email, "lead_id": "test",
+        }),
+        "provider": lambda: send_provider_monthly_email({
+            "last_name": first_name, "email": to_email, "provider_id": "test",
+        }),
+        "follow_up": lambda: send_follow_up_email({
+            "first_name": first_name, "email": to_email, "lead_id": "test",
+        }),
+        "not_interested": lambda: send_not_interested_follow_up_email({
+            "first_name": first_name, "email": to_email, "lead_id": "test",
+        }),
+    }
+
+    sender = template_map.get(template)
+    if not sender:
+        return {"status": "error", "message": f"Unknown template: {template}. Valid: {list(template_map.keys())}"}
+
+    try:
+        result = sender()
+        logger.info(f"Test email '{template}' sent to {to_email}: {result}")
+        return {"status": "success", "template": template, "result": result}
+    except Exception as e:
+        logger.error(f"Test email failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @shared_task
 def refresh_platform_analytics_views() -> Dict[str, Any]:
     """

@@ -88,12 +88,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const customEvent = event as CustomEvent;
       const reason = customEvent.detail?.reason || 'unknown';
       if (import.meta.env.DEV) console.warn(`🔐 Session expired: ${reason}`);
-      
+
       // Clear user state
       setUser(null);
       setPermissions([]);
       setMustChangePassword(false);
-      
+
       // Show session expired modal
       setSessionExpired(true);
     };
@@ -137,20 +137,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ------------------------------------------------------------------
-  // Periodic token validity check (every 5 minutes)
+  // Periodic token validity check (every 4 minutes)
+  // Attempts refresh BEFORE clearing session — fixes premature sign-out (Item 7)
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!user) return;
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (!checkTokenValidity()) {
-        if (import.meta.env.DEV) console.warn('🔐 Token expired during session - logging out');
+        if (import.meta.env.DEV) console.warn('🔐 Token nearing expiry — attempting refresh');
+
+        // Try to refresh the token before giving up
+        const refreshToken = sessionStorage.getItem('nr_refresh_token');
+        if (refreshToken) {
+          try {
+            const response = await fetch(
+              `${import.meta.env.VITE_API_URL ?? ''}/api/auth/refresh`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refreshToken }),
+              }
+            );
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.access_token) {
+                sessionStorage.setItem('nr_access_token', data.access_token);
+                if (data.refresh_token) {
+                  setStoredRefreshToken(data.refresh_token);
+                }
+                if (import.meta.env.DEV) console.log('✅ Token refreshed via periodic check');
+                return; // Token refreshed — stay logged in
+              }
+            }
+          } catch (err) {
+            if (import.meta.env.DEV) console.error('❌ Periodic refresh failed:', err);
+          }
+        }
+
+        // Refresh failed or no refresh token — clear session
+        if (import.meta.env.DEV) console.warn('🔐 Token refresh failed — logging out');
         clearStoredToken();
         setUser(null);
         setPermissions([]);
         setSessionExpired(true);
       }
-    }, 5 * 60 * 1000); // Check every 5 minutes
+    }, 4 * 60 * 1000); // Check every 4 minutes (inside the 5-min buffer window)
 
     return () => clearInterval(interval);
   }, [user]);
@@ -161,20 +194,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (email: string, password: string) => {
     const data = await apiLogin(email, password);
     setStoredToken(data.access_token);
-    
+
     // Store refresh token if provided
     if (data.refresh_token) {
       setStoredRefreshToken(data.refresh_token);
     }
-    
+
     setUser(data.user);
     setMustChangePassword(data.must_change_password);
     setSessionExpired(false); // Clear session expired flag on new login
-    
+
     // Fetch full permissions from /me
     const me = await getMe();
     setPermissions(me.permissions);
-    
+
     // Check if there's a redirect URL stored
     const redirectPath = sessionStorage.getItem('nr_redirect_after_login');
     if (redirectPath) {

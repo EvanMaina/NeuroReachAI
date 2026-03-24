@@ -319,3 +319,51 @@ async def test_follow_up(lead_id: str = None) -> Dict[str, Any]:
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat(),
         }
+
+
+@router.post(
+    "/api/admin/test-email-template",
+    summary="Test Any Email Template",
+    description=(
+        "Send any email template to a test address. "
+        "Templates: confirmation, unreachable, social_proof, day14, provider, follow_up, not_interested. "
+        "Emails are visible in MailDev at http://localhost:1080 in dev."
+    ),
+    dependencies=[Depends(require_role("administrator"))],
+)
+async def test_email_template(
+    template: str = "confirmation",
+    to_email: str = "test@example.com",
+    first_name: str = "Test",
+) -> Dict[str, Any]:
+    """
+    Send any email template to an arbitrary address for MailDev verification.
+
+    Args:
+        template: Template name (confirmation, unreachable, social_proof, day14, provider, follow_up, not_interested)
+        to_email: Recipient email address
+        first_name: Name to personalize (or last_name for provider template)
+
+    Returns:
+        Dict with send result
+    """
+    try:
+        from ..tasks.lead_tasks import send_test_email
+
+        result = send_test_email(template=template, to_email=to_email, first_name=first_name)
+
+        return {
+            "status": "completed",
+            "template": template,
+            "to_email": to_email,
+            "result": result,
+            "maildev_url": "http://localhost:1080" if settings.is_development else None,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Test email template failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
