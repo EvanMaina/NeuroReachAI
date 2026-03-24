@@ -133,7 +133,7 @@ jobs:
 
       # --- Security Scan ---
       - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ steps.image-tag.outputs.full_image }}
           severity: CRITICAL,HIGH
@@ -281,10 +281,10 @@ jobs:
         run: |
           echo "🔥 Running smoke tests against staging..."
           sleep 15
-          
+
           # ALB DNS for direct access (bypasses external DNS dependency)
           ALB_DNS="neuroreach-ai-alb-1879069977.us-east-2.elb.amazonaws.com"
-          
+
           # Test via ALB directly with Host header (always works, no DNS dependency)
           echo "📡 Testing via ALB direct (Host header routing)..."
           HEALTH_STATUS=$(curl -sk https://${ALB_DNS}/health/live -H "Host: app-staging.tmsinstitute.co" 2>&1) || {
@@ -293,14 +293,14 @@ jobs:
             exit 1
           }
           echo "✅ Liveness (ALB direct): $HEALTH_STATUS"
-          
+
           HEALTH_RESPONSE=$(curl -sk https://${ALB_DNS}/health -H "Host: app-staging.tmsinstitute.co" 2>&1) || {
             echo "❌ Staging health check failed via ALB!"
             echo "Response: $HEALTH_RESPONSE"
             exit 1
           }
           echo "✅ Health (ALB direct): $HEALTH_RESPONSE"
-          
+
           # Also test via custom domain if DNS is configured (non-blocking)
           echo ""
           echo "📡 Testing via custom domain (non-blocking)..."
@@ -310,7 +310,7 @@ jobs:
             echo "⚠️  Custom domain not yet reachable (DNS CNAME may not be configured)"
             echo "   Configure CNAME: app-staging.tmsinstitute.co → ${ALB_DNS}"
           }
-          
+
           echo ""
           echo "🎉 All staging smoke tests passed!"
 
