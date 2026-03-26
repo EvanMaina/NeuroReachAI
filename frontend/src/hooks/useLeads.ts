@@ -76,6 +76,7 @@ interface TransformedLeadItem {
   priority?: string;
   status?: string;
   submittedAt?: string;
+  updatedAt?: string;
   contactOutcome?: string;
   contactAttempts?: number;
   lastContactAttempt?: string;
@@ -119,6 +120,7 @@ export function transformLeadToTableRow(item: TransformedLeadItem, index: number
     priority: ((item.priority?.toLowerCase() || 'low') as LeadTableRow['priority']),
     status: ((item.status?.toLowerCase()?.replace('_', ' ') || 'new') as LeadTableRow['status']),
     submittedAt: item.submittedAt || new Date().toISOString(),
+    updatedAt: item.updatedAt || undefined,
     contactOutcome: (item.contactOutcome || 'NEW') as ContactOutcome,
     contactAttempts: item.contactAttempts || 0,
     lastContactAttempt: item.lastContactAttempt || undefined,

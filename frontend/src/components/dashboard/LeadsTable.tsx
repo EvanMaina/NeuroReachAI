@@ -16,7 +16,9 @@ import {
   Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Filter, Flame, Zap, CircleDot, Calendar, Users,
   Heart, Shield, Brain, Search, Mail, PhoneCall,
-  UserCheck, AlertTriangle, RefreshCw, MessageSquare, Settings
+  UserCheck, AlertTriangle, RefreshCw, MessageSquare, Settings,
+  Paperclip, FileText, FileSpreadsheet, Image, Download, Loader2,
+  Trash2, Plus
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -25,6 +27,7 @@ import { EmailComposeDialog } from './EmailComposeDialog';
 import { SMSComposeDialog } from './SMSComposeDialog';
 import { PhoneDialModal } from './PhoneDialModal';
 import { formatRelativeTime } from '../../utils/dateFormatters';
+import { ATTACHMENTS_CHANGED_EVENT, getAttachmentCounts, listAttachments, downloadAttachment, deleteAttachment, uploadAttachment, formatFileSize, notifyAttachmentsChanged, type IAttachment, type AttachmentCountMap } from '../../services/attachments';
 import { Tag } from 'lucide-react';
 
 // =============================================================================
@@ -144,12 +147,12 @@ const STATUS_ORDER: Record<string, number> = {
 function formatConditionDisplay(condition: string): string {
   const upperCaseConditions = ['OCD', 'PTSD'];
   const normalized = condition.toLowerCase().trim();
-  
+
   // Check for uppercase acronyms
   if (upperCaseConditions.includes(condition.toUpperCase())) {
     return condition.toUpperCase();
   }
-  
+
   // Handle specific conditions
   switch (normalized) {
     case 'depression':
@@ -182,15 +185,15 @@ function formatConditionsDisplay(
   if (!conditions || conditions.length === 0) {
     return 'Unknown';
   }
-  
+
   const formatted = conditions.map(c => formatConditionDisplay(c));
-  
+
   // If "Other" is in the list and we have other text, replace with "Other: <text>"
   const otherIndex = formatted.findIndex(c => c === 'Other');
   if (otherIndex !== -1 && otherConditionText) {
     formatted[otherIndex] = `Other: ${otherConditionText}`;
   }
-  
+
   return formatted.join(', ');
 }
 
@@ -200,9 +203,9 @@ function formatConditionsDisplay(
  */
 function formatPreferredContact(method: string | undefined): string {
   if (!method) return '—';
-  
+
   const normalized = method.toLowerCase().trim();
-  
+
   const methodMap: Record<string, string> = {
     // Backend canonical values
     'phone_call': 'Phone Call',
@@ -219,8 +222,8 @@ function formatPreferredContact(method: string | undefined): string {
     'SMS': 'Text',
     'TEXT': 'Text',
   };
-  
-  return methodMap[normalized] || methodMap[method] || 
+
+  return methodMap[normalized] || methodMap[method] ||
     method.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 
@@ -433,6 +436,169 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   const [selectedLeadForComm, setSelectedLeadForComm] = useState<LeadTableRow | null>(null);
 
   // ---------------------------------------------------------------------------
+  // Attachment counts & dropdown state
+  // ---------------------------------------------------------------------------
+  const [attachmentCounts, setAttachmentCounts] = useState<AttachmentCountMap>({});
+  const [attachDropdownLeadId, setAttachDropdownLeadId] = useState<string | null>(null);
+  const [attachDropdownPlacement, setAttachDropdownPlacement] = useState<'up' | 'down'>('down');
+  const [attachDropdownItems, setAttachDropdownItems] = useState<IAttachment[]>([]);
+  const [attachDropdownLoading, setAttachDropdownLoading] = useState(false);
+  const [attachDownloading, setAttachDownloading] = useState<string | null>(null);
+  const [attachDeleting, setAttachDeleting] = useState<string | null>(null);
+  const [attachDeleteConfirm, setAttachDeleteConfirm] = useState<string | null>(null);
+  const [attachUploading, setAttachUploading] = useState(false);
+  const attachDropdownRef = useRef<HTMLDivElement>(null);
+  const attachFileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshAttachmentCounts = useCallback(async () => {
+    if (leads.length === 0) {
+      setAttachmentCounts({});
+      return;
+    }
+    try {
+      const counts = await getAttachmentCounts();
+      setAttachmentCounts(counts);
+    } catch {
+      // non-critical — silently ignore
+    }
+  }, [leads.length]);
+
+  // Fetch attachment counts whenever leads change
+  useEffect(() => {
+    void refreshAttachmentCounts();
+  }, [leads, refreshAttachmentCounts]);
+
+  // Keep paperclip counts in sync when attachments change elsewhere (detail modal, manual lead modal)
+  useEffect(() => {
+    const handler = () => {
+      void refreshAttachmentCounts();
+    };
+    window.addEventListener(ATTACHMENTS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(ATTACHMENTS_CHANGED_EVENT, handler);
+  }, [refreshAttachmentCounts]);
+
+  // Close attachment dropdown on outside click
+  useEffect(() => {
+    if (!attachDropdownLeadId) return;
+    const handler = (e: MouseEvent) => {
+      if (attachDropdownRef.current && !attachDropdownRef.current.contains(e.target as Node)) {
+        setAttachDropdownLeadId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [attachDropdownLeadId]);
+
+  /** Open attachment dropdown for a lead — fetches the list on demand */
+  const openAttachDropdown = useCallback(async (leadId: string, triggerEl?: HTMLElement | null) => {
+    if (attachDropdownLeadId === leadId) {
+      setAttachDropdownLeadId(null);
+      return;
+    }
+    if (triggerEl) {
+      const rect = triggerEl.getBoundingClientRect();
+      const estimatedDropdownHeight = 340;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setAttachDropdownPlacement(
+        spaceBelow < estimatedDropdownHeight && spaceAbove > spaceBelow ? 'up' : 'down'
+      );
+    } else {
+      setAttachDropdownPlacement('down');
+    }
+    setAttachDropdownLeadId(leadId);
+    setAttachDropdownLoading(true);
+    setAttachDropdownItems([]);
+    try {
+      const items = await listAttachments(leadId);
+      setAttachDropdownItems(items);
+    } catch {
+      setAttachDropdownItems([]);
+    } finally {
+      setAttachDropdownLoading(false);
+    }
+  }, [attachDropdownLeadId]);
+
+  /** Get file type icon based on MIME type */
+  const getFileIcon = useCallback((mimeType: string) => {
+    if (mimeType.startsWith('image/')) return <Image size={14} className="text-pink-500" />;
+    if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return <FileSpreadsheet size={14} className="text-green-600" />;
+    if (mimeType.includes('pdf')) return <FileText size={14} className="text-red-500" />;
+    return <FileText size={14} className="text-blue-500" />;
+  }, []);
+
+  /** Handle attachment download */
+  const handleDownload = useCallback(async (leadId: string, attachment: IAttachment) => {
+    setAttachDownloading(attachment.id);
+    try {
+      await downloadAttachment(leadId, attachment.id, attachment.filename);
+    } catch {
+      // download failed silently
+    } finally {
+      setAttachDownloading(null);
+    }
+  }, []);
+
+  /** Handle attachment delete with confirmation */
+  const handleAttachDelete = useCallback(async (leadId: string, attachmentId: string) => {
+    setAttachDeleting(attachmentId);
+    try {
+      await deleteAttachment(leadId, attachmentId);
+      // Remove from dropdown list
+      setAttachDropdownItems(prev => prev.filter(a => a.id !== attachmentId));
+      // Decrement count badge
+      setAttachmentCounts(prev => {
+        const current = prev[leadId] || 0;
+        const newCount = current - 1;
+        if (newCount <= 0) {
+          const next = { ...prev };
+          delete next[leadId];
+          return next;
+        }
+        return { ...prev, [leadId]: newCount };
+      });
+      setAttachDeleteConfirm(null);
+      // If no more attachments, close the dropdown
+      setAttachDropdownItems(prev => {
+        if (prev.length === 0) setAttachDropdownLeadId(null);
+        return prev;
+      });
+      notifyAttachmentsChanged(leadId);
+    } catch {
+      // delete failed — keep UI as-is
+    } finally {
+      setAttachDeleting(null);
+    }
+  }, []);
+
+  /** Handle upload-more from the dropdown */
+  const handleAttachUploadMore = useCallback(async (leadId: string, files: FileList) => {
+    setAttachUploading(true);
+    const newItems: IAttachment[] = [];
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const att = await uploadAttachment(leadId, files[i]);
+        newItems.push(att);
+      } catch {
+        // skip failed uploads
+      }
+    }
+    if (newItems.length > 0) {
+      // Add to dropdown list (newest first)
+      setAttachDropdownItems(prev => [...newItems, ...prev]);
+      // Update count badge
+      setAttachmentCounts(prev => ({
+        ...prev,
+        [leadId]: (prev[leadId] || 0) + newItems.length,
+      }));
+      notifyAttachmentsChanged(leadId);
+    }
+    setAttachUploading(false);
+    // Reset file input
+    if (attachFileInputRef.current) attachFileInputRef.current.value = '';
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -534,7 +700,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
     const cleaned = phone.replace(/[^\d+]/g, '');
     // Remove any + signs that aren't at the start
     const digits = cleaned.replace(/^\+/, '').replace(/\+/g, '');
-    
+
     // Add +1 country code if not already present (US numbers)
     if (digits.startsWith('1') && digits.length === 11) {
       return `tel:+${digits}`;
@@ -959,244 +1125,406 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                 // Determine opaque row background for frozen cells (must be solid, not transparent)
                 const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
                 return (
-                <tr
-                  key={lead.id}
-                  className={`
+                  <tr
+                    key={lead.id}
+                    className={`
                     group hover:bg-blue-50 transition-colors
                     ${rowBg}
                   `}
-                >
-                  {visibleColumns.has('leadId') && (
-                  <td
-                    className={`px-6 py-4 whitespace-nowrap sticky left-0 z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
-                    style={{ width: columnWidths.leadId }}
                   >
-                    <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
-                      {lead.leadId}
-                    </span>
-                  </td>
-                  )}
-                  {visibleColumns.has('patient') && (
-                  <td
-                    className={`px-6 py-4 whitespace-nowrap sticky z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
-                    style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-semibold text-blue-700">
-                          {/* Display initials - handle empty/unknown names gracefully */}
-                          {(lead.firstName && lead.firstName !== 'Unknown' ? lead.firstName.charAt(0) : lead.email?.charAt(0) || '?')}
-                          {lead.lastName?.charAt(0) || ''}
+                    {visibleColumns.has('leadId') && (
+                      <td
+                        className={`px-6 py-4 whitespace-nowrap sticky left-0 z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
+                        style={{ width: columnWidths.leadId }}
+                      >
+                        <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+                          {lead.leadId}
                         </span>
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        {/* Display name with graceful fallbacks + ellipsis for long names */}
-                        {(lead.firstName && lead.firstName !== 'Unknown') || lead.lastName ? (
-                          <p className="text-sm font-medium text-gray-900 truncate" style={{ maxWidth: '150px' }}>
-                            {lead.firstName || ''} {lead.lastName || ''}
-                          </p>
-                        ) : lead.email ? (
-                          <p className="text-sm font-medium text-gray-700 truncate" style={{ maxWidth: '150px' }}>
-                            {lead.email}
-                          </p>
-                        ) : (
-                          <p className="text-sm font-medium text-gray-400 italic">
-                            Name not provided
-                          </p>
-                        )}
-                        {/* Referral Badge */}
-                        {lead.isReferral && (
-                          <span
-                            className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 border border-purple-200 w-fit"
-                            title={lead.referringProviderName ? `Referred by ${lead.referringProviderName}` : 'Provider Referral'}
-                          >
-                            <UserCheck size={10} />
-                            {lead.referringProviderName ? `Ref: ${lead.referringProviderName}` : 'Referral'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  )}
-                  {visibleColumns.has('condition') && (
-                  <td className="px-6 py-4" style={{ overflow: 'visible', position: 'relative' }}>
-                    <TruncatedCell
-                      text={
-                        // conditions is an array (new multi-condition leads):
-                        //   • length > 0 → format and display
-                        //   • length === 0 → coordinator didn't select a condition → "Not Provided"
-                        // conditions is undefined (legacy single-condition leads):
-                        //   → fall back to the legacy `condition` string field
-                        Array.isArray(lead.conditions)
-                          ? lead.conditions.length > 0
-                            ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
-                            : 'Not Provided'
-                          : formatConditionDisplay(lead.condition)
-                      }
-                      maxWidth={Math.max(columnWidths.condition - 48, 100)}
-                      className="text-sm text-gray-700"
-                    />
-                  </td>
-                  )}
+                      </td>
+                    )}
+                    {visibleColumns.has('patient') && (
+                      <td
+                        className={`px-6 py-4 whitespace-nowrap sticky z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
+                        style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-semibold text-blue-700">
+                              {/* Display initials - handle empty/unknown names gracefully */}
+                              {(lead.firstName && lead.firstName !== 'Unknown' ? lead.firstName.charAt(0) : lead.email?.charAt(0) || '?')}
+                              {lead.lastName?.charAt(0) || ''}
+                            </span>
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            {/* Display name with graceful fallbacks + ellipsis for long names */}
+                            {(lead.firstName && lead.firstName !== 'Unknown') || lead.lastName ? (
+                              <p className="text-sm font-medium text-gray-900 truncate" style={{ maxWidth: '150px' }}>
+                                {lead.firstName || ''} {lead.lastName || ''}
+                              </p>
+                            ) : lead.email ? (
+                              <p className="text-sm font-medium text-gray-700 truncate" style={{ maxWidth: '150px' }}>
+                                {lead.email}
+                              </p>
+                            ) : (
+                              <p className="text-sm font-medium text-gray-400 italic">
+                                Name not provided
+                              </p>
+                            )}
+                            {/* Referral Badge */}
+                            {lead.isReferral && (
+                              <span
+                                className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 border border-purple-200 w-fit"
+                                title={lead.referringProviderName ? `Referred by ${lead.referringProviderName}` : 'Provider Referral'}
+                              >
+                                <UserCheck size={10} />
+                                {lead.referringProviderName ? `Ref: ${lead.referringProviderName}` : 'Referral'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    )}
+                    {visibleColumns.has('condition') && (
+                      <td className="px-6 py-4" style={{ overflow: 'visible', position: 'relative' }}>
+                        <TruncatedCell
+                          text={
+                            // conditions is an array (new multi-condition leads):
+                            //   • length > 0 → format and display
+                            //   • length === 0 → coordinator didn't select a condition → "Not Provided"
+                            // conditions is undefined (legacy single-condition leads):
+                            //   → fall back to the legacy `condition` string field
+                            Array.isArray(lead.conditions)
+                              ? lead.conditions.length > 0
+                                ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
+                                : 'Not Provided'
+                              : formatConditionDisplay(lead.condition)
+                          }
+                          maxWidth={Math.max(columnWidths.condition - 48, 100)}
+                          className="text-sm text-gray-700"
+                        />
+                      </td>
+                    )}
 
-                  {visibleColumns.has('priority') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <Badge variant="priority" value={lead.priority} />
-                  </td>
-                  )}
-                  {visibleColumns.has('status') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex flex-col gap-1">
-                      <Badge variant="status" value={lead.status} />
-                      {/* Follow-up reason tag — single source of truth for queue routing tags */}
-                      {lead.followUpReason && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          <Tag size={9} />
-                          {lead.followUpReason}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  )}
-                  {visibleColumns.has('scheduledFor') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {lead.scheduledCallbackAt ? (
-                      (() => {
-                        const { text, urgency } = formatScheduledDateTime(lead.scheduledCallbackAt);
-                        const urgencyStyles = {
-                          past: 'bg-gray-100 text-gray-600 border-gray-200',
-                          soon: 'bg-red-50 text-red-700 border-red-200 animate-pulse',
-                          today: 'bg-amber-50 text-amber-700 border-amber-200',
-                          upcoming: 'bg-green-50 text-green-700 border-green-200',
-                        };
-                        return (
-                          <span className={`
+                    {visibleColumns.has('priority') && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <Badge variant="priority" value={lead.priority} />
+                      </td>
+                    )}
+                    {visibleColumns.has('status') && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          <Badge variant="status" value={lead.status} />
+                          {/* Follow-up reason tag — single source of truth for queue routing tags */}
+                          {lead.followUpReason && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <Tag size={9} />
+                              {lead.followUpReason}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                    {visibleColumns.has('scheduledFor') && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {(lead.scheduledCallbackAt || lead.nextFollowUpAt) ? (
+                          (() => {
+                            const scheduleFor = lead.scheduledCallbackAt || lead.nextFollowUpAt;
+                            if (!scheduleFor) return null;
+                            const { text, urgency } = formatScheduledDateTime(scheduleFor);
+                            const urgencyStyles = {
+                              past: 'bg-gray-100 text-gray-600 border-gray-200',
+                              soon: 'bg-red-50 text-red-700 border-red-200 animate-pulse',
+                              today: 'bg-amber-50 text-amber-700 border-amber-200',
+                              upcoming: 'bg-green-50 text-green-700 border-green-200',
+                            };
+                            return (
+                              <span className={`
                             inline-flex items-center gap-1.5 px-2.5 py-1 
                             text-xs font-medium rounded-lg border
                             ${urgencyStyles[urgency]}
                           `}>
-                            <Calendar size={12} />
-                            {text}
+                                <Calendar size={12} />
+                                {text}
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                    )}
+                    {visibleColumns.has('submitted') && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-sm text-gray-500">
+                          {formatDate(lead.submittedAt)}
+                        </span>
+                      </td>
+                    )}
+                    {visibleColumns.has('lastActivity') && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {lead.lastUpdatedAt ? (
+                          <span className="text-sm text-gray-700 font-medium">
+                            {formatRelativeTime(lead.lastUpdatedAt)}
                           </span>
-                        );
-                      })()
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                            New (untouched)
+                          </span>
+                        )}
+                      </td>
                     )}
-                  </td>
-                  )}
-                  {visibleColumns.has('submitted') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm text-gray-500">
-                      {formatDate(lead.submittedAt)}
-                    </span>
-                  </td>
-                  )}
-                  {visibleColumns.has('lastActivity') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {lead.lastUpdatedAt ? (
-                      <span className="text-sm text-gray-700 font-medium">
-                        {formatRelativeTime(lead.lastUpdatedAt)}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                        New (untouched)
-                      </span>
-                    )}
-                  </td>
-                  )}
-                  {visibleColumns.has('preferred') && (
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    {lead.preferredContactMethod ? (
-                      (() => {
-                        const method = lead.preferredContactMethod.toLowerCase();
-                        const isPhone = method.includes('phone') || method === 'call';
-                        const isEmail = method === 'email';
-                        const isSms = method === 'sms' || method === 'text';
-                        const isAny = method === 'any' || method === 'no preference';
-                        
-                        return (
-                          <span className={`
+                    {visibleColumns.has('preferred') && (
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {lead.preferredContactMethod ? (
+                          (() => {
+                            const method = lead.preferredContactMethod.toLowerCase();
+                            const isPhone = method.includes('phone') || method === 'call';
+                            const isEmail = method === 'email';
+                            const isSms = method === 'sms' || method === 'text';
+                            const isAny = method === 'any' || method === 'no preference';
+
+                            return (
+                              <span className={`
                             inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full
-                            ${isPhone ? 'bg-green-100 text-green-700' 
-                              : isEmail ? 'bg-blue-100 text-blue-700'
-                              : isSms ? 'bg-purple-100 text-purple-700'
-                              : isAny ? 'bg-gray-100 text-gray-600'
-                              : 'bg-amber-100 text-amber-700'}
+                            ${isPhone ? 'bg-green-100 text-green-700'
+                                  : isEmail ? 'bg-blue-100 text-blue-700'
+                                    : isSms ? 'bg-purple-100 text-purple-700'
+                                      : isAny ? 'bg-gray-100 text-gray-600'
+                                        : 'bg-amber-100 text-amber-700'}
                           `}>
-                            {isPhone && <PhoneCall size={10} />}
-                            {isEmail && <Mail size={10} />}
-                            {isSms && <MessageSquare size={10} />}
-                            {formatPreferredContact(lead.preferredContactMethod)}
-                          </span>
-                        );
-                      })()
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
+                                {isPhone && <PhoneCall size={10} />}
+                                {isEmail && <Mail size={10} />}
+                                {isSms && <MessageSquare size={10} />}
+                                {formatPreferredContact(lead.preferredContactMethod)}
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
                     )}
-                  </td>
-                  )}
-                  {visibleColumns.has('actions') && (
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      {/* CALL BUTTON - Triggers tel: link for 3CX Chrome extension */}
-                      {lead.phone && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCallVia3CX(lead.phone);
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors duration-150"
-                          title={`Call ${lead.firstName} via 3CX`}
-                        >
-                          <PhoneCall size={15} />
-                        </button>
-                      )}
+                    {visibleColumns.has('actions') && (
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          {/* CALL BUTTON - Triggers tel: link for 3CX Chrome extension */}
+                          {lead.phone && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCallVia3CX(lead.phone);
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors duration-150"
+                              title={`Call ${lead.firstName} via 3CX`}
+                            >
+                              <PhoneCall size={15} />
+                            </button>
+                          )}
 
-                      {/* EMAIL BUTTON */}
-                      {lead.email && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedLeadForComm(lead);
-                            setEmailDialogOpen(true);
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors duration-150"
-                          title={`Email ${lead.firstName}`}
-                        >
-                          <Mail size={15} />
-                        </button>
-                      )}
+                          {/* EMAIL BUTTON */}
+                          {lead.email && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLeadForComm(lead);
+                                setEmailDialogOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors duration-150"
+                              title={`Email ${lead.firstName}`}
+                            >
+                              <Mail size={15} />
+                            </button>
+                          )}
 
-                      {/* SMS BUTTON */}
-                      {lead.phone && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedLeadForComm(lead);
-                            setSmsDialogOpen(true);
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150"
-                          title={`SMS ${lead.firstName}`}
-                        >
-                          <MessageSquare size={15} />
-                        </button>
-                      )}
+                          {/* SMS BUTTON */}
+                          {lead.phone && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLeadForComm(lead);
+                                setSmsDialogOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150"
+                              title={`SMS ${lead.firstName}`}
+                            >
+                              <MessageSquare size={15} />
+                            </button>
+                          )}
 
-                      {/* VIEW BUTTON */}
-                      <button
-                        onClick={() => onView(lead.id)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors duration-150"
-                        title="View lead details"
-                      >
-                        <Eye size={15} />
-                      </button>
+                          {/* ATTACHMENT BUTTON — only visible for leads with attachments */}
+                          {attachmentCounts[lead.id] && attachmentCounts[lead.id] > 0 && (
+                            <div className="relative">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openAttachDropdown(lead.id, e.currentTarget);
+                                }}
+                                className={`p-1.5 rounded-lg transition-colors duration-150 relative ${attachDropdownLeadId === lead.id
+                                  ? 'text-amber-600 bg-amber-50'
+                                  : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
+                                  }`}
+                                title={`${attachmentCounts[lead.id]} attachment${attachmentCounts[lead.id] > 1 ? 's' : ''}`}
+                              >
+                                <Paperclip size={15} />
+                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                                  {attachmentCounts[lead.id]}
+                                </span>
+                              </button>
 
-                    </div>
-                  </td>
-                  )}
-                </tr>
+                              {/* Attachment Dropdown — Premium */}
+                              {attachDropdownLeadId === lead.id && (
+                                <div
+                                  ref={attachDropdownRef}
+                                  className={`absolute right-0 z-50 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${attachDropdownPlacement === 'up' ? 'bottom-full mb-1 origin-bottom-right' : 'top-full mt-1 origin-top-right'}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {/* Dropdown Header */}
+                                  <div className="flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
+                                    <span className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                                      <Paperclip size={12} />
+                                      Attachments ({attachmentCounts[lead.id] || attachDropdownItems.length})
+                                    </span>
+                                    <button
+                                      onClick={() => { setAttachDropdownLeadId(null); setAttachDeleteConfirm(null); }}
+                                      className="text-amber-400 hover:text-amber-600 text-sm font-medium"
+                                    >×</button>
+                                  </div>
+
+                                  {/* Loading State */}
+                                  {attachDropdownLoading && (
+                                    <div className="flex items-center justify-center py-6">
+                                      <Loader2 size={18} className="animate-spin text-amber-500" />
+                                      <span className="ml-2 text-xs text-gray-500">Loading attachments...</span>
+                                    </div>
+                                  )}
+
+                                  {/* Attachment List */}
+                                  {!attachDropdownLoading && attachDropdownItems.length > 0 && (
+                                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+                                      {attachDropdownItems.map((att) => (
+                                        <div key={att.id}>
+                                          {/* Delete Confirmation Inline */}
+                                          {attachDeleteConfirm === att.id ? (
+                                            <div className="flex items-center justify-between px-3.5 py-2.5 bg-red-50 border-l-2 border-red-400">
+                                              <span className="text-[11px] text-red-700 font-medium">Delete this file?</span>
+                                              <div className="flex items-center gap-1.5">
+                                                <button
+                                                  onClick={() => setAttachDeleteConfirm(null)}
+                                                  className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-white border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                                                >Cancel</button>
+                                                <button
+                                                  onClick={() => handleAttachDelete(lead.id, att.id)}
+                                                  disabled={attachDeleting === att.id}
+                                                  className="px-2 py-0.5 text-[10px] font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                >
+                                                  {attachDeleting === att.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                                                  Delete
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2 px-3.5 py-2 hover:bg-gray-50/80 transition-colors group/item">
+                                              {/* File Type Icon */}
+                                              <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center">
+                                                {getFileIcon(att.file_type)}
+                                              </div>
+                                              {/* File Info */}
+                                              <div className="flex-1 min-w-0">
+                                                <p className="text-xs font-medium text-gray-800 truncate" title={att.filename}>
+                                                  {att.filename}
+                                                </p>
+                                                <p className="text-[10px] text-gray-400">
+                                                  {formatFileSize(att.file_size)} · {new Date(att.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                </p>
+                                              </div>
+                                              {/* Action Buttons */}
+                                              <div className="flex items-center gap-0.5 flex-shrink-0">
+                                                {/* Download */}
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); handleDownload(lead.id, att); }}
+                                                  disabled={attachDownloading === att.id}
+                                                  className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                                  title={`Download ${att.filename}`}
+                                                >
+                                                  {attachDownloading === att.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                                                </button>
+                                                {/* Delete */}
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setAttachDeleteConfirm(att.id); }}
+                                                  className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover/item:opacity-100"
+                                                  title={`Delete ${att.filename}`}
+                                                >
+                                                  <Trash2 size={13} />
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Empty State */}
+                                  {!attachDropdownLoading && attachDropdownItems.length === 0 && (
+                                    <div className="py-6 text-center">
+                                      <Paperclip size={20} className="mx-auto text-gray-300 mb-1" />
+                                      <p className="text-xs text-gray-400">No attachments found</p>
+                                    </div>
+                                  )}
+
+                                  {/* Footer — Upload More */}
+                                  {!attachDropdownLoading && (
+                                    <div className="border-t border-gray-100 px-3.5 py-2.5 bg-gray-50/50">
+                                      <input
+                                        ref={attachFileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          if (e.target.files && e.target.files.length > 0) {
+                                            handleAttachUploadMore(lead.id, e.target.files);
+                                          }
+                                        }}
+                                      />
+                                      <button
+                                        onClick={() => attachFileInputRef.current?.click()}
+                                        disabled={attachUploading}
+                                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                      >
+                                        {attachUploading ? (
+                                          <>
+                                            <Loader2 size={12} className="animate-spin" />
+                                            Uploading...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Plus size={12} />
+                                            Upload More Documents
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* VIEW BUTTON */}
+                          <button
+                            onClick={() => onView(lead.id)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors duration-150"
+                            title="View lead details"
+                          >
+                            <Eye size={15} />
+                          </button>
+
+                        </div>
+                      </td>
+                    )}
+                  </tr>
                 );
               })}
             </tbody>

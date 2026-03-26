@@ -22,6 +22,7 @@ import { ScheduleModal } from '../components/dashboard/ScheduleModal';
 import { QuickActionPanel } from '../components/dashboard/QuickActionPanel';
 import { ConsultationPanel } from '../components/dashboard/ConsultationPanel';
 import { ManualLeadModal } from '../components/dashboard/ManualLeadModal';
+import { GreetingBanner } from '../components/common/GreetingBanner';
 import { DeleteConfirmDialog } from '../components/common/DeleteConfirmDialog';
 import { RefreshButton } from '../components/common/RefreshButton';
 import { filterLeadsByQueue, type QueueType } from '../components/dashboard/QueueSidebar';
@@ -116,6 +117,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
     condition?: string;
     priority?: 'hot' | 'medium' | 'low';
     scheduleType?: 'callback' | 'consultation';
+    expectedUpdatedAt?: string;
   } | null>(null);
 
   // Edit modal state
@@ -350,6 +352,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
       condition: 'primaryCondition' in lead ? lead.primaryCondition : ('condition' in lead ? lead.condition : undefined),
       priority: lead.priority as 'hot' | 'medium' | 'low',
       scheduleType: scheduleType || 'callback',
+      expectedUpdatedAt: 'lastUpdatedAt' in lead
+        ? lead.lastUpdatedAt || ('updatedAt' in lead ? lead.updatedAt : undefined)
+        : ('updatedAt' in lead ? lead.updatedAt : undefined),
     });
     setIsScheduleModalOpen(true);
   }, []);
@@ -448,8 +453,13 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
 
       {/* Main Content — Flexbox fixed layout: only table body rows scroll */}
       <main className="ml-60 h-screen flex flex-col overflow-hidden">
+        {/* Personalized Greeting */}
+        <div className="flex-shrink-0 px-6 pt-4 bg-gray-100">
+          <GreetingBanner />
+        </div>
+
         {/* Header — flex-shrink-0, fixed at top */}
-        <div className="flex items-center justify-between px-6 pt-4 pb-1 flex-shrink-0 bg-gray-100">
+        <div className="flex items-center justify-between px-6 pt-1 pb-1 flex-shrink-0 bg-gray-100">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
               {activeQueue === 'all' ? 'All Leads Dashboard' : 'Coordinator Dashboard'}
@@ -836,6 +846,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
           leadCondition={scheduleLeadInfo.condition}
           leadPriority={scheduleLeadInfo.priority}
           scheduleType={scheduleLeadInfo.scheduleType}
+          expectedUpdatedAt={scheduleLeadInfo.expectedUpdatedAt}
           onScheduleSuccess={handleScheduleSuccess}
         />
       )}

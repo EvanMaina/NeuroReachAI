@@ -91,7 +91,7 @@ const CONSULTATION_OUTCOME_CONFIG: Record<ConsultationOutcome, {
     color: 'text-blue-700',
     bgColor: 'bg-blue-50',
     borderColor: 'border-blue-200',
-    description: 'Second consult required',
+    description: 'Return to follow-up queue',
     showArrow: true,
   },
   NO_SHOW: {
@@ -130,8 +130,8 @@ const OUTCOME_CONFIRM_TEXT: Record<ConsultationOutcome, { title: string; descrip
     color: 'text-amber-700',
   },
   FOLLOWUP_NEEDED: {
-    title: 'Schedule Follow-up',
-    description: 'Lead stays in Scheduled queue with "Second Consult Required" tag. Select new consultation date.',
+    title: 'Move to Follow-up',
+    description: 'Lead moves to Follow-up with "Second Consult Required" tag. Select the next follow-up date.',
     color: 'text-blue-700',
   },
   NO_SHOW: {
@@ -336,6 +336,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
         outcome: apiOutcome,
         notes: noteText.trim() || undefined,
         scheduled_callback_at: scheduledAt,
+        expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
       });
 
       // Build success toast message
@@ -358,9 +359,9 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
           if (scheduledAt) {
             const dt2 = new Date(scheduledAt);
             const dateStr2 = dt2.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            toastMessage = `✓ Second consultation scheduled for ${leadName} on ${dateStr2}`;
+            toastMessage = `✓ ${leadName} moved to Follow-up — next step on ${dateStr2}`;
           } else {
-            toastMessage = `✓ Follow-up scheduled for ${leadName}`;
+            toastMessage = `✓ ${leadName} moved to Follow-up`;
           }
           break;
         case 'NO_SHOW':
@@ -775,7 +776,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
                   <CalendarPlus size={24} className="text-blue-600" />
                 </div>
                 <h4 className="font-bold text-gray-900">Schedule Follow-up</h4>
-                <p className="text-sm text-gray-500">When should {lead.firstName} return?</p>
+                <p className="text-sm text-gray-500">When should the team follow up with {lead.firstName}?</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -804,7 +805,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
               {pickerDate && pickerTime && (
                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                   <p className="text-sm text-blue-800">
-                    <strong>Follow-up:</strong>{' '}
+                    <strong>Next follow-up:</strong>{' '}
                     {new Date(`${pickerDate}T${pickerTime}`).toLocaleString('en-US', {
                       weekday: 'short', month: 'short', day: 'numeric',
                       hour: 'numeric', minute: '2-digit', hour12: true,

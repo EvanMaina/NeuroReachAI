@@ -24,11 +24,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect as sa_inspect
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .core.config import settings
 from .core.database import engine, Base
 from .api import health_router, leads_router, analytics_router, metrics_router, calls_router, source_analytics_router, platform_analytics_router, webhooks_router, providers_router, google_ads_analytics_router, communications_router, auth_router, users_router, widget_router, callrail_router, notes_router
+from .api.attachments import router as attachments_router
 from .services.cache import get_cache
 
 
@@ -359,6 +361,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.is_development:
         logger.info("Development mode - tables managed by init SQL script")
 
+    # Attachment uploads rely on a table that older environments may not have
+    # yet because our current deploy pipeline does not run DB migrations.
+    try:
+        from .api.attachments import UPLOAD_DIR
+        from .models.attachment import LeadAttachment
+
+        if not sa_inspect(engine).has_table(LeadAttachment.__tablename__):
+            logger.warning(
+                "Missing %s table detected at startup; creating it so lead "
+                "attachments remain available in this environment.",
+                LeadAttachment.__tablename__,
+            )
+            LeadAttachment.__table__.create(bind=engine, checkfirst=True)
+            logger.info("Created missing %s table", LeadAttachment.__tablename__)
+
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        logger.warning("Could not verify attachment storage readiness: %s", exc)
+
     # Admin seeding is handled by the setup_fresh_admin.py script.
     # Run it after first deployment:
     #   docker exec -it neuroreach-backend python /app/scripts/setup_fresh_admin.py --email you@clinic.com
@@ -443,7 +464,12 @@ def create_application() -> FastAPI:
                        requests_per_minute=settings.rate_limit_per_minute)
 
     # Register routers
+    # IMPORTANT: attachments_router MUST be registered BEFORE leads_router
+    # because both share prefix /api/leads. The leads_router has a catch-all
+    # GET /{lead_id} route that would shadow the attachments_router's
+    # GET /attachment-counts endpoint (Starlette matches in registration order).
     app.include_router(health_router)
+    app.include_router(attachments_router)
     app.include_router(leads_router)
     app.include_router(analytics_router)
     app.include_router(source_analytics_router)

@@ -781,6 +781,13 @@ class UpdateContactOutcomeRequest(BaseModel):
         default=None,
         description="Next scheduled follow-up (for NO_ANSWER, CALLBACK_REQUESTED)"
     )
+    expected_updated_at: Optional[datetime] = Field(
+        default=None,
+        description=(
+            "Optimistic locking timestamp from the last lead fetch. "
+            "If stale, the request is rejected with HTTP 409 Conflict."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -822,6 +829,13 @@ class ScheduleCallbackRequest(BaseModel):
     schedule_type: Optional[str] = Field(
         default="callback",
         description="Type of schedule: 'callback' (stays in follow-up) or 'consultation' (moves to scheduled)"
+    )
+    expected_updated_at: Optional[datetime] = Field(
+        default=None,
+        description=(
+            "Optimistic locking timestamp from the last lead fetch. "
+            "If stale, the request is rejected with HTTP 409 Conflict."
+        ),
     )
 
     model_config = {
@@ -904,6 +918,9 @@ class ManualLeadCreate(BaseModel):
     
     Only first_name is required. All other fields are optional so coordinators
     can quickly add a lead with minimal information and fill in details later.
+    
+    Supports referral tracking: when is_referral=True, the backend will
+    look up or create a referring provider and link it to the lead.
     """
     
     first_name: str = Field(
@@ -965,6 +982,29 @@ class ManualLeadCreate(BaseModel):
         default=None,
         max_length=5000,
         description="Coordinator notes about the lead"
+    )
+    
+    # =========================================================================
+    # Referral Support (NEW — manual leads can now be marked as referrals)
+    # =========================================================================
+    is_referral: Optional[bool] = Field(
+        default=False,
+        description="Whether this lead was referred by a healthcare provider"
+    )
+    referring_provider_name: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Name of referring healthcare provider"
+    )
+    referring_provider_contact: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Contact info (email or phone) of referring provider"
+    )
+    referring_provider_specialty: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Specialty of referring provider (free text)"
     )
 
     @field_validator("phone")

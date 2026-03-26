@@ -13,17 +13,17 @@ import { apiClient } from './api';
 /**
  * Queue type filter options for metrics API
  */
-export type QueueTypeFilter = 
-  | 'all' 
-  | 'new' 
+export type QueueTypeFilter =
+  | 'all'
+  | 'new'
   | 'contacted'  // All leads with contact attempts (inclusive view)
-  | 'followup' 
-  | 'callback' 
-  | 'scheduled' 
+  | 'followup'
+  | 'callback'
+  | 'scheduled'
   | 'completed'  // Consultation complete - Success!
   | 'unreachable'
-  | 'hot' 
-  | 'medium' 
+  | 'hot'
+  | 'medium'
   | 'low';
 
 /**
@@ -179,6 +179,11 @@ export interface IManualLeadRequest {
   zip_code?: string;
   urgency?: string;
   notes?: string;
+  // Referral support
+  is_referral?: boolean;
+  referring_provider_name?: string;
+  referring_provider_contact?: string;
+  referring_provider_specialty?: string;
 }
 
 /**
@@ -353,7 +358,7 @@ function mapLeadResponse(lead: Record<string, unknown>): ILeadListItem {
   const lastName = (lead.last_name as string) || '';
   const priority = (lead.priority as string) || 'medium';
   const status = (lead.status as string) || 'new';
-  
+
   return {
     id: (lead.id as string) || '',
     leadId: (lead.lead_number as string) || '',
@@ -365,6 +370,7 @@ function mapLeadResponse(lead: Record<string, unknown>): ILeadListItem {
     priority: priority.toLowerCase() as PriorityType,
     status: status.toLowerCase().replace(/_/g, ' ') as LeadStatus,
     submittedAt: (lead.created_at as string) || '',
+    updatedAt: (lead.updated_at as string) || '',
     // Contact outcome tracking
     contactOutcome: lead.contact_outcome as ContactOutcome,
     contactAttempts: (lead.contact_attempts as number) || 0,
@@ -414,7 +420,7 @@ export async function listLeads(
     '/api/leads',
     { params: apiParams }
   );
-  
+
   // Map snake_case API response to camelCase frontend format
   return {
     items: response.data.items.map(mapLeadResponse),
@@ -476,6 +482,8 @@ export interface IScheduleCallbackRequest {
   contact_method: ContactMethod;
   /** Type of schedule - 'callback' stays in follow-up queue, 'consultation' moves to scheduled */
   schedule_type?: ScheduleType;
+  /** Optimistic locking timestamp from the last lead fetch */
+  expected_updated_at?: string;
 }
 
 /**
@@ -556,7 +564,7 @@ export async function getScheduledLeads(
   const params: Record<string, string> = {};
   if (startDate) params.start_date = startDate;
   if (endDate) params.end_date = endDate;
-  
+
   const response = await apiClient.get<IScheduledLead[]>(
     '/api/leads/scheduled/calendar',
     { params }
@@ -571,6 +579,8 @@ export interface IUpdateContactOutcomeRequest {
   contact_outcome: ContactOutcome;
   notes?: string;
   next_follow_up_at?: string; // ISO datetime
+  /** Optimistic locking timestamp from the last lead fetch */
+  expected_updated_at?: string;
 }
 
 /**
@@ -803,11 +813,11 @@ export async function createLeadNote(
 /**
  * Consultation outcome types
  */
-export type ConsultationOutcomeType = 
-  | 'complete' 
-  | 'reschedule' 
-  | 'followup' 
-  | 'no_show' 
+export type ConsultationOutcomeType =
+  | 'complete'
+  | 'reschedule'
+  | 'followup'
+  | 'no_show'
   | 'cancelled';
 
 /**
@@ -820,6 +830,8 @@ export interface IUpdateConsultationOutcomeRequest {
   scheduled_callback_at?: string;
   /** Contact method for callback */
   contact_method?: ContactMethod;
+  /** Optimistic locking timestamp from the last lead fetch */
+  expected_updated_at?: string;
 }
 
 /**

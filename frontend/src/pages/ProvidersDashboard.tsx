@@ -30,6 +30,7 @@ import {
 import { listLeads, updateContactOutcome } from '../services/leads';
 import type { ILeadListItem, ContactOutcome } from '../types/lead';
 import { Sidebar } from '../components/dashboard/Sidebar';
+import { GreetingBanner } from '../components/common/GreetingBanner';
 import { RefreshButton } from '../components/common/RefreshButton';
 import { ProviderEmailDialog } from '../components/dashboard/ProviderEmailDialog';
 import {
@@ -99,14 +100,14 @@ function validateEmail(email: string): { valid: boolean; message: string } {
   if (!email || !email.trim()) {
     return { valid: true, message: '' }; // Email is optional
   }
-  
+
   // Comprehensive email regex - requires valid format with domain
   const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
-  
+
   if (!emailRegex.test(email.trim())) {
     return { valid: false, message: 'Please enter a valid email address (e.g., doctor@clinic.com)' };
   }
-  
+
   return { valid: true, message: '' };
 }
 
@@ -118,20 +119,20 @@ function validatePhone(phone: string): { valid: boolean; message: string } {
   if (!phone || !phone.trim()) {
     return { valid: true, message: '' }; // Phone is optional
   }
-  
+
   const trimmedPhone = phone.trim();
-  
+
   // E.164 format: starts with +, followed by 1-3 digit country code, then 6-14 digits
   // Total length: 8-15 characters (including +)
   const e164Regex = /^\+[1-9]\d{6,14}$/;
-  
+
   if (!e164Regex.test(trimmedPhone)) {
-    return { 
-      valid: false, 
-      message: 'Please enter phone in E.164 format (e.g., +254785778988 or +14155552671)' 
+    return {
+      valid: false,
+      message: 'Please enter phone in E.164 format (e.g., +254785778988 or +14155552671)'
     };
   }
-  
+
   return { valid: true, message: '' };
 }
 
@@ -165,7 +166,7 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
     status: 'pending',
     notes: '',
   });
-  
+
   // Validation error states
   const [emailError, setEmailError] = useState('');
   const [phoneError, setPhoneError] = useState('');
@@ -224,19 +225,19 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate before submission
     const emailValidation = validateEmail(formData.email || '');
     const phoneValidation = validatePhone(formData.phone || '');
-    
+
     setEmailError(emailValidation.message);
     setPhoneError(phoneValidation.message);
-    
+
     // Don't submit if validation fails
     if (!emailValidation.valid || !phoneValidation.valid) {
       return;
     }
-    
+
     onSave(formData);
   };
 
@@ -319,9 +320,8 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
                   if (isEmailServerError) onClearServerError?.(); // Clear server error
                 }}
                 onBlur={handleEmailBlur}
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  emailError || isEmailServerError ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                }`}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${emailError || isEmailServerError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                  }`}
                 placeholder="provider@clinic.com"
               />
               {(emailError || isEmailServerError) && (
@@ -343,9 +343,8 @@ const ProviderFormModal: React.FC<ProviderFormModalProps> = ({
                   if (phoneError) setPhoneError(''); // Clear error on change
                 }}
                 onBlur={handlePhoneBlur}
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  phoneError ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                }`}
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${phoneError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                  }`}
                 placeholder="+254785778988"
               />
               {phoneError && (
@@ -607,7 +606,7 @@ const ReferralsPanel: React.FC<ReferralsPanelProps> = ({
                                 inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full
                                 ${lead.priority === 'hot' ? 'bg-red-100 text-red-700' :
                                   lead.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
-                                  'bg-blue-100 text-blue-700'}
+                                    'bg-blue-100 text-blue-700'}
                               `}>
                                 {lead.priority}
                               </span>
@@ -779,11 +778,10 @@ const ProviderProfileModal: React.FC<ProviderProfileModalProps> = ({
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mt-0.5">Converted</p>
             </div>
             <div className="bg-white rounded-xl px-4 py-3 text-center shadow-sm border border-gray-100">
-              <p className={`text-2xl font-bold ${
-                provider.conversion_rate >= 50 ? 'text-green-600' :
+              <p className={`text-2xl font-bold ${provider.conversion_rate >= 50 ? 'text-green-600' :
                 provider.conversion_rate >= 25 ? 'text-amber-600' :
-                'text-gray-600'
-              }`}>
+                  'text-gray-600'
+                }`}>
                 {provider.conversion_rate.toFixed(1)}%
               </p>
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mt-0.5">Conversion Rate</p>
@@ -1072,7 +1070,7 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
             className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
             title="Toggle columns"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
           </button>
           {showColMenu && (
             <div className="absolute right-0 top-8 z-50 w-48 bg-white border border-gray-200 rounded-xl shadow-xl py-2">
@@ -1206,12 +1204,11 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
                   )}
                   {visCols.has('conversion') && (
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <span className={`text-sm tabular-nums ${
-                        provider.conversion_rate === 0 ? 'text-gray-400' :
+                      <span className={`text-sm tabular-nums ${provider.conversion_rate === 0 ? 'text-gray-400' :
                         provider.conversion_rate >= 50 ? 'text-green-600 font-bold' :
-                        provider.conversion_rate >= 25 ? 'text-amber-600 font-semibold' :
-                        'text-gray-600 font-medium'
-                      }`}>
+                          provider.conversion_rate >= 25 ? 'text-amber-600 font-semibold' :
+                            'text-gray-600 font-medium'
+                        }`}>
                         {provider.conversion_rate.toFixed(1)}%
                       </span>
                     </td>
@@ -1424,6 +1421,9 @@ export const ProvidersDashboard: React.FC = () => {
 
       {/* Main Content */}
       <main className="ml-60 p-6">
+        {/* Personalized Greeting */}
+        <GreetingBanner />
+
         {/* Notification Toasts */}
         {(mutationSuccess || mutationError) && (
           <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-right">
@@ -1463,169 +1463,169 @@ export const ProvidersDashboard: React.FC = () => {
             />
           </div>
 
-        {/* KPI Cards — Compact, matching Coordinator Dashboard style */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard
-            title="Total Providers"
-            value={stats?.total_providers ?? 0}
-            subtitle={`${stats?.active_providers ?? 0} active`}
-            icon={<Users size={18} className="text-indigo-600" />}
-            color="border-l-indigo-500"
-          />
-          <KPICard
-            title="Total Referrals"
-            value={stats?.total_referrals ?? 0}
-            subtitle={`${stats?.referrals_this_month ?? 0} this month`}
-            icon={<UserPlus size={18} className="text-emerald-600" />}
-            color="border-l-emerald-500"
-          />
-          <KPICard
-            title="Avg. Conversion"
-            value={`${(stats?.overall_conversion_rate ?? 0).toFixed(1)}%`}
-            subtitle="Referral to patient"
-            icon={<TrendingUp size={18} className="text-violet-600" />}
-            color="border-l-violet-500"
-          />
-          <KPICard
-            title="Pending Verification"
-            value={stats?.pending_providers ?? 0}
-            subtitle="Providers to review"
-            icon={<Clock size={18} className="text-amber-600" />}
-            color="border-l-amber-500"
-          />
-        </div>
-
-        {/* Search & Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Search */}
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-              <input
-                type="text"
-                placeholder="Search providers by name, practice, or email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            {/* Status Filter */}
-            <select
-              value={filters.status || ''}
-              onChange={(e) => {
-                setFilters((prev) => ({
-                  ...prev,
-                  status: e.target.value as ProviderStatus || undefined,
-                }));
-                setPage(1);
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Statuses</option>
-              {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-
-            {/* Specialty Filter */}
-            <select
-              value={filters.specialty || ''}
-              onChange={(e) => {
-                setFilters((prev) => ({
-                  ...prev,
-                  specialty: e.target.value as ProviderSpecialty || undefined,
-                }));
-                setPage(1);
-              }}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All Specialties</option>
-              {Object.entries(SPECIALTY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-
-            {/* Add Provider Button */}
-            <button
-              onClick={() => {
-                setEditingProvider(null);
-                setIsModalOpen(true);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <UserPlus size={20} />
-              Add Provider
-            </button>
+          {/* KPI Cards — Compact, matching Coordinator Dashboard style */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPICard
+              title="Total Providers"
+              value={stats?.total_providers ?? 0}
+              subtitle={`${stats?.active_providers ?? 0} active`}
+              icon={<Users size={18} className="text-indigo-600" />}
+              color="border-l-indigo-500"
+            />
+            <KPICard
+              title="Total Referrals"
+              value={stats?.total_referrals ?? 0}
+              subtitle={`${stats?.referrals_this_month ?? 0} this month`}
+              icon={<UserPlus size={18} className="text-emerald-600" />}
+              color="border-l-emerald-500"
+            />
+            <KPICard
+              title="Avg. Conversion"
+              value={`${(stats?.overall_conversion_rate ?? 0).toFixed(1)}%`}
+              subtitle="Referral to patient"
+              icon={<TrendingUp size={18} className="text-violet-600" />}
+              color="border-l-violet-500"
+            />
+            <KPICard
+              title="Pending Verification"
+              value={stats?.pending_providers ?? 0}
+              subtitle="Providers to review"
+              icon={<Clock size={18} className="text-amber-600" />}
+              color="border-l-amber-500"
+            />
           </div>
-        </div>
 
-        {/* Providers Table with Scrolling */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-          <ProvidersTable
-            providers={providersData?.items ?? []}
-            isLoading={providersLoading}
-            onEdit={handleEdit}
-            onArchive={handleArchive}
-            onViewProfile={handleViewProfile}
-            onStatusChange={handleStatusChange}
-            onEmail={(provider) => { setEmailProvider(provider); setIsEmailDialogOpen(true); }}
-          />
+          {/* Search & Filters */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              {/* Search */}
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Search providers by name, practice, or email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
 
-          {/* Pagination */}
-          {providersData && providersData.total_pages > 1 && (
-            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
-              <p className="text-sm text-gray-500">
-                Showing {((page - 1) * 20) + 1} to {Math.min(page * 20, providersData.total)} of {providersData.total} providers
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={!providersData.has_previous}
-                  className="p-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <span className="px-4 py-2 text-sm text-gray-700">
-                  Page {page} of {providersData.total_pages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={!providersData.has_next}
-                  className="p-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  <ChevronRight size={20} />
-                </button>
+              {/* Status Filter */}
+              <select
+                value={filters.status || ''}
+                onChange={(e) => {
+                  setFilters((prev) => ({
+                    ...prev,
+                    status: e.target.value as ProviderStatus || undefined,
+                  }));
+                  setPage(1);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Statuses</option>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+
+              {/* Specialty Filter */}
+              <select
+                value={filters.specialty || ''}
+                onChange={(e) => {
+                  setFilters((prev) => ({
+                    ...prev,
+                    specialty: e.target.value as ProviderSpecialty || undefined,
+                  }));
+                  setPage(1);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">All Specialties</option>
+                {Object.entries(SPECIALTY_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+
+              {/* Add Provider Button */}
+              <button
+                onClick={() => {
+                  setEditingProvider(null);
+                  setIsModalOpen(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <UserPlus size={20} />
+                Add Provider
+              </button>
+            </div>
+          </div>
+
+          {/* Providers Table with Scrolling */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+            <ProvidersTable
+              providers={providersData?.items ?? []}
+              isLoading={providersLoading}
+              onEdit={handleEdit}
+              onArchive={handleArchive}
+              onViewProfile={handleViewProfile}
+              onStatusChange={handleStatusChange}
+              onEmail={(provider) => { setEmailProvider(provider); setIsEmailDialogOpen(true); }}
+            />
+
+            {/* Pagination */}
+            {providersData && providersData.total_pages > 1 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+                <p className="text-sm text-gray-500">
+                  Showing {((page - 1) * 20) + 1} to {Math.min(page * 20, providersData.total)} of {providersData.total} providers
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={!providersData.has_previous}
+                    className="p-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <ChevronLeft size={20} />
+                  </button>
+                  <span className="px-4 py-2 text-sm text-gray-700">
+                    Page {page} of {providersData.total_pages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={!providersData.has_next}
+                    className="p-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                  >
+                    <ChevronRight size={20} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Top Providers Card */}
+          {stats?.top_providers && stats.top_providers.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Referring Providers</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {stats.top_providers.slice(0, 6).map((provider, index) => (
+                  <div
+                    key={provider.id}
+                    className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg"
+                  >
+                    <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{provider.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {provider.total_referrals} referrals • {provider.conversion_rate.toFixed(0)}% conv.
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
         </div>
-
-        {/* Top Providers Card */}
-        {stats?.top_providers && stats.top_providers.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Referring Providers</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {stats.top_providers.slice(0, 6).map((provider, index) => (
-                <div
-                  key={provider.id}
-                  className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg"
-                >
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{provider.name}</p>
-                    <p className="text-sm text-gray-500">
-                      {provider.total_referrals} referrals • {provider.conversion_rate.toFixed(0)}% conv.
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
 
       </main>
 

@@ -121,7 +121,7 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend/src:/app/src:ro
-      - ./backend/static:/app/static:ro
+      - ./backend/static:/app/static
       - ./backend/scripts:/app/scripts:ro
       - ./frontend/dist-widget:/app/frontend/dist-widget:ro
       - ./frontend/dist-assessment:/app/frontend/dist-assessment:ro

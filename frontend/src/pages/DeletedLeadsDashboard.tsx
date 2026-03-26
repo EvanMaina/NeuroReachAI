@@ -31,6 +31,7 @@ import {
   Inbox,
 } from 'lucide-react';
 import { RefreshButton } from '../components/common/RefreshButton';
+import { GreetingBanner } from '../components/common/GreetingBanner';
 import { Sidebar } from '../components/dashboard/Sidebar';
 import {
   restoreLead,
@@ -189,22 +190,22 @@ const DeletedLeadsDashboard: React.FC = () => {
   // Filtered leads by search
   const filteredLeads = searchQuery.trim()
     ? leads.filter(l => {
-        const q = searchQuery.toLowerCase();
-        const name = `${safeStr(l.first_name)} ${safeStr(l.last_name)}`.toLowerCase();
-        return (
-          name.includes(q) ||
-          (l.lead_number || '').toLowerCase().includes(q) ||
-          (l.email || '').toLowerCase().includes(q) ||
-          (l.condition || '').toLowerCase().includes(q)
-        );
-      })
+      const q = searchQuery.toLowerCase();
+      const name = `${safeStr(l.first_name)} ${safeStr(l.last_name)}`.toLowerCase();
+      return (
+        name.includes(q) ||
+        (l.lead_number || '').toLowerCase().includes(q) ||
+        (l.email || '').toLowerCase().includes(q) ||
+        (l.condition || '').toLowerCase().includes(q)
+      );
+    })
     : leads;
 
   // Access check — early return AFTER all hooks
   if (!isAdmin) {
     return (
       <div className="flex min-h-screen bg-slate-50">
-        <Sidebar currentPage="deleted-leads" onNavigate={() => {}} />
+        <Sidebar currentPage="deleted-leads" onNavigate={() => { }} />
         <main className="ml-60 flex-1 flex items-center justify-center">
           <div className="text-center">
             <ShieldAlert size={48} className="mx-auto text-red-400 mb-4" />
@@ -218,9 +219,12 @@ const DeletedLeadsDashboard: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
-      <Sidebar currentPage="deleted-leads" onNavigate={() => {}} />
+      <Sidebar currentPage="deleted-leads" onNavigate={() => { }} />
 
       <main className="ml-60 flex-1 p-8">
+        {/* Personalized Greeting */}
+        <GreetingBanner />
+
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
@@ -279,7 +283,7 @@ const DeletedLeadsDashboard: React.FC = () => {
               <p className="text-gray-500">Loading deleted leads...</p>
             </div>
 
-          /* STATE 2: Error or loading timed out (no cached data) — show error + retry */
+            /* STATE 2: Error or loading timed out (no cached data) — show error + retry */
           ) : (isError && !data) || loadingTooLong ? (
             <div className="p-12 text-center">
               <AlertTriangle size={40} className="mx-auto text-amber-400 mb-4" />
@@ -303,7 +307,7 @@ const DeletedLeadsDashboard: React.FC = () => {
               </button>
             </div>
 
-          /* STATE 3: Data loaded but empty — show empty state */
+            /* STATE 3: Data loaded but empty — show empty state */
           ) : filteredLeads.length === 0 ? (
             <div className="p-12 text-center">
               <Inbox size={40} className="mx-auto text-gray-300 mb-4" />
@@ -317,7 +321,7 @@ const DeletedLeadsDashboard: React.FC = () => {
               </p>
             </div>
 
-          /* STATE 4: Data loaded with results — show table */
+            /* STATE 4: Data loaded with results — show table */
           ) : (
             <>
               <div className="overflow-x-auto">
@@ -379,17 +383,15 @@ const DeletedLeadsDashboard: React.FC = () => {
                           <td className="px-4 py-3 text-gray-700 capitalize">{condition}</td>
                           <td className="px-4 py-3">
                             <span
-                              className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold capitalize ${
-                                priorityColors[priority.toLowerCase()] || 'bg-gray-400 text-white'
-                              }`}
+                              className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold capitalize ${priorityColors[priority.toLowerCase()] || 'bg-gray-400 text-white'
+                                }`}
                             >
                               {priority}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold capitalize ${
-                              statusColors[status.toLowerCase().replace(/ /g, '_')] || 'bg-gray-400 text-white'
-                            }`}>
+                            <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold capitalize ${statusColors[status.toLowerCase().replace(/ /g, '_')] || 'bg-gray-400 text-white'
+                              }`}>
                               {status}
                             </span>
                           </td>
@@ -502,11 +504,10 @@ const DeletedLeadsDashboard: React.FC = () => {
       {/* ─── Toast Notification ─── */}
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg border ${
-            toast.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-red-50 border-red-200 text-red-800'
-          }`}
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg border ${toast.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-red-50 border-red-200 text-red-800'
+            }`}
         >
           {toast.type === 'success' ? (
             <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />

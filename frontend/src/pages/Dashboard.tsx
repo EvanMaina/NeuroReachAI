@@ -15,6 +15,7 @@ import React, { useState, useCallback, memo, useMemo } from 'react';
 import { Activity, Zap, Clock, TrendingUp } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '../components/dashboard/Sidebar';
+import { GreetingBanner } from '../components/common/GreetingBanner';
 import { MainKPICards } from '../components/dashboard/MainKPICards';
 import { LeadingConditionsCard } from '../components/dashboard/LeadingConditionsCard';
 import { TMSTherapyInterestCard } from '../components/dashboard/TMSTherapyInterestCard';
@@ -92,7 +93,7 @@ export const Dashboard: React.FC = () => {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-  
+
   const [currentPage, setCurrentPage] = useState('dashboard');
   const queryClient = useQueryClient();
 
@@ -203,7 +204,7 @@ export const Dashboard: React.FC = () => {
 
   const transformedConditionData = useMemo((): ConditionData[] => {
     if (!conditionsData?.conditions) return [];
-    
+
     return conditionsData.conditions.map(c => ({
       condition: c.condition as ConditionType,
       count: c.count,
@@ -298,6 +299,9 @@ export const Dashboard: React.FC = () => {
 
       {/* Main Content */}
       <main className="ml-60 p-8">
+        {/* Personalized Greeting */}
+        <GreetingBanner />
+
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -309,7 +313,7 @@ export const Dashboard: React.FC = () => {
               <p className="text-gray-500 text-sm">Lead analytics and performance metrics overview</p>
             </div>
           </div>
-          
+
           {/* Refresh button with performance indicator */}
           <div className="flex items-center gap-3">
             {summaryData && (

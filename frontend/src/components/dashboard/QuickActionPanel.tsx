@@ -241,6 +241,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
         contact_method: 'PHONE',
         schedule_type: scheduleType,
         scheduled_notes: noteText.trim() || undefined,
+        expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
       });
 
       // Save manual note if provided
@@ -292,6 +293,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
         contact_outcome: outcome,
         notes: noteText.trim() || undefined,
         next_follow_up_at: scheduledAt,
+        expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
       });
 
       // 2. Build success toast
