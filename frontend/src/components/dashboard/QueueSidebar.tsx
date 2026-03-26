@@ -232,7 +232,7 @@ const FOLLOWUP_OUTCOMES = ['NO_ANSWER', 'UNREACHABLE', 'CALLBACK_REQUESTED'];
  * like No Show, Cancelled, or Second Consult Required.
  * Leads with these follow_up_reason values also appear in the Follow-up queue.
  */
-const FOLLOWUP_REASONS = ['No Answer', 'No Show', 'Cancelled Appointment'];
+const FOLLOWUP_REASONS = ['No Answer', 'No Show', 'Cancelled Appointment', 'Second Consult Required'];
 
 /**
  * Calculate queue counts from leads

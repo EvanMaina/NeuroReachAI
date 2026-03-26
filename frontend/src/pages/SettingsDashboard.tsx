@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '../components/dashboard/Sidebar';
+import { GreetingBanner } from '../components/common/GreetingBanner';
 import { useAuth } from '../hooks/useAuth';
 import {
   listUsers, createUser, updateUser, deactivateUser,
@@ -123,15 +124,15 @@ const ALL_PERMISSIONS = [
 ];
 
 const PERMISSION_LABELS: Record<string, string> = {
-  view_leads:            'View Leads',
-  edit_leads:            'Edit Leads',
-  delete_leads:          'Delete Leads',
-  schedule_callbacks:    'Schedule Callbacks',
-  log_contact_attempts:  'Log Contact Attempts',
-  view_analytics:        'View Analytics',
-  manage_users:          'Manage Users',
-  manage_admins:         'Manage Administrators',
-  view_settings:         'View Settings',
+  view_leads: 'View Leads',
+  edit_leads: 'Edit Leads',
+  delete_leads: 'Delete Leads',
+  schedule_callbacks: 'Schedule Callbacks',
+  log_contact_attempts: 'Log Contact Attempts',
+  view_analytics: 'View Analytics',
+  manage_users: 'Manage Users',
+  manage_admins: 'Manage Administrators',
+  view_settings: 'View Settings',
 };
 
 // =============================================================================
@@ -141,21 +142,21 @@ const PERMISSION_LABELS: Record<string, string> = {
 const ROLE_STYLES: Record<string, string> = {
   primary_admin: 'bg-indigo-600 text-white',
   administrator: 'bg-purple-500 text-white',
-  coordinator:   'bg-blue-500 text-white',
-  specialist:    'bg-emerald-500 text-white',
+  coordinator: 'bg-blue-500 text-white',
+  specialist: 'bg-emerald-500 text-white',
 };
 
 const STATUS_STYLES: Record<string, { bg: string; dot: string }> = {
-  active:   { bg: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
-  inactive: { bg: 'bg-gray-50 text-gray-600',       dot: 'bg-gray-400' },
-  pending:  { bg: 'bg-amber-50 text-amber-700',     dot: 'bg-amber-500' },
+  active: { bg: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+  inactive: { bg: 'bg-gray-50 text-gray-600', dot: 'bg-gray-400' },
+  pending: { bg: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
 };
 
 const ROLE_DISPLAY_LABELS: Record<string, string> = {
   primary_admin: 'Primary Admin',
   administrator: 'Administrator',
-  coordinator:   'Coordinator',
-  specialist:    'Specialist',
+  coordinator: 'Coordinator',
+  specialist: 'Specialist',
 };
 
 function RoleBadge({ role }: { role: string }) {
@@ -483,14 +484,14 @@ function DeactivateConfirmModal({
 function UsersTab() {
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const [search, setSearch]     = useState('');
+  const [search, setSearch] = useState('');
 
   // Modal state
-  const [addOpen, setAddOpen]               = useState(false);
-  const [editUser_state, setEditUser]       = useState<IUserProfile | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editUser_state, setEditUser] = useState<IUserProfile | null>(null);
   const [deactivateUser_state, setDeactivateUser] = useState<IUserProfile | null>(null);
   const [deactivateLoading, setDeactivateLoading] = useState(false);
-  const [actionError, setActionError]       = useState('');
+  const [actionError, setActionError] = useState('');
 
   // React Query: persistent user list with caching
   const { data: usersData, isLoading: loading, error: queryError, refetch: fetchUsers } = useQuery({
@@ -663,12 +664,11 @@ function RolesTab() {
         {ROLES_MATRIX.map(r => (
           <div key={r.role} className="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-3">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                r.role === 'primary_admin' ? 'bg-gradient-to-br from-red-500 to-rose-600'      :
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${r.role === 'primary_admin' ? 'bg-gradient-to-br from-red-500 to-rose-600' :
                 r.role === 'administrator' ? 'bg-gradient-to-br from-purple-500 to-indigo-600' :
-                r.role === 'coordinator'   ? 'bg-gradient-to-br from-blue-500 to-cyan-600'     :
-                                            'bg-gradient-to-br from-emerald-500 to-teal-600'
-              }`}>
+                  r.role === 'coordinator' ? 'bg-gradient-to-br from-blue-500 to-cyan-600' :
+                    'bg-gradient-to-br from-emerald-500 to-teal-600'
+                }`}>
                 <Shield size={20} className="text-white" />
               </div>
               <RoleBadge role={r.role} />
@@ -746,17 +746,17 @@ function SiteSettingsTab() {
   const { user } = useAuth();
 
   // Clinic info
-  const [clinic, setClinic]           = useState<IClinicSettings>({ clinic_name: '', clinic_address: '', clinic_phone: '', clinic_email: '' });
+  const [clinic, setClinic] = useState<IClinicSettings>({ clinic_name: '', clinic_address: '', clinic_phone: '', clinic_email: '' });
   const [clinicLoading, setClinicLoading] = useState(true);
-  const [clinicSaving, setClinicSaving]   = useState(false);
-  const [clinicError, setClinicError]     = useState('');
+  const [clinicSaving, setClinicSaving] = useState(false);
+  const [clinicError, setClinicError] = useState('');
   const [clinicSuccess, setClinicSuccess] = useState(false);
 
   // Notification preferences
-  const [prefs, setPrefs]               = useState<IPreferences>({ notify_new_lead: true, notify_hot_lead: true, notify_daily_summary: true });
+  const [prefs, setPrefs] = useState<IPreferences>({ notify_new_lead: true, notify_hot_lead: true, notify_daily_summary: true });
   const [prefsLoading, setPrefsLoading] = useState(true);
-  const [prefsSaving, setPrefsSaving]   = useState(false);
-  const [prefsError, setPrefsError]     = useState('');
+  const [prefsSaving, setPrefsSaving] = useState(false);
+  const [prefsError, setPrefsError] = useState('');
 
   // Load on mount
   useEffect(() => {
@@ -904,9 +904,9 @@ function SiteSettingsTab() {
             {prefsError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{prefsError}</div>}
 
             {([
-              { key: 'notify_new_lead' as const,       label: 'New Lead Notification',     desc: 'Notified when a new lead is submitted' },
-              { key: 'notify_hot_lead' as const,       label: 'Hot Lead Alert',            desc: 'Notified when a lead is scored as high priority' },
-              { key: 'notify_daily_summary' as const,  label: 'Daily Summary Email',       desc: 'Receive a daily digest of lead activity' },
+              { key: 'notify_new_lead' as const, label: 'New Lead Notification', desc: 'Notified when a new lead is submitted' },
+              { key: 'notify_hot_lead' as const, label: 'Hot Lead Alert', desc: 'Notified when a lead is scored as high priority' },
+              { key: 'notify_daily_summary' as const, label: 'Daily Summary Email', desc: 'Receive a daily digest of lead activity' },
             ] as const).map(item => (
               <div key={item.key} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
                 <div>
@@ -986,12 +986,12 @@ function SiteSettingsTab() {
 
 export const SettingsDashboard: React.FC = () => {
   const [currentPage, setCurrentPage] = useState('settings');
-  const [activeTab, setActiveTab]     = useState<'users' | 'roles' | 'site'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'site'>('users');
 
   const TABS = [
-    { id: 'users' as const, label: 'Users',              icon: <Users size={18} /> },
+    { id: 'users' as const, label: 'Users', icon: <Users size={18} /> },
     { id: 'roles' as const, label: 'Roles & Permissions', icon: <Shield size={18} /> },
-    { id: 'site' as const,  label: 'Site Settings',      icon: <Key size={18} /> },
+    { id: 'site' as const, label: 'Site Settings', icon: <Key size={18} /> },
   ];
 
   return (
@@ -999,6 +999,9 @@ export const SettingsDashboard: React.FC = () => {
       <Sidebar currentPage={currentPage} onNavigate={page => setCurrentPage(page)} />
 
       <main className="ml-60 p-8">
+        {/* Personalized Greeting */}
+        <GreetingBanner />
+
         {/* Page header */}
         <div className="mb-8 flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-xl shadow-gray-900/20">
@@ -1017,11 +1020,10 @@ export const SettingsDashboard: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors ${
-                  activeTab === tab.id
-                    ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
+                className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors ${activeTab === tab.id
+                  ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
+                  : 'text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 {tab.icon}
                 {tab.label}
@@ -1033,7 +1035,7 @@ export const SettingsDashboard: React.FC = () => {
         {/* Tab content */}
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'roles' && <RolesTab />}
-        {activeTab === 'site'  && <SiteSettingsTab />}
+        {activeTab === 'site' && <SiteSettingsTab />}
       </main>
     </div>
   );

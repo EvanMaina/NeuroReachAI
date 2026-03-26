@@ -7,6 +7,8 @@ and lead retrieval for the dashboard.
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
+import logging
+from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
@@ -17,7 +19,10 @@ from sqlalchemy import desc, func, or_
 from ..core.config import settings
 from ..core.database import get_db
 from ..models.lead import Lead, PriorityType, LeadStatus, ContactOutcome, LeadSource, ConditionType, DurationType, UrgencyType
+from ..models.attachment import LeadAttachment
+from ..models.lead_note import LeadNote
 from ..models.provider import ReferringProvider
+from ..models.user import User
 from ..schemas.lead import (
     LeadCreate,
     LeadUpdate,
@@ -71,6 +76,45 @@ def mark_lead_activity(lead: Lead) -> None:
         lead: Lead model instance to mark
     """
     lead.last_updated_at = datetime.now(timezone.utc)
+
+
+def ensure_expected_updated_at(
+    lead: Lead,
+    expected_updated_at: Optional[datetime],
+    lead_id: UUID,
+) -> None:
+    """
+    Reject stale mutations when the client provides an optimistic-lock timestamp.
+
+    The client sends back the `updated_at` value from its last fetch. If another
+    coordinator has changed the lead since then, the write is rejected with 409
+    instead of silently overwriting the newer state.
+    """
+    if expected_updated_at is None:
+        return
+
+    db_updated_at = lead.last_updated_at or lead.updated_at
+    if db_updated_at is not None and db_updated_at.tzinfo is None:
+        db_updated_at = db_updated_at.replace(tzinfo=timezone.utc)
+
+    client_ts = expected_updated_at
+    if client_ts.tzinfo is None:
+        client_ts = client_ts.replace(tzinfo=timezone.utc)
+
+    if db_updated_at != client_ts:
+        logging.getLogger(__name__).warning(
+            "Optimistic locking conflict on lead %s: client expected updated_at=%s but DB has %s",
+            lead_id,
+            client_ts,
+            db_updated_at,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This lead was modified by another user after you opened it. "
+                "Please refresh and reapply your changes."
+            ),
+        )
 
 
 def clear_lead_transition_fields(lead: Lead) -> None:
@@ -219,6 +263,7 @@ def apply_queue_filter(query, queue_type: Optional[str]):
             "No Answer",
             "No Show",
             "Cancelled Appointment",
+            "Second Consult Required",
         ]
         return query.filter(
             Lead.status != LeadStatus.SCHEDULED,
@@ -1268,6 +1313,7 @@ async def create_manual_lead(
     lead_data: ManualLeadCreate,
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Create a new lead manually from the coordinator dashboard.
@@ -1322,6 +1368,58 @@ async def create_manual_lead(
         else:
             normalized_conditions = []  # Empty = "Not Provided" in frontend
 
+        # =================================================================
+        # Referral Provider Matching/Creation (reuses widget logic)
+        # =================================================================
+        referring_provider_id = None
+        is_referral = bool(lead_data.is_referral) and bool(lead_data.referring_provider_name and lead_data.referring_provider_name.strip())
+
+        if is_referral:
+            provider_name_lookup = lead_data.referring_provider_name.strip()
+            # Determine if the contact field looks like an email or phone
+            raw_contact = (lead_data.referring_provider_contact or "").strip()
+            provider_email_lookup = raw_contact.lower() if "@" in raw_contact else None
+            provider_phone = raw_contact if raw_contact and "@" not in raw_contact else None
+            provider_specialty_raw = (lead_data.referring_provider_specialty or "").strip()
+
+            existing_provider = None
+
+            # First try to find by email if provided
+            if provider_email_lookup:
+                existing_provider = db.query(ReferringProvider).filter(
+                    ReferringProvider.email == provider_email_lookup
+                ).first()
+
+            # If not found by email, try by name (case-insensitive)
+            if not existing_provider and provider_name_lookup:
+                existing_provider = db.query(ReferringProvider).filter(
+                    ReferringProvider.name.ilike(provider_name_lookup)
+                ).first()
+
+            if existing_provider:
+                # Update existing provider's missing fields
+                if provider_email_lookup and not existing_provider.email:
+                    existing_provider.email = provider_email_lookup
+                if provider_phone and not existing_provider.phone:
+                    existing_provider.phone = provider_phone
+                if provider_specialty_raw and not existing_provider.specialty:
+                    existing_provider.specialty = provider_specialty_raw
+                referring_provider_id = existing_provider.id
+                db.flush()
+            else:
+                # Create new referring provider
+                new_provider = ReferringProvider(
+                    name=provider_name_lookup,
+                    email=provider_email_lookup,
+                    phone=provider_phone,
+                    specialty=provider_specialty_raw if provider_specialty_raw else None,
+                    total_referrals=0,
+                    converted_referrals=0,
+                )
+                db.add(new_provider)
+                db.flush()  # Get the ID without committing
+                referring_provider_id = new_provider.id
+
         # Build lead record with proper defaults for all required NOT NULL columns
         lead = Lead(
             lead_number=lead_number,
@@ -1358,8 +1456,9 @@ async def create_manual_lead(
             contact_outcome=ContactOutcome.NEW,
             # Source tracking
             source=LeadSource.manual,
-            # Referral defaults for NOT NULL column
-            is_referral=False,
+            # Referral tracking — linked to provider if referral
+            is_referral=is_referral,
+            referring_provider_id=referring_provider_id,
             # Notes from coordinator
             notes=lead_data.notes,
             # Metadata
@@ -1368,8 +1467,37 @@ async def create_manual_lead(
         )
 
         db.add(lead)
+        db.flush()
+
+        # Manual lead creation notes must land in the same append-only notes feed
+        # used by Lead Details so they render alongside outcome notes.
+        if lead_data.notes and lead_data.notes.strip():
+            db.add(
+                LeadNote(
+                    lead_id=lead.id,
+                    note_text=lead_data.notes.strip(),
+                    created_by=current_user.id,
+                    created_by_name=current_user.full_name.strip() or current_user.email,
+                    note_type="manual",
+                )
+            )
+
         db.commit()
         db.refresh(lead)
+
+        # IDEMPOTENT FIX: Recalculate provider total_referrals from actual lead COUNT
+        if is_referral and referring_provider_id:
+            actual_count = db.query(func.count(Lead.id)).filter(
+                Lead.referring_provider_id == referring_provider_id,
+                Lead.deleted_at.is_(None),
+            ).scalar() or 0
+            provider = db.query(ReferringProvider).filter(
+                ReferringProvider.id == referring_provider_id
+            ).first()
+            if provider:
+                provider.total_referrals = actual_count
+                provider.last_referral_at = datetime.now(timezone.utc)
+                db.commit()
 
         # Invalidate cache
         try:
@@ -1609,6 +1737,10 @@ async def get_lead(
         last_contact_attempt=lead.last_contact_attempt,
         contact_attempts=lead.contact_attempts,
         next_follow_up_at=lead.next_follow_up_at,
+        contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
+        follow_up_reason=lead.follow_up_reason,
+        follow_up_date=lead.follow_up_date,
+        last_updated_at=lead.last_updated_at,
         tms_therapy_interest=lead.tms_therapy_interest,
     )
 
@@ -1650,13 +1782,18 @@ async def schedule_callback(
         HTTPException: If lead not found
     """
     # Fetch lead
-    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id,
+        Lead.deleted_at.is_(None),
+    ).first()
 
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
+
+    ensure_expected_updated_at(lead, schedule_data.expected_updated_at, lead_id)
 
     # Store old values for audit
     old_values = {
@@ -1767,6 +1904,10 @@ async def schedule_callback(
         last_contact_attempt=lead.last_contact_attempt,
         contact_attempts=lead.contact_attempts,
         next_follow_up_at=lead.next_follow_up_at,
+        contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
+        follow_up_reason=lead.follow_up_reason,
+        follow_up_date=lead.follow_up_date,
+        last_updated_at=lead.last_updated_at,
     )
 
 
@@ -1799,7 +1940,10 @@ async def log_contact_attempt(
         HTTPException: If lead not found
     """
     # Fetch lead
-    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id,
+        Lead.deleted_at.is_(None),
+    ).first()
 
     if not lead:
         raise HTTPException(
@@ -1899,6 +2043,10 @@ async def log_contact_attempt(
         last_contact_attempt=lead.last_contact_attempt,
         contact_attempts=lead.contact_attempts,
         next_follow_up_at=lead.next_follow_up_at,
+        contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
+        follow_up_reason=lead.follow_up_reason,
+        follow_up_date=lead.follow_up_date,
+        last_updated_at=lead.last_updated_at,
     )
 
 
@@ -1980,6 +2128,7 @@ async def update_lead_status(
     new_status: LeadStatus,
     request: Request,
     db: Session = Depends(get_db),
+    expected_updated_at: Optional[datetime] = None,
 ) -> LeadResponse:
     """
     Update lead status.
@@ -1999,13 +2148,18 @@ async def update_lead_status(
         HTTPException: If lead not found
     """
     # Fetch lead
-    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id,
+        Lead.deleted_at.is_(None),
+    ).first()
 
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
+
+    ensure_expected_updated_at(lead, expected_updated_at, lead_id)
 
     # Store old status for audit
     old_status = lead.status
@@ -2100,6 +2254,16 @@ async def update_lead_status(
         created_at=lead.created_at,
         updated_at=lead.updated_at,
         contacted_at=lead.contacted_at,
+        scheduled_callback_at=lead.scheduled_callback_at,
+        scheduled_notes=lead.scheduled_notes,
+        contact_method=lead.contact_method,
+        last_contact_attempt=lead.last_contact_attempt,
+        contact_attempts=lead.contact_attempts,
+        next_follow_up_at=lead.next_follow_up_at,
+        contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
+        follow_up_reason=lead.follow_up_reason,
+        follow_up_date=lead.follow_up_date,
+        last_updated_at=lead.last_updated_at,
     )
 
 
@@ -2144,13 +2308,18 @@ async def update_contact_outcome(
         HTTPException: If lead not found
     """
     # Fetch lead
-    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id,
+        Lead.deleted_at.is_(None),
+    ).first()
 
     if not lead:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Lead not found",
         )
+
+    ensure_expected_updated_at(lead, outcome_data.expected_updated_at, lead_id)
 
     # Store old values for audit
     old_outcome = lead.contact_outcome.value if lead.contact_outcome else "NEW"
@@ -2186,30 +2355,37 @@ async def update_contact_outcome(
         lead.contacted_at = now
         lead.follow_up_reason = None
         lead.follow_up_date = None
+        lead.next_follow_up_at = None
     elif outcome_data.contact_outcome == ContactOutcome.NO_ANSWER:
         lead.status = LeadStatus.CONTACTED
         lead.contacted_at = now
         lead.follow_up_reason = "No Answer"
         lead.follow_up_date = now + timedelta(days=1)
+        lead.next_follow_up_at = lead.follow_up_date
     elif outcome_data.contact_outcome == ContactOutcome.UNREACHABLE:
         lead.status = LeadStatus.CONTACTED
         lead.contacted_at = now
         lead.follow_up_reason = "Unreachable"
         lead.follow_up_date = None
+        lead.next_follow_up_at = None
     elif outcome_data.contact_outcome == ContactOutcome.CALLBACK_REQUESTED:
         lead.status = LeadStatus.CONTACTED
         lead.contacted_at = now
         lead.follow_up_reason = "Callback Requested"
         # follow_up_date set from next_follow_up_at if provided
+        lead.follow_up_date = outcome_data.next_follow_up_at
+        lead.next_follow_up_at = outcome_data.next_follow_up_at
     elif outcome_data.contact_outcome == ContactOutcome.NOT_INTERESTED:
         lead.status = LeadStatus.CONTACTED
         lead.contacted_at = now
         lead.follow_up_reason = "Not Interested"
         lead.follow_up_date = now + timedelta(days=14)
+        lead.next_follow_up_at = lead.follow_up_date
 
     # Set next follow-up for certain outcomes (if explicitly provided by frontend)
     if outcome_data.next_follow_up_at:
         lead.next_follow_up_at = outcome_data.next_follow_up_at
+        lead.follow_up_date = outcome_data.next_follow_up_at
 
     # Create outcome note ONLY if the coordinator typed something.
     # If no note text was provided, the outcome is already tracked in the
@@ -2319,6 +2495,9 @@ async def update_contact_outcome(
         contact_attempts=lead.contact_attempts,
         next_follow_up_at=lead.next_follow_up_at,
         contact_outcome=lead.contact_outcome,
+        follow_up_reason=lead.follow_up_reason,
+        follow_up_date=lead.follow_up_date,
+        last_updated_at=lead.last_updated_at,
     )
 
 
@@ -2358,7 +2537,10 @@ async def update_consultation_outcome(
     import logging
     logger = logging.getLogger(__name__)
 
-    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id,
+        Lead.deleted_at.is_(None),
+    ).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
@@ -2372,6 +2554,18 @@ async def update_consultation_outcome(
     notes = body.get("notes")
     scheduled_callback_at_str = body.get("scheduled_callback_at")
     contact_method_str = body.get("contact_method")
+    expected_updated_at_raw = body.get("expected_updated_at")
+
+    expected_updated_at = None
+    if isinstance(expected_updated_at_raw, str) and expected_updated_at_raw.strip():
+        try:
+            expected_updated_at = datetime.fromisoformat(
+                expected_updated_at_raw.replace("Z", "+00:00")
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid expected_updated_at timestamp.")
+
+    ensure_expected_updated_at(lead, expected_updated_at, lead_id)
 
     old_status = lead.status.value if lead.status else None
     now = datetime.now(timezone.utc)
@@ -2413,13 +2607,11 @@ async def update_consultation_outcome(
             lead.scheduled_callback_at = scheduled_dt
             lead.follow_up_date = scheduled_dt
     elif outcome_lower == "followup":
-        # Second consult stays in Scheduled queue (NOT Follow-up)
-        # The lead still has a consultation — just at a new date
-        lead.status = LeadStatus.SCHEDULED
-        lead.contact_outcome = ContactOutcome.SCHEDULED
+        # Move back to the Follow-up workflow with a coordinator callback date.
+        lead.status = LeadStatus.CONTACTED
+        lead.contact_outcome = ContactOutcome.ANSWERED
         lead.follow_up_reason = "Second Consult Required"
         if scheduled_dt:
-            lead.scheduled_callback_at = scheduled_dt
             lead.follow_up_date = scheduled_dt
             lead.next_follow_up_at = scheduled_dt
     elif outcome_lower == "no_show":
@@ -2427,11 +2619,13 @@ async def update_consultation_outcome(
         lead.contact_outcome = ContactOutcome.ANSWERED
         lead.follow_up_reason = "No Show"
         lead.follow_up_date = now + timedelta(days=1)
+        lead.next_follow_up_at = lead.follow_up_date
     elif outcome_lower == "cancelled":
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.ANSWERED
         lead.follow_up_reason = "Cancelled Appointment"
         lead.follow_up_date = now + timedelta(days=7)
+        lead.next_follow_up_at = lead.follow_up_date
     else:
         raise HTTPException(status_code=400, detail=f"Invalid outcome: {outcome}")
 
@@ -3163,6 +3357,34 @@ async def permanent_delete_lead(
             )
         except Exception as e:
             logger.warning(f"Audit log failed for permanent delete {lead_id}: {e}")
+
+        # Remove child records explicitly before deleting the lead.
+        # The lead_notes.lead_id column is NOT NULL, so relying on default ORM
+        # relationship behavior can attempt to null it out instead of deleting.
+        attachments_dir = Path(__file__).resolve().parent.parent.parent / "static" / "attachments"
+        attachments = (
+            db.query(LeadAttachment)
+            .filter(LeadAttachment.lead_id == lead_id)
+            .all()
+        )
+        for attachment in attachments:
+            file_path = attachments_dir / attachment.stored_filename
+            try:
+                if file_path.exists():
+                    file_path.unlink()
+            except OSError as file_error:
+                logger.warning(
+                    "Failed to remove attachment file %s during permanent delete of lead %s: %s",
+                    attachment.stored_filename,
+                    lead_id,
+                    file_error,
+                )
+            db.delete(attachment)
+
+        db.query(LeadNote).filter(
+            LeadNote.lead_id == lead_id
+        ).delete(synchronize_session=False)
+        db.flush()
 
         # Hard delete
         db.delete(lead)

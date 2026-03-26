@@ -21,6 +21,7 @@ interface ScheduleModalProps {
   leadCondition?: string;
   leadPriority?: 'hot' | 'medium' | 'low';
   scheduleType?: 'callback' | 'consultation';
+  expectedUpdatedAt?: string;
   onScheduleSuccess?: () => void;
 }
 
@@ -39,6 +40,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
   leadCondition,
   leadPriority = 'medium',
   scheduleType = 'callback',
+  expectedUpdatedAt,
   onScheduleSuccess,
 }) => {
   // Dynamic labels based on schedule type
@@ -115,6 +117,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
         scheduled_notes: notes.trim() || undefined,
         // CRITICAL: Pass schedule_type to differentiate callback vs consultation routing
         schedule_type: scheduleType as ScheduleType,
+        expected_updated_at: expectedUpdatedAt,
       };
 
       await scheduleCallback(leadId, scheduleData);
@@ -128,13 +131,21 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({
           onScheduleSuccess();
         }
       }, 1500);
-    } catch (err) {
+    } catch (err: unknown) {
       if (import.meta.env.DEV) console.error('Error scheduling callback:', err);
-      setError('Failed to schedule callback. Please try again.');
+      const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string };
+      const detail = axiosErr?.response?.data?.detail;
+      if (typeof detail === 'string' && detail.trim()) {
+        setError(detail.trim());
+      } else if (err instanceof Error && err.message) {
+        setError(err.message);
+      } else {
+        setError('Failed to schedule callback. Please try again.');
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedDate, selectedTime, contactMethod, notes, leadId, onClose, onScheduleSuccess]);
+  }, [selectedDate, selectedTime, contactMethod, notes, leadId, onClose, onScheduleSuccess, scheduleType, expectedUpdatedAt]);
 
   // Priority badge styling
   const getPriorityStyles = (priority: string): string => {

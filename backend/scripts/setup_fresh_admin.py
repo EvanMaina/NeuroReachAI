@@ -2,12 +2,13 @@
 Setup Fresh Admin Account
 ========================
 Creates an admin account with a temporary password.
-Clears ALL existing users first (fresh start).
+Safe by default: preserves existing users unless explicitly told to wipe them.
 
 Usage (inside Docker):
     docker compose exec backend python /app/scripts/setup_fresh_admin.py --email admin@clinic.com
     docker compose exec backend python /app/scripts/setup_fresh_admin.py --email admin@clinic.com --role primary_admin
     docker compose exec backend python /app/scripts/setup_fresh_admin.py --email evans@clinic.com --first-name Evans --last-name Mwaniki
+    docker compose exec backend python /app/scripts/setup_fresh_admin.py --email admin@clinic.com --wipe-existing-users
 
 Usage (outside Docker, from project root):
     python backend/scripts/setup_fresh_admin.py --email admin@clinic.com --role administrator
@@ -18,6 +19,8 @@ Flags:
                          Default: primary_admin
     --first-name NAME    (optional) First name. If omitted, derived from email.
     --last-name  NAME    (optional) Last name. If omitted, derived from email.
+    --wipe-existing-users
+                         (optional, dangerous) Clears ALL existing users and related auth data first.
 """
 
 import argparse
@@ -195,6 +198,11 @@ def main():
         default=None,
         help="Last name (optional). If omitted, derived from the email address.",
     )
+    parser.add_argument(
+        "--wipe-existing-users",
+        action="store_true",
+        help="DANGEROUS: clear all existing users and related auth data before creating the account.",
+    )
     args = parser.parse_args()
 
     email = args.email.strip().lower()
@@ -229,30 +237,36 @@ def main():
         print(f"  [FAIL] Database connection failed: {e}")
         sys.exit(1)
 
-    # Clear all existing users (and related tables)
-    print("\n2. Clearing all existing users...")
-    try:
+    # Optional destructive reset
+    if args.wipe_existing_users:
+        print("\n2. Clearing all existing users...")
+        try:
+            cur.execute("SELECT COUNT(*) FROM users;")
+            count = cur.fetchone()[0]
+            print(f"  Found {count} existing user(s)")
+
+            # Delete in order to respect foreign keys
+            cur.execute("DELETE FROM password_reset_tokens;")
+            cur.execute("DELETE FROM user_preferences;")
+            cur.execute("DELETE FROM users;")
+            conn.commit()
+            print(f"  [OK] Cleared {count} user(s) and related data")
+        except Exception as e:
+            conn.rollback()
+            print(f"  [FAIL] Failed to clear users: {e}")
+            sys.exit(1)
+    else:
+        print("\n2. Safe mode -- preserving existing users")
         cur.execute("SELECT COUNT(*) FROM users;")
         count = cur.fetchone()[0]
-        print(f"  Found {count} existing user(s)")
-
-        # Delete in order to respect foreign keys
-        cur.execute("DELETE FROM password_reset_tokens;")
-        cur.execute("DELETE FROM user_preferences;")
-        cur.execute("DELETE FROM users;")
-        conn.commit()
-        print(f"  [OK] Cleared {count} user(s) and related data")
-    except Exception as e:
-        conn.rollback()
-        print(f"  [FAIL] Failed to clear users: {e}")
-        sys.exit(1)
+        print(f"  Found {count} existing user(s); no destructive changes will be made")
 
     # Generate temp password
     temp_password = generate_temp_password()
     password_hash = hash_password(temp_password)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=TEMP_PASSWORD_EXPIRY_HOURS)
 
-    # Create admin account
+    # Create or refresh the target account
     print(f"\n3. Creating {role.replace('_', ' ')} account...")
     print(f"  Email:    {email}")
     print(f"  Name:     {first_name} {last_name}")
@@ -261,26 +275,55 @@ def main():
     print(f"  Expires:  {expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
     try:
-        cur.execute("""
-            INSERT INTO users (
+        cur.execute("SELECT id FROM users WHERE email = %s;", (email,))
+        existing_user = cur.fetchone()
+
+        if existing_user:
+            user_id = existing_user[0]
+            cur.execute("""
+                UPDATE users
+                SET password_hash = %s,
+                    first_name = %s,
+                    last_name = %s,
+                    role = %s,
+                    status = %s,
+                    must_change_password = %s,
+                    password_expires_at = %s,
+                    updated_at = NOW()
+                WHERE id = %s;
+            """, (
+                password_hash, first_name, last_name,
+                role, "active", True, expires_at, str(user_id),
+            ))
+            cur.execute("DELETE FROM password_reset_tokens WHERE user_id = %s;", (str(user_id),))
+            cur.execute("""
+                INSERT INTO user_preferences (user_id)
+                VALUES (%s)
+                ON CONFLICT (user_id) DO NOTHING;
+            """, (str(user_id),))
+            conn.commit()
+            print(f"  [OK] Existing user refreshed (ID: {user_id})")
+        else:
+            cur.execute("""
+                INSERT INTO users (
+                    email, password_hash, first_name, last_name,
+                    role, status, must_change_password, password_expires_at,
+                    created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING id;
+            """, (
                 email, password_hash, first_name, last_name,
-                role, status, must_change_password, password_expires_at,
-                created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            RETURNING id;
-        """, (
-            email, password_hash, first_name, last_name,
-            role, "active", True, expires_at,
-        ))
-        user_id = cur.fetchone()[0]
+                role, "active", True, expires_at,
+            ))
+            user_id = cur.fetchone()[0]
 
-        # Create default preferences
-        cur.execute("""
-            INSERT INTO user_preferences (user_id) VALUES (%s);
-        """, (str(user_id),))
+            # Create default preferences
+            cur.execute("""
+                INSERT INTO user_preferences (user_id) VALUES (%s);
+            """, (str(user_id),))
 
-        conn.commit()
-        print(f"  [OK] User created (ID: {user_id})")
+            conn.commit()
+            print(f"  [OK] User created (ID: {user_id})")
     except Exception as e:
         conn.rollback()
         print(f"  [FAIL] Failed to create user: {e}")

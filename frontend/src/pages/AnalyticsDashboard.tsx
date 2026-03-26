@@ -23,6 +23,7 @@ import {
   AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import { Sidebar } from '../components/dashboard/Sidebar';
+import { GreetingBanner } from '../components/common/GreetingBanner';
 import { RefreshButton } from '../components/common/RefreshButton';
 import {
   getPlatformGradient,
@@ -246,6 +247,9 @@ export const AnalyticsDashboard: React.FC = () => {
       <Sidebar currentPage={currentPage} onNavigate={(page) => setCurrentPage(page)} />
 
       <main className="ml-60 p-8">
+        {/* Personalized Greeting */}
+        <GreetingBanner />
+
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-4">

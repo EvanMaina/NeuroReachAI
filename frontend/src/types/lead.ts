@@ -219,6 +219,7 @@ export interface LeadTableRow {
   priority: LeadPriority;
   status: LeadStatus;
   submittedAt: string;
+  updatedAt?: string;
   // Contact outcome tracking
   contactOutcome?: ContactOutcome;
   contactAttempts?: number;
