@@ -67,7 +67,7 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER }} \
             --services neuroreach-ai-backend-service \
             --query 'services[0].networkConfiguration.awsvpcConfiguration.subnets' --output text)
-          SUBNETS_CSV=$(echo $SUBNETS | tr '\t' ',')
+          SUBNETS_CSV=$(echo $SUBNETS | tr '[:blank:]' ',')
           echo "subnets=$SUBNETS_CSV" >> $GITHUB_OUTPUT
           
           SG=$(aws ecs describe-services \
