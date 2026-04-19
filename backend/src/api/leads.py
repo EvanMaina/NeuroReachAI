@@ -58,6 +58,8 @@ from ..core.auth import get_current_user, require_role
 from ..services.lead_scoring_v2 import is_in_service_area as _check_service_area
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/leads", tags=["Leads"])
 
 
@@ -784,9 +786,7 @@ async def submit_lead(
         except Exception as e:
             # Log error but don't fail the request
             # Notifications are nice-to-have, not critical
-            import logging
-            logging.error(f"Failed to send notification: {e}")
-            pass
+            logger.error(f"Failed to send notification: {e}")
 
         # Create audit log entry (without PHI)
         audit_service = AuditService(db)
