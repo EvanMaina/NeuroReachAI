@@ -1,5 +1,5 @@
 # =============================================================================
-# SleepReach — Deploy to Production
+# NeuroReach AI — Deploy to Production
 #
 # Triggers:
 #   1. workflow_call — Called from Promote workflow (primary mechanism)
@@ -28,20 +28,20 @@ concurrency:
 env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 131880217305.dkr.ecr.us-east-2.amazonaws.com
-  ECR_REPOSITORY: sleepreach/backend
-  ECR_REPOSITORY_FRONTEND: sleepreach/frontend
-  ECS_CLUSTER: sleepreach-cluster
-  ECS_SERVICE_BACKEND: sleepreach-prod-backend
-  ECS_SERVICE_CELERY: sleepreach-prod-celery
-  ECS_SERVICE_FRONTEND: sleepreach-prod-frontend
-  TASK_DEF_BACKEND: sleepreach-prod-backend
-  TASK_DEF_CELERY: sleepreach-prod-celery
-  TASK_DEF_FRONTEND: sleepreach-prod-frontend
+  ECR_REPOSITORY: neuroreach-ai/backend
+  ECR_REPOSITORY_FRONTEND: neuroreach-ai/frontend
+  ECS_CLUSTER: neuroreach-ai-cluster
+  ECS_SERVICE_BACKEND: neuroreach-ai-backend-service
+  ECS_SERVICE_CELERY: neuroreach-ai-celery-service
+  ECS_SERVICE_FRONTEND: neuroreach-ai-frontend-service
+  TASK_DEF_BACKEND: neuroreach-ai-backend
+  TASK_DEF_CELERY: neuroreach-ai-celery
+  TASK_DEF_FRONTEND: neuroreach-ai-frontend
   CONTAINER_NAME_BACKEND: backend
-  CONTAINER_NAME_CELERY: celery
+  CONTAINER_NAME_CELERY: celery-worker
   CONTAINER_NAME_FRONTEND: frontend
-  PRODUCTION_URL: https://api.sleeplessinarizona.com
-  FRONTEND_URL: https://app.sleeplessinarizona.com
+  PRODUCTION_URL: https://api.tmsinstitute.co
+  FRONTEND_URL: https://app.tmsinstitute.co
   PYTHON_VERSION: "3.11"
   NODE_VERSION: "22"
 
@@ -80,6 +80,17 @@ jobs:
         with:
           ref: main
           fetch-depth: 0 # Full history for tagging
+
+      # ---------------------------------------------------------------------
+      # REPO IDENTITY GUARD — prevents cross-contamination between tools.
+      # Fails fast (before any ECR push) if the checked-out tree isn't
+      # NeuroReach. Root cause of 2026-04-20 incident was a tree from the
+      # other tool being deployed to NeuroReach AWS resources.
+      # ---------------------------------------------------------------------
+      - name: "🔐 Verify repo identity (NeuroReach)"
+        run: |
+          chmod +x scripts/verify_repo_identity.sh
+          ./scripts/verify_repo_identity.sh
 
       # Determine the ACTUAL commit SHA being deployed
       - name: Get deployment info
@@ -359,7 +370,7 @@ jobs:
           # Test frontend is serving
           FRONTEND_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" ${{ env.FRONTEND_URL }} 2>&1) || true
           if [ "$FRONTEND_STATUS" = "200" ]; then
-            echo "✅ Frontend: HTTP $FRONTEND_STATUS (app.sleeplessinarizona.com serving)"
+            echo "✅ Frontend: HTTP $FRONTEND_STATUS (app.tmsinstitute.co serving)"
           else
             echo "⚠️ Frontend returned HTTP $FRONTEND_STATUS (may still be stabilizing)"
           fi
@@ -367,6 +378,38 @@ jobs:
           echo "🎉 All production smoke tests passed!"
 
       # --- Git Release Tag ---
+
+      # ---------------------------------------------------------------------
+      # POST-DEPLOY IDENTITY VERIFICATION
+      # Curl the live frontend and assert <title> contains "NeuroReach".
+      # If the nginx container is serving the wrong tool, this step fails
+      # and the deploy is marked red.
+      # ---------------------------------------------------------------------
+      - name: "🔐 Post-deploy: verify live frontend <title> is NeuroReach"
+        run: |
+          URL="${{ env.FRONTEND_URL }}"
+          echo "🔎 Fetching $URL and checking <title>..."
+          for i in 1 2 3 4 5 6; do
+            HTML=$(curl -s --max-time 10 "$URL/" || true)
+            TITLE=$(echo "$HTML" | grep -oiE '<title>[^<]*</title>' | head -n1 || echo '')
+            if echo "$TITLE" | grep -iq 'NeuroReach'; then
+              echo "✅ Live frontend title OK: $TITLE"
+              if echo "$HTML" | grep -iq 'SleepReach\|sleeplessinarizona'; then
+                echo "❌ CRITICAL: live HTML contains forbidden markers!"
+                echo "$HTML" | grep -iE 'SleepReach\|sleeplessinarizona' | head -5
+                exit 1
+              fi
+              echo "✅ No cross-contamination markers in live HTML."
+              exit 0
+            fi
+            echo "⏳ Attempt $i/6: title was '$TITLE' — waiting 10s for ALB to cut over..."
+            sleep 10
+          done
+          echo "❌ CRITICAL: $URL is NOT serving NeuroReach — contamination detected."
+          echo "   Last title seen: $TITLE"
+          echo "   First 500 bytes of HTML:"
+          echo "$HTML" | head -c 500
+          exit 1
       - name: Create git release tag
         run: |
           SHA=${{ steps.deploy-info.outputs.sha_short }}
@@ -417,8 +460,8 @@ jobs:
           echo "✅ PRODUCTION deployment successful!"
           echo "Image: ${{ needs.build-and-deploy.outputs.image_tag }}"
           echo "Commit: ${{ needs.build-and-deploy.outputs.deploy_sha }}"
-          echo "Backend URL: https://api.sleeplessinarizona.com"
-          echo "Frontend URL: https://app.sleeplessinarizona.com"
+          echo "Backend URL: https://api.tmsinstitute.co"
+          echo "Frontend URL: https://app.tmsinstitute.co"
           echo "Deployed by: ${{ github.actor }}"
 
       - name: Notify on failure
@@ -429,4 +472,4 @@ jobs:
           echo "Actor: ${{ github.actor }}"
           echo "Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo ""
-          echo "⚠️ IMMEDIATE ACTION REQUIRED: Check production health at https://api.sleeplessinarizona.com/health"
+          echo "⚠️ IMMEDIATE ACTION REQUIRED: Check production health at https://api.tmsinstitute.co/health"
