@@ -1,5 +1,5 @@
 # =============================================================================
-# NeuroReach AI — Deploy to Production
+# SleepReach — Deploy to Production
 #
 # Triggers:
 #   1. workflow_call — Called from Promote workflow (primary mechanism)
@@ -11,9 +11,9 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-  # Called as a reusable workflow from promote.yml
+    branches: [ main ]
+  workflow_dispatch: # Called as a reusable workflow from promote.yml
+
   workflow_call:
     inputs:
       skip_ci:
@@ -28,22 +28,22 @@ concurrency:
 env:
   AWS_REGION: us-east-2
   ECR_REGISTRY: 131880217305.dkr.ecr.us-east-2.amazonaws.com
-  ECR_REPOSITORY: neuroreach-ai/backend
-  ECR_REPOSITORY_FRONTEND: neuroreach-ai/frontend
-  ECS_CLUSTER: neuroreach-ai-cluster
-  ECS_SERVICE_BACKEND: neuroreach-ai-backend-service
-  ECS_SERVICE_CELERY: neuroreach-ai-celery-service
-  ECS_SERVICE_FRONTEND: neuroreach-ai-frontend-service
-  TASK_DEF_BACKEND: neuroreach-ai-backend
-  TASK_DEF_CELERY: neuroreach-ai-celery
-  TASK_DEF_FRONTEND: neuroreach-ai-frontend
+  ECR_REPOSITORY: sleepreach/backend
+  ECR_REPOSITORY_FRONTEND: sleepreach/frontend
+  ECS_CLUSTER: sleepreach-cluster
+  ECS_SERVICE_BACKEND: sleepreach-prod-backend
+  ECS_SERVICE_CELERY: sleepreach-prod-celery
+  ECS_SERVICE_FRONTEND: sleepreach-prod-frontend
+  TASK_DEF_BACKEND: sleepreach-prod-backend
+  TASK_DEF_CELERY: sleepreach-prod-celery
+  TASK_DEF_FRONTEND: sleepreach-prod-frontend
   CONTAINER_NAME_BACKEND: backend
-  CONTAINER_NAME_CELERY: celery-worker
+  CONTAINER_NAME_CELERY: celery
   CONTAINER_NAME_FRONTEND: frontend
-  PRODUCTION_URL: https://api.tmsinstitute.co
-  FRONTEND_URL: https://app.tmsinstitute.co
+  PRODUCTION_URL: https://api.sleeplessinarizona.com
+  FRONTEND_URL: https://app.sleeplessinarizona.com
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 permissions:
   id-token: write
@@ -65,9 +65,10 @@ jobs:
   build-and-deploy:
     name: "🚀 Build & Deploy to Production"
     runs-on: ubuntu-latest
-    needs: [ci]
+    needs: [ ci ]
     # Run if CI passed OR if CI was skipped (workflow_call with skip_ci=true)
-    if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result ==
+      'skipped') }}
     environment: production
     outputs:
       deploy_sha: ${{ steps.deploy-info.outputs.sha_short }}
@@ -75,13 +76,12 @@ jobs:
       image_tag: ${{ steps.image-tag.outputs.tag }}
     steps:
       # Always checkout the main branch explicitly.
-      # This ensures correct code is deployed regardless of trigger type.
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0 # Full history for tagging
 
-      # Determine the ACTUAL commit SHA being deployed (from the checked-out branch)
+      # Determine the ACTUAL commit SHA being deployed
       - name: Get deployment info
         id: deploy-info
         run: |
@@ -131,7 +131,7 @@ jobs:
           cp -r frontend/dist-widget/* backend/frontend-bundles/dist-widget/ 2>/dev/null || true
           cp -r frontend/dist-assessment/* backend/frontend-bundles/dist-assessment/ 2>/dev/null || true
 
-      # --- Build & Push Docker Image ---
+      # --- Build & Push Backend Docker Image ---
       - name: Set image tag
         id: image-tag
         run: |
@@ -159,7 +159,7 @@ jobs:
         with:
           image-ref: ${{ steps.image-tag.outputs.full_image }}
           severity: CRITICAL
-          exit-code: 0 # Report only — block manually if critical issues
+          exit-code: 0 # Report only
           format: table
         continue-on-error: true
 
@@ -178,7 +178,6 @@ jobs:
             --task-definition ${{ env.TASK_DEF_BACKEND }} \
             --query 'taskDefinition' \
             --output json > backend-task-def.json
-          # Remove fields that can't be re-registered
           python3 -c "
           import json
           with open('backend-task-def.json') as f:
@@ -239,6 +238,26 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
           wait-for-minutes: 15
+
+      # ---------------------------------------------------------------------
+      # CRITICAL: Enforce Celery desiredCount = 1
+      # The worker command uses `celery ... worker -B` (embedded Beat scheduler).
+      # Running >1 replica = multiple Beat schedulers = EVERY scheduled task
+      # fires N times (duplicate emails/SMS to leads). Always pin to 1.
+      # If horizontal scaling is ever needed, split into a dedicated Beat
+      # service (desired=1, cmd `celery beat`) + N worker replicas (cmd
+      # `celery worker` without `-B`).
+      # ---------------------------------------------------------------------
+      - name: Enforce celery desiredCount=1 (prevent duplicate Beat)
+        run: |
+          echo "🔒 Pinning ${{ env.ECS_SERVICE_CELERY }} to desiredCount=1 to prevent duplicate Beat schedulers..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_CELERY }} \
+            --desired-count 1 \
+            --query 'service.{svc:serviceName,desired:desiredCount,running:runningCount}' \
+            --output json
+          echo "✅ Celery service pinned to 1 replica."
 
       # --- Build & Deploy Frontend Service (nginx + React SPA) ---
       - name: Set frontend image tag
@@ -306,8 +325,6 @@ jobs:
       - name: Run production smoke tests
         run: |
           echo "🔥 Running smoke tests against production..."
-
-          # Wait for service to stabilize
           sleep 20
 
           # Test liveness endpoint
@@ -342,7 +359,7 @@ jobs:
           # Test frontend is serving
           FRONTEND_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" ${{ env.FRONTEND_URL }} 2>&1) || true
           if [ "$FRONTEND_STATUS" = "200" ]; then
-            echo "✅ Frontend: HTTP $FRONTEND_STATUS (app.tmsinstitute.co serving)"
+            echo "✅ Frontend: HTTP $FRONTEND_STATUS (app.sleeplessinarizona.com serving)"
           else
             echo "⚠️ Frontend returned HTTP $FRONTEND_STATUS (may still be stabilizing)"
           fi
@@ -391,7 +408,7 @@ jobs:
   notify:
     name: "📧 Notify"
     runs-on: ubuntu-latest
-    needs: [build-and-deploy]
+    needs: [ build-and-deploy ]
     if: always()
     steps:
       - name: Notify on success
@@ -400,8 +417,8 @@ jobs:
           echo "✅ PRODUCTION deployment successful!"
           echo "Image: ${{ needs.build-and-deploy.outputs.image_tag }}"
           echo "Commit: ${{ needs.build-and-deploy.outputs.deploy_sha }}"
-          echo "Backend URL: https://api.tmsinstitute.co"
-          echo "Frontend URL: https://app.tmsinstitute.co"
+          echo "Backend URL: https://api.sleeplessinarizona.com"
+          echo "Frontend URL: https://app.sleeplessinarizona.com"
           echo "Deployed by: ${{ github.actor }}"
 
       - name: Notify on failure
@@ -412,4 +429,4 @@ jobs:
           echo "Actor: ${{ github.actor }}"
           echo "Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo ""
-          echo "⚠️ IMMEDIATE ACTION REQUIRED: Check production health at https://api.tmsinstitute.co/health"
+          echo "⚠️ IMMEDIATE ACTION REQUIRED: Check production health at https://api.sleeplessinarizona.com/health"
