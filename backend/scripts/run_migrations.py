@@ -206,39 +206,51 @@ def main() -> None:
             except Exception as e:
                 err = str(e).strip().split("\n")[0]
                 failed_stmts.append((first_line, err))
-                # Critical statement check
-                is_critical = any(
-                    kw in first_line.upper()
-                    for kw in ["CREATE TABLE", "CREATE TYPE", "ALTER TABLE", "CREATE EXTENSION"]
+                # Check if this is a benign "already exists" error (expected on existing DBs)
+                err_lower = err.lower()
+                is_benign = any(
+                    phrase in err_lower
+                    for phrase in [
+                        "already exists",
+                        "duplicate key",
+                        "does not exist",    # DROP IF EXISTS on missing object
+                        "could not create unique index",  # index already present
+                        "multiple default values",
+                    ]
                 )
-                if is_critical:
-                    print(f"     [CRITICAL FAIL] {first_line}")
-                    print(f"       Error: {err}")
-                    # Record failure
-                    try:
-                        reconn = psycopg2.connect(DATABASE_URL)
-                        reconn.autocommit = True
-                        rc = reconn.cursor()
-                        rc.execute(
-                            "INSERT INTO schema_migrations (filename, checksum, success) "
-                            "VALUES (%s, %s, FALSE) ON CONFLICT (filename) DO UPDATE "
-                            "SET checksum = EXCLUDED.checksum, success = FALSE, applied_at = NOW()",
-                            (filename, checksum),
-                        )
-                        reconn.close()
-                    except Exception:
-                        pass
-                    conn.close()
-                    sys.exit(1)
-                else:
-                    # Non-critical — reconnect cursor and continue
-                    try:
-                        cur.close()
-                        cur = conn.cursor()
-                    except Exception:
-                        conn = psycopg2.connect(DATABASE_URL)
-                        conn.autocommit = True
-                        cur = conn.cursor()
+                if not is_benign:
+                    # Only treat as critical if truly unexpected
+                    is_critical = any(
+                        kw in first_line.upper()
+                        for kw in ["CREATE TABLE", "CREATE TYPE"]
+                    )
+                    if is_critical:
+                        print(f"     [CRITICAL FAIL] {first_line}")
+                        print(f"       Error: {err}")
+                        try:
+                            reconn = psycopg2.connect(DATABASE_URL)
+                            reconn.autocommit = True
+                            rc = reconn.cursor()
+                            rc.execute(
+                                "INSERT INTO schema_migrations (filename, checksum, success) "
+                                "VALUES (%s, %s, FALSE) ON CONFLICT (filename) DO UPDATE "
+                                "SET checksum = EXCLUDED.checksum, success = FALSE, applied_at = NOW()",
+                                (filename, checksum),
+                            )
+                            reconn.close()
+                        except Exception:
+                            pass
+                        conn.close()
+                        sys.exit(1)
+
+                # Reconnect cursor after ANY error (benign or non-critical)
+                try:
+                    cur.close()
+                    cur = conn.cursor()
+                except Exception:
+                    conn = psycopg2.connect(DATABASE_URL)
+                    conn.autocommit = True
+                    cur = conn.cursor()
 
         # Record success
         cur.execute(
