@@ -22,6 +22,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // Poll the filesystem once per second. On Windows + OneDrive + Docker
+    // volume mounts, native inotify events do not reliably propagate from
+    // host to container, so HMR silently misses edits. Polling trades a
+    // small constant CPU cost (~1%) for deterministic change detection.
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
     proxy: {
       '/api': {
         // BACKEND_URL is set by docker-compose to http://backend:8000;

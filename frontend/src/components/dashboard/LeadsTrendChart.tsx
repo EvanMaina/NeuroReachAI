@@ -563,33 +563,34 @@ export const LeadsTrendChart: React.FC<LeadsTrendChartProps> = memo(({
     };
   }, [cachedData, viewMode]);
 
+  const { min: chartMin, max: chartMax, points: chartPoints } = chartData;
+
   // Memoized Y-axis labels
   const yAxisLabels = useMemo(() => {
-    const { min, max } = chartData;
     const steps = 5;
-    const range = max - min || 1;
+    const range = chartMax - chartMin || 1;
     const stepValue = range / (steps - 1);
     
     return Array.from({ length: steps }, (_, i) => ({
-      value: Math.round(max - i * stepValue),
+      value: Math.round(chartMax - i * stepValue),
       y: CHART_PADDING.top + (i / (steps - 1)) * CHART_INNER_HEIGHT,
     }));
-  }, [chartData.min, chartData.max]);
+  }, [chartMin, chartMax]);
 
   // Memoized X-axis label indices
   const xAxisLabelIndices = useMemo(() => {
     const maxLabels = viewMode === 'daily' ? 10 : 12;
-    const pointCount = chartData.points.length;
+    const pointCount = chartPoints.length;
     const showEvery = pointCount > maxLabels ? Math.ceil(pointCount / maxLabels) : 1;
     
-    return chartData.points
+    return chartPoints
       .map((_, i) => i)
       .filter((i) => i % showEvery === 0 || i === pointCount - 1);
-  }, [chartData.points.length, viewMode]);
+  }, [chartPoints, viewMode]);
 
   // Memoized SVG paths
-  const linePath = useMemo(() => generateLinePath(chartData.points), [chartData.points]);
-  const areaPath = useMemo(() => generateAreaPath(chartData.points), [chartData.points]);
+  const linePath = useMemo(() => generateLinePath(chartPoints), [chartPoints]);
+  const areaPath = useMemo(() => generateAreaPath(chartPoints), [chartPoints]);
 
   // Range options and handlers
   const currentRangeOptions = viewMode === 'monthly' ? MONTHLY_RANGE_OPTIONS : DAILY_RANGE_OPTIONS;

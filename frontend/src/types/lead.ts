@@ -171,6 +171,8 @@ export interface Lead {
   // Location
   zipCode: string;
   isInServiceArea: boolean;
+  /** Coordinator-captured city/area (e.g. "Gilbert, AZ"). Powers expansion insights. */
+  leadLocation?: string;
   
   // Preferences
   desiredStart: 'asap' | 'within_30_days' | 'exploring';
@@ -193,6 +195,8 @@ export interface Lead {
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
+  referrerUrl?: string;
+  leadSource?: string;
   
   // Timestamps
   createdAt: string;
@@ -238,6 +242,9 @@ export interface LeadTableRow {
   // Lead source — identifies origin (widget, jotform, manual, etc.)
   // Used to suppress notifications for coordinator-added manual leads
   source?: string;
+  tmsTherapyInterest?: string;
+  /** Coordinator-captured city/area (e.g. "Gilbert, AZ"). Powers expansion insights. */
+  leadLocation?: string;
 }
 
 /**

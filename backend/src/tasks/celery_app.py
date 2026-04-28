@@ -53,6 +53,7 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=[
         "src.tasks.lead_tasks",
+        "src.tasks.ai_insights_tasks",
     ],
 )
 
@@ -346,6 +347,11 @@ celery_app.conf.task_routes = {
         "routing_key": "default",
     },
     "src.tasks.celery_app.retry_with_backoff": {
+        "queue": "default",
+        "routing_key": "default",
+    },
+    # ─── AI Insights ───────────────────────────────────────────────────
+    "src.tasks.ai_insights_tasks.refresh_ai_insights": {
         "queue": "default",
         "routing_key": "default",
     },

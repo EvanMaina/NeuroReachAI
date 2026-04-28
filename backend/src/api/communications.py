@@ -17,9 +17,10 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
-from ..models.lead import Lead, LeadStatus
+from ..models.lead import Lead, LeadStatus, ContactMethodType
 from ..services.encryption import EncryptionService
 from ..services.audit import AuditService
+from ..services.cache import get_cache
 from ..core.auth import get_current_user
 
 
@@ -210,14 +211,25 @@ async def send_email_to_lead(
         new_note = f"[{timestamp}] Email sent ({email_data.category}): {email_data.subject}"
 
         # Auto-move lead from NEW → CONTACTED on first communication
-        if lead.status == LeadStatus.NEW:
-            lead.status = LeadStatus.CONTACTED
-            lead.contacted_at = datetime.now(timezone.utc)
+        if is_success:
+            now = datetime.now(timezone.utc)
+            if lead.status == LeadStatus.NEW:
+                lead.status = LeadStatus.CONTACTED
+                lead.contacted_at = now
+            lead.last_contact_attempt = now
+            lead.contact_attempts = (lead.contact_attempts or 0) + 1
+            lead.contact_method = ContactMethodType.EMAIL
 
         existing_notes = lead.notes or ""
         lead.notes = f"{new_note}\n{existing_notes}" if existing_notes else new_note
         lead.last_updated_at = datetime.now(timezone.utc)
         db.commit()
+
+        if is_success:
+            try:
+                get_cache().invalidate_on_lead_change()
+            except Exception:
+                pass
 
         # Build user-friendly message
         masked_email = email[:2] + "***@" + email.split("@")[-1] if "@" in email else email
@@ -345,6 +357,8 @@ async def send_sms_to_lead(
             lead_name=first_name,
             category=sms_data.category,
         )
+        sms_status = sms_result.get("status", "")
+        sms_success = sms_status in ("success", "queued")
 
         # Log audit (only if we have a lead)
         if lead:
@@ -371,18 +385,27 @@ async def send_sms_to_lead(
             new_note = f"[{timestamp}] SMS sent ({sms_data.category})"
 
             # Auto-move lead from NEW → CONTACTED on first communication
-            if lead.status == LeadStatus.NEW:
-                lead.status = LeadStatus.CONTACTED
-                lead.contacted_at = datetime.now(timezone.utc)
+            if sms_success:
+                now = datetime.now(timezone.utc)
+                if lead.status == LeadStatus.NEW:
+                    lead.status = LeadStatus.CONTACTED
+                    lead.contacted_at = now
+                lead.last_contact_attempt = now
+                lead.contact_attempts = (lead.contact_attempts or 0) + 1
+                lead.contact_method = ContactMethodType.SMS
 
             existing_notes = lead.notes or ""
             lead.notes = f"{new_note}\n{existing_notes}" if existing_notes else new_note
             lead.last_updated_at = datetime.now(timezone.utc)
         db.commit()
 
+        if lead and sms_success:
+            try:
+                get_cache().invalidate_on_lead_change()
+            except Exception:
+                pass
+
         # Determine success: both "success" (sync) and "queued" (Celery) mean OK
-        sms_status = sms_result.get("status", "")
-        sms_success = sms_status in ("success", "queued")
         sms_task_id = sms_result.get("message_sid") or sms_result.get("task_id")
 
         # Mask phone for user-facing message

@@ -78,6 +78,8 @@ const DEFAULT_CONFIG = {
   barColor: 'bg-gray-400',
 };
 
+const TMS_INTEREST_ORDER = ['daily_tms', 'accelerated_tms', 'not_sure'];
+
 // =============================================================================
 // Sub-Components
 // =============================================================================
@@ -88,21 +90,22 @@ const TMSInterestRow: React.FC<{ data: TMSInterestData; maxCount: number }> = ({
 }) => {
   const config = TMS_INTEREST_CONFIG[data.interestType] || DEFAULT_CONFIG;
   const barWidth = maxCount > 0 ? (data.count / maxCount) * 100 : 0;
+  const muted = data.count === 0;
 
   return (
-    <div className="group">
+    <div className={`group ${muted ? 'opacity-75' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${config.bgColor} ${config.color}`}>
             {config.icon}
           </div>
           <div>
-            <span className="font-medium text-gray-900">{config.label}</span>
-            <span className="text-gray-500 ml-2 text-sm">({data.count})</span>
+            <span className="font-medium text-gray-900 ">{config.label}</span>
+            <span className="text-gray-500  ml-2 text-sm">({data.count})</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-semibold text-gray-900">
+          <span className="text-lg font-semibold text-gray-900 ">
             {data.percentage.toFixed(1)}%
           </span>
           {data.trend !== undefined && (
@@ -120,7 +123,7 @@ const TMSInterestRow: React.FC<{ data: TMSInterestData; maxCount: number }> = ({
         </div>
       </div>
       {/* Progress bar */}
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-2 bg-gray-100  rounded-full overflow-hidden">
         <div
           className={`h-full ${config.barColor} rounded-full transition-all duration-500 ease-out`}
           style={{ width: `${barWidth}%` }}
@@ -140,25 +143,33 @@ export const TMSTherapyInterestCard: React.FC<TMSTherapyInterestCardProps> = ({
   totalLeads,
   isLoading = false,
 }) => {
-  const sortedInterests = [...interests].sort((a, b) => b.count - a.count);
+  const interestMap = new Map(interests.map(interest => [interest.interestType, interest]));
+  const sortedInterests = TMS_INTEREST_ORDER
+    .map(interestType => interestMap.get(interestType) ?? {
+      interestType,
+      count: 0,
+      percentage: 0,
+      trend: 0,
+    })
+    .sort((a, b) => b.count - a.count || TMS_INTEREST_ORDER.indexOf(a.interestType) - TMS_INTEREST_ORDER.indexOf(b.interestType));
   const maxCount = sortedInterests.length > 0 ? sortedInterests[0].count : 0;
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div className="bg-white  rounded-2xl shadow-sm border border-gray-100  p-6">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-48 mb-6" />
+          <div className="h-6 bg-gray-200  rounded w-48 mb-6" />
           <div className="space-y-6">
             {[1, 2, 3, 4].map((i) => (
               <div key={i}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-200 rounded-lg" />
-                    <div className="h-4 bg-gray-200 rounded w-24" />
+                    <div className="w-10 h-10 bg-gray-200  rounded-lg" />
+                    <div className="h-4 bg-gray-200  rounded w-24" />
                   </div>
-                  <div className="h-4 bg-gray-200 rounded w-16" />
+                  <div className="h-4 bg-gray-200  rounded w-16" />
                 </div>
-                <div className="h-2 bg-gray-200 rounded-full" />
+                <div className="h-2 bg-gray-200  rounded-full" />
               </div>
             ))}
           </div>
@@ -168,18 +179,18 @@ export const TMSTherapyInterestCard: React.FC<TMSTherapyInterestCardProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white  rounded-2xl shadow-sm border border-gray-100  p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-lg font-semibold text-gray-900 ">
             TMS Therapy Interest
           </h3>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 ">
             {totalWithInterest.toLocaleString()} of {totalLeads.toLocaleString()} leads expressed TMS interest
           </p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-sm font-medium">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50  text-purple-700  rounded-lg text-sm font-medium">
           <Zap size={16} />
           <span>TMS Types</span>
         </div>
@@ -204,14 +215,14 @@ export const TMSTherapyInterestCard: React.FC<TMSTherapyInterestCardProps> = ({
 
       {/* Summary Footer */}
       {sortedInterests.length > 0 && (
-        <div className="mt-6 pt-4 border-t border-gray-100">
+        <div className="mt-6 pt-4 border-t border-gray-100 ">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500">
-              Top interest: <span className="font-medium text-gray-900">
+            <span className="text-gray-500 ">
+              Top interest: <span className="font-medium text-gray-900 ">
                 {(TMS_INTEREST_CONFIG[sortedInterests[0].interestType] || DEFAULT_CONFIG).label}
               </span>
             </span>
-            <span className="text-gray-500">
+            <span className="text-gray-500 ">
               {sortedInterests[0].percentage.toFixed(1)}% of interested leads
             </span>
           </div>

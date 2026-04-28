@@ -12,7 +12,8 @@ CREATE INDEX IF NOT EXISTS idx_leads_condition_created_at ON leads(condition, cr
 CREATE INDEX IF NOT EXISTS idx_leads_contact_outcome_created_at ON leads(contact_outcome, created_at DESC);
 
 -- Index for date range queries (analytics)
-CREATE INDEX IF NOT EXISTS idx_leads_created_at_date ON leads(DATE(created_at));
+-- Use explicit timezone cast so the expression is IMMUTABLE (DATE() on TIMESTAMPTZ is not)
+CREATE INDEX IF NOT EXISTS idx_leads_created_at_date ON leads(((created_at AT TIME ZONE 'UTC')::date));
 
 -- Index for conversion tracking
 CREATE INDEX IF NOT EXISTS idx_leads_status_converted_at ON leads(status, converted_at) 
@@ -363,7 +364,7 @@ BEGIN
         ds.date,
         COALESCE(dc.new_leads, 0)::BIGINT as new_leads,
         COALESCE(dc.converted_leads, 0)::BIGINT as converted_leads,
-        SUM(COALESCE(dc.new_leads, 0))::BIGINT OVER (ORDER BY ds.date) as cumulative_total
+        (SUM(COALESCE(dc.new_leads, 0)) OVER (ORDER BY ds.date))::BIGINT as cumulative_total
     FROM date_series ds
     LEFT JOIN daily_counts dc ON ds.date = dc.lead_date
     ORDER BY ds.date;

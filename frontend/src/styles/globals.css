@@ -2,120 +2,673 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Base styles */
+/* =============================================================================
+ * Semantic design tokens — premium SaaS light palette.
+ *
+ * Components should reach for these via Tailwind utilities: `bg-surface`,
+ * `bg-elevated`, `text-primary`, `text-secondary`, `border-subtle`, etc.
+ * =============================================================================
+ */
+:root {
+  /* Sidebar width custom property — updated at runtime by the collapse toggle. */
+  --nr-sidebar-width: 15rem;
+
+  /* Surfaces */
+  --color-bg-app: 248 250 252;
+  /* slate-50  — app shell    */
+  --color-bg-surface: 255 255 255;
+  /* white     — cards/modals */
+  --color-bg-elevated: 249 250 251;
+  /* gray-50   — input rows   */
+  --color-bg-overlay: 255 255 255;
+  /* modal overlay surface    */
+  --color-bg-subtle: 243 244 246;
+  /* gray-100  — chips        */
+
+  /* Text */
+  --color-text-primary: 17 24 39;
+  /* gray-900 */
+  --color-text-secondary: 75 85 99;
+  /* gray-600 */
+  --color-text-muted: 107 114 128;
+  /* gray-500 */
+  --color-text-disabled: 156 163 175;
+  /* gray-400 */
+  --color-text-inverted: 255 255 255;
+
+  /* Borders */
+  --color-border: 229 231 235;
+  /* gray-200 */
+  --color-border-strong: 209 213 219;
+  /* gray-300 */
+  --color-border-subtle: 243 244 246;
+  /* gray-100 */
+
+  /* Accents (brand) */
+  --color-accent: 79 70 229;
+  /* indigo-600 */
+  --color-accent-hover: 67 56 202;
+  /* indigo-700 */
+  --color-accent-soft: 238 242 255;
+  /* indigo-50 */
+
+  /* Scrollbar */
+  --color-scrollbar-thumb: 203 213 225;
+  /* slate-300 */
+  --color-scrollbar-thumb-hover: 148 163 184;
+  /* slate-400 */
+
+  /* Shadows */
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+:root[data-sidebar-collapsed="true"] {
+  --nr-sidebar-width: 4.5rem;
+}
+
+/* =============================================================================
+ * DARK MODE — CSS variable overrides.
+ *
+ * The `.dark` class is toggled on <html> by the useTheme hook.
+ * Every CSS-variable-backed surface, text colour, border, and shadow
+ * automatically switches without touching component code.
+ *
+ * For components that hardcode Tailwind color classes (bg-white, text-gray-900
+ * etc.) a set of global overrides is provided below.
+ * =============================================================================
+ */
+:root.dark {
+  /* Surfaces */
+  --color-bg-app: 15 23 42;
+  /* slate-900       */
+  --color-bg-surface: 30 41 59;
+  /* slate-800       */
+  --color-bg-elevated: 51 65 85;
+  /* slate-700       */
+  --color-bg-overlay: 30 41 59;
+  /* slate-800       */
+  --color-bg-subtle: 51 65 85;
+  /* slate-700       */
+
+  /* Text */
+  --color-text-primary: 241 245 249;
+  /* slate-100       */
+  --color-text-secondary: 203 213 225;
+  /* slate-300       */
+  --color-text-muted: 148 163 184;
+  /* slate-400       */
+  --color-text-disabled: 100 116 139;
+  /* slate-500       */
+  --color-text-inverted: 15 23 42;
+  /* slate-900       */
+
+  /* Borders */
+  --color-border: 51 65 85;
+  /* slate-700       */
+  --color-border-strong: 71 85 105;
+  /* slate-600       */
+  --color-border-subtle: 30 41 59;
+  /* slate-800       */
+
+  /* Accents (brand — stays vibrant) */
+  --color-accent: 99 102 241;
+  /* indigo-500      */
+  --color-accent-hover: 129 140 248;
+  /* indigo-400      */
+  --color-accent-soft: 30 27 75;
+  /* indigo-950      */
+
+  /* Scrollbar */
+  --color-scrollbar-thumb: 71 85 105;
+  /* slate-600       */
+  --color-scrollbar-thumb-hover: 100 116 139;
+  /* slate-500  */
+
+  /* Shadows — darker and more pronounced */
+  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-card-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
+  --shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* =============================================================================
+ * Global dark overrides for hardcoded Tailwind utility classes.
+ *
+ * Many existing components use `bg-white`, `text-gray-900`, `border-gray-200`
+ * etc. directly. Rather than editing hundreds of components, these rules
+ * apply dark-friendly values when the `.dark` class is present on <html>.
+ *
+ * NOTE: `!important` is intentional — Tailwind utilities have high specificity
+ * and we need to override them globally in dark mode.
+ * =============================================================================
+ */
+html.dark {
+  color-scheme: dark;
+}
+
+/* ---- Backgrounds ---- */
+html.dark .bg-white {
+  background-color: rgb(30 41 59) !important;
+}
+
+html.dark .bg-gray-50 {
+  background-color: rgb(15 23 42) !important;
+}
+
+html.dark .bg-gray-100 {
+  background-color: rgb(15 23 42) !important;
+}
+
+html.dark .bg-gray-200 {
+  background-color: rgb(51 65 85) !important;
+}
+
+html.dark .bg-slate-50 {
+  background-color: rgb(15 23 42) !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: rgb(30 41 59) !important;
+}
+
+/* ---- Text ---- */
+html.dark .text-gray-900 {
+  color: rgb(241 245 249) !important;
+}
+
+html.dark .text-gray-800 {
+  color: rgb(226 232 240) !important;
+}
+
+html.dark .text-gray-700 {
+  color: rgb(203 213 225) !important;
+}
+
+html.dark .text-gray-600 {
+  color: rgb(148 163 184) !important;
+}
+
+html.dark .text-gray-500 {
+  color: rgb(148 163 184) !important;
+}
+
+html.dark .text-gray-400 {
+  color: rgb(100 116 139) !important;
+}
+
+html.dark .text-slate-900 {
+  color: rgb(241 245 249) !important;
+}
+
+html.dark .text-slate-800 {
+  color: rgb(226 232 240) !important;
+}
+
+html.dark .text-slate-700 {
+  color: rgb(203 213 225) !important;
+}
+
+html.dark .text-slate-600 {
+  color: rgb(148 163 184) !important;
+}
+
+html.dark .text-slate-500 {
+  color: rgb(148 163 184) !important;
+}
+
+html.dark .text-slate-400 {
+  color: rgb(100 116 139) !important;
+}
+
+/* ---- Borders ---- */
+html.dark .border-gray-200 {
+  border-color: rgb(51 65 85) !important;
+}
+
+html.dark .border-gray-100 {
+  border-color: rgb(30 41 59) !important;
+}
+
+html.dark .border-gray-300 {
+  border-color: rgb(71 85 105) !important;
+}
+
+html.dark .border-slate-200 {
+  border-color: rgb(51 65 85) !important;
+}
+
+html.dark .border-slate-100 {
+  border-color: rgb(30 41 59) !important;
+}
+
+/* ---- Ring colors ---- */
+html.dark .ring-gray-200 {
+  --tw-ring-color: rgb(51 65 85) !important;
+}
+
+html.dark .ring-gray-100 {
+  --tw-ring-color: rgb(30 41 59) !important;
+}
+
+html.dark .ring-slate-200 {
+  --tw-ring-color: rgb(51 65 85) !important;
+}
+
+html.dark .ring-slate-100 {
+  --tw-ring-color: rgb(30 41 59) !important;
+}
+
+html.dark .ring-white {
+  --tw-ring-color: rgb(30 41 59) !important;
+}
+
+/* ---- Shadows ---- */
+html.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+html.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3) !important;
+}
+
+html.dark .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ---- Hover / focus state overrides ---- */
+html.dark .hover\:bg-gray-50:hover {
+  background-color: rgb(51 65 85) !important;
+}
+
+html.dark .hover\:bg-gray-100:hover {
+  background-color: rgb(51 65 85) !important;
+}
+
+html.dark .hover\:bg-gray-200:hover {
+  background-color: rgb(71 85 105) !important;
+}
+
+/* ---- Dividers ---- */
+html.dark .divide-gray-100> :not([hidden])~ :not([hidden]) {
+  border-color: rgb(30 41 59) !important;
+}
+
+html.dark .divide-gray-200> :not([hidden])~ :not([hidden]) {
+  border-color: rgb(51 65 85) !important;
+}
+
+/* ---- Gradient base overrides (from-gray-50, from-slate-50 etc.) ---- */
+html.dark .from-gray-50 {
+  --tw-gradient-from: rgb(15 23 42) !important;
+}
+
+html.dark .from-gray-100 {
+  --tw-gradient-from: rgb(30 41 59) !important;
+}
+
+html.dark .from-slate-50 {
+  --tw-gradient-from: rgb(15 23 42) !important;
+}
+
+html.dark .to-gray-100 {
+  --tw-gradient-to: rgb(30 41 59) !important;
+}
+
+html.dark .to-gray-50 {
+  --tw-gradient-to: rgb(15 23 42) !important;
+}
+
+html.dark .to-slate-50 {
+  --tw-gradient-to: rgb(15 23 42) !important;
+}
+
+html.dark .via-blue-50\/30 {
+  --tw-gradient-via: rgba(15, 23, 42, 0.3) !important;
+}
+
+html.dark .via-indigo-50\/30 {
+  --tw-gradient-via: rgba(30, 27, 75, 0.3) !important;
+}
+
+/* ---- Specific component overrides ---- */
+/* Accent backgrounds that need to stay visible in dark mode */
+html.dark .bg-blue-50 {
+  background-color: rgba(30, 58, 138, 0.3) !important;
+}
+
+html.dark .bg-blue-100 {
+  background-color: rgba(30, 58, 138, 0.4) !important;
+}
+
+html.dark .bg-indigo-50 {
+  background-color: rgba(30, 27, 75, 0.4) !important;
+}
+
+html.dark .bg-emerald-50 {
+  background-color: rgba(6, 78, 59, 0.3) !important;
+}
+
+html.dark .bg-red-50 {
+  background-color: rgba(127, 29, 29, 0.3) !important;
+}
+
+html.dark .bg-amber-50 {
+  background-color: rgba(120, 53, 15, 0.3) !important;
+}
+
+html.dark .bg-green-50 {
+  background-color: rgba(5, 46, 22, 0.3) !important;
+}
+
+html.dark .bg-purple-50 {
+  background-color: rgba(59, 7, 100, 0.3) !important;
+}
+
+html.dark .bg-violet-50 {
+  background-color: rgba(46, 16, 101, 0.3) !important;
+}
+
+html.dark .bg-rose-50 {
+  background-color: rgba(136, 19, 55, 0.3) !important;
+}
+
+html.dark .bg-orange-50 {
+  background-color: rgba(124, 45, 18, 0.3) !important;
+}
+
+html.dark .bg-slate-50\/50 {
+  background-color: rgba(15, 23, 42, 0.5) !important;
+}
+
+/* Accent ring overrides in dark mode */
+html.dark .ring-indigo-100 {
+  --tw-ring-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+html.dark .ring-purple-100 {
+  --tw-ring-color: rgba(168, 85, 247, 0.3) !important;
+}
+
+html.dark .ring-amber-200 {
+  --tw-ring-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+html.dark .ring-emerald-200 {
+  --tw-ring-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+html.dark .ring-amber-200\/60 {
+  --tw-ring-color: rgba(245, 158, 11, 0.2) !important;
+}
+
+/* Dark mode for gradient hero areas */
+html.dark .from-indigo-50 {
+  --tw-gradient-from: rgba(30, 27, 75, 0.4) !important;
+}
+
+html.dark .to-purple-50 {
+  --tw-gradient-to: rgba(59, 7, 100, 0.3) !important;
+}
+
+html.dark .from-purple-50 {
+  --tw-gradient-from: rgba(59, 7, 100, 0.3) !important;
+}
+
+html.dark .to-pink-50 {
+  --tw-gradient-to: rgba(131, 24, 67, 0.3) !important;
+}
+
+html.dark .from-amber-50 {
+  --tw-gradient-from: rgba(120, 53, 15, 0.3) !important;
+}
+
+html.dark .to-orange-50\/50 {
+  --tw-gradient-to: rgba(124, 45, 18, 0.25) !important;
+}
+
+/* Table specific — ensure header stays opaque in dark mode */
+html.dark .bg-gray-50.sticky {
+  background-color: rgb(15 23 42) !important;
+}
+
+html.dark thead .bg-gray-50 {
+  background-color: rgb(15 23 42) !important;
+}
+
+html.dark tr:nth-child(even) {
+  background-color: rgb(30 41 59);
+}
+
+html.dark tr.bg-gray-50 {
+  background-color: rgb(15 23 42) !important;
+}
+
+/* Placeholder text in inputs */
+html.dark input::placeholder {
+  color: rgb(100 116 139) !important;
+}
+
+html.dark textarea::placeholder {
+  color: rgb(100 116 139) !important;
+}
+
+/* Input field backgrounds */
+html.dark input[type="text"],
+html.dark input[type="email"],
+html.dark input[type="password"],
+html.dark input[type="search"],
+html.dark textarea,
+html.dark select {
+  background-color: rgb(15 23 42) !important;
+  color: rgb(241 245 249) !important;
+  border-color: rgb(71 85 105) !important;
+}
+
+/* Notification panel and modals */
+html.dark .bg-black\/20 {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Scrollbar in dark mode */
+html.dark ::-webkit-scrollbar-track {
+  background: rgb(15 23 42);
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgb(71 85 105);
+  border-radius: 999px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139);
+}
+
+/* =============================================================================
+ * Base styles
+ * ============================================================================= */
 @layer base {
   html {
     @apply antialiased;
+    scroll-behavior: smooth;
   }
-  
+
   body {
-    @apply text-gray-900 bg-gray-50;
+    /* Use semantic tokens for a consistent SaaS shell. */
+    background-color: rgb(var(--color-bg-app));
+    color: rgb(var(--color-text-primary));
     font-family: 'Inter', system-ui, sans-serif;
+    transition: background-color 200ms ease, color 200ms ease;
   }
-  
+
+  ::selection {
+    background-color: rgb(var(--color-accent) / 0.25);
+    color: rgb(var(--color-text-primary));
+  }
+
   /* Focus visible for accessibility */
   :focus-visible {
-    @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+    @apply outline-none ring-2 ring-offset-2;
+    --tw-ring-color: rgb(var(--color-accent));
+    --tw-ring-offset-color: rgb(var(--color-bg-app));
   }
 }
 
-/* Component styles */
+/* =============================================================================
+ * Component styles
+ * ============================================================================= */
 @layer components {
+
   /* Button base styles */
   .btn {
     @apply inline-flex items-center justify-center px-4 py-2 font-medium rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  
+
   .btn-primary {
     @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
   }
-  
+
   .btn-secondary {
     @apply btn bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
   }
-  
+
   .btn-outline {
     @apply btn border-2 border-primary-600 text-primary-600 hover:bg-primary-50 focus:ring-primary-500;
   }
-  
-  /* Input styles */
+
+  /* Input — semantic surface + border so it works in both themes */
   .input {
-    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background-color: rgb(var(--color-bg-surface));
+    color: rgb(var(--color-text-primary));
+    border: 1px solid rgb(var(--color-border-strong));
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 200ms ease;
   }
-  
+
+  .input::placeholder {
+    color: rgb(var(--color-text-disabled));
+  }
+
+  .input:focus {
+    outline: none;
+    border-color: rgb(var(--color-accent));
+    box-shadow: 0 0 0 3px rgb(var(--color-accent) / 0.15);
+  }
+
   .input-error {
-    @apply input border-red-500 focus:ring-red-500;
+    @apply input;
+    border-color: #ef4444;
   }
-  
-  /* Card styles */
+
+  .input-error:focus {
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+  }
+
+  /* Card — semantic surface, shadow scales with theme */
   .card {
-    @apply bg-white rounded-xl shadow-widget p-6;
+    background-color: rgb(var(--color-bg-surface));
+    color: rgb(var(--color-text-primary));
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-card);
+    border: 1px solid rgb(var(--color-border-subtle));
+    transition: background-color 200ms ease, box-shadow 200ms ease;
   }
-  
+
   .card-hover {
-    @apply card hover:shadow-widget-hover transition-shadow duration-200;
+    @apply card;
+    cursor: pointer;
   }
-  
+
+  .card-hover:hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+
   /* Widget step styles */
   .widget-step {
     @apply animate-fade-in p-6;
   }
-  
+
   /* Selection card (for multi-select options) */
   .selection-card {
-    @apply flex items-center p-4 border-2 border-gray-200 rounded-lg cursor-pointer transition-all duration-200 hover:border-primary-300 hover:bg-primary-50;
+    @apply flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 hover:border-primary-300 hover:bg-primary-50;
+    border-color: rgb(var(--color-border));
+    background-color: rgb(var(--color-bg-surface));
   }
-  
+
   .selection-card-selected {
-    @apply selection-card border-primary-500 bg-primary-50;
+    @apply selection-card border-primary-500;
+    background-color: rgb(var(--color-accent-soft));
   }
-  
+
   /* Badge styles */
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
-  
+
   .badge-hot {
     @apply badge bg-red-100 text-red-800;
   }
-  
+
   .badge-medium {
     @apply badge bg-yellow-100 text-yellow-800;
   }
-  
+
   .badge-low {
     @apply badge bg-gray-100 text-gray-800;
   }
-  
+
   .badge-disqualified {
     @apply badge bg-gray-100 text-gray-500;
   }
 }
 
-/* Utility styles */
+/* =============================================================================
+ * Utility styles
+ * ============================================================================= */
 @layer utilities {
-  /* Custom scrollbar */
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: #d1d5db #f3f4f6;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded;
-  }
-  
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded hover:bg-gray-400;
+  .nr-sidebar-ml {
+    margin-left: var(--nr-sidebar-width);
+    transition: margin-left 200ms ease-in-out;
   }
 
-  /* Premium table scrollbar — thin, subtle, rounded */
+  .nr-sidebar-w {
+    width: var(--nr-sidebar-width);
+    transition: width 200ms ease-in-out;
+  }
+
+  /* Custom scrollbar — themed */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--color-scrollbar-thumb)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-scrollbar-thumb));
+    border-radius: 999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-scrollbar-thumb-hover));
+  }
+
+  /* Premium table scrollbar — thin, subtle, rounded — themed */
   .premium-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: #cbd5e1 transparent;
+    scrollbar-color: rgb(var(--color-scrollbar-thumb)) transparent;
+    scrollbar-gutter: stable;
+    scroll-behavior: smooth;
   }
 
   .premium-scrollbar::-webkit-scrollbar {
@@ -125,21 +678,24 @@
 
   .premium-scrollbar::-webkit-scrollbar-track {
     background: transparent;
-  }
-
-  .premium-scrollbar::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
     border-radius: 999px;
   }
 
+  .premium-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-scrollbar-thumb));
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+
   .premium-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
+    background: rgb(var(--color-scrollbar-thumb-hover));
   }
 
   .premium-scrollbar::-webkit-scrollbar-corner {
     background: transparent;
   }
-  
+
   /* Text truncation */
   .truncate-2 {
     display: -webkit-box;
@@ -147,30 +703,47 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  
+
   /* Safe area insets for mobile */
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
-/* Animation keyframes */
+/* =============================================================================
+ * Animation keyframes
+ * ============================================================================= */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
 }
 
 .loading-shimmer {
-  background: linear-gradient(
-    90deg,
-    #f3f4f6 0%,
-    #e5e7eb 50%,
-    #f3f4f6 100%
-  );
+  background: linear-gradient(90deg,
+      rgb(var(--color-bg-elevated)) 0%,
+      rgb(var(--color-bg-subtle)) 50%,
+      rgb(var(--color-bg-elevated)) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
+}
+
+/* =============================================================================
+ * Dark mode transition — smooth color changes on theme switch
+ * ============================================================================= */
+html.dark *,
+html * {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* Opt out of the transition for elements where it causes jank */
+html .no-theme-transition,
+html .no-theme-transition * {
+  transition: none !important;
 }

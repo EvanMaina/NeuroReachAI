@@ -37,6 +37,7 @@ import {
   ExternalLink,
   Stethoscope,
   FileText,
+  MapPin,
   ArrowLeft,
   ArrowRight,
   AlertCircle,
@@ -115,6 +116,9 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
   const [pendingOutcome, setPendingOutcome] = useState<ContactOutcome | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [noteText, setNoteText] = useState('');
+  // Coordinator-captured lead location (city/area). Pre-fills with last known
+  // value so coordinators see what's already on file and only edit when it changes.
+  const [locationText, setLocationText] = useState('');
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Schedule form state (shared by consultation & callback views)
@@ -134,11 +138,14 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
       setDialogView('actions');
       setPendingOutcome(null);
       setNoteText('');
+      // Pre-fill location with the last-known value so coordinators see it
+      // and can confirm/correct rather than silently overwriting with blank.
+      setLocationText(lead?.leadLocation || '');
       setScheduleDate('');
       setScheduleTime('');
       setScheduleError(null);
     }
-  }, [isOpen, lead?.id]);
+  }, [isOpen, lead?.id, lead?.leadLocation]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -202,11 +209,6 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
   }, []);
 
   // ---- Step 2: User confirms outcome → execute immediately ----
-  const handleConfirm = useCallback(async () => {
-    if (!lead || !pendingOutcome || isUpdating) return;
-    await executeOutcome(pendingOutcome);
-  }, [lead, pendingOutcome, isUpdating]);
-
   // ---- Navigate to schedule views with default date/time ----
   const openScheduleView = useCallback((view: 'schedule_consultation' | 'schedule_callback') => {
     const tomorrow = new Date();
@@ -241,6 +243,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
         contact_method: 'PHONE',
         schedule_type: scheduleType,
         scheduled_notes: noteText.trim() || undefined,
+        lead_location: locationText.trim() || undefined,
         expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
       });
 
@@ -278,7 +281,7 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
     } finally {
       setIsUpdating(false);
     }
-  }, [lead, isUpdating, scheduleDate, scheduleTime, noteText, onScheduleSuccess, onClose]);
+  }, [lead, isUpdating, scheduleDate, scheduleTime, noteText, locationText, onScheduleSuccess, onClose]);
 
   // ---- Core execution: call API, notify parent ----
   const executeOutcome = useCallback(async (outcome: ContactOutcome, scheduledAt?: string) => {
@@ -291,8 +294,10 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
       // so we do NOT call createLeadNote() separately (that caused duplicate notes).
       await updateContactOutcome(lead.id, {
         contact_outcome: outcome,
+        contact_method: 'PHONE',
         notes: noteText.trim() || undefined,
         next_follow_up_at: scheduledAt,
+        lead_location: locationText.trim() || undefined,
         expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
       });
 
@@ -335,7 +340,13 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
     } finally {
       setIsUpdating(false);
     }
-  }, [lead, noteText, onOutcomeChange, onClose]);
+  }, [lead, noteText, locationText, onOutcomeChange, onClose]);
+
+  // ---- Step 2: User confirms outcome -> execute immediately ----
+  const handleConfirm = useCallback(async () => {
+    if (!lead || !pendingOutcome || isUpdating) return;
+    await executeOutcome(pendingOutcome);
+  }, [lead, pendingOutcome, isUpdating, executeOutcome]);
 
   if (!isOpen || !lead) return null;
 
@@ -344,8 +355,8 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
 
   return (
     <>
-      {/* Light backdrop */}
-      <div className="fixed inset-0 bg-black/5 z-40 transition-opacity duration-200 pointer-events-none" />
+      {/* Backdrop — keeps page context visible while clearly focusing the panel. */}
+      <div className="fixed inset-0 bg-slate-950/[0.03]  z-40 transition-opacity duration-200" />
 
       {/* DRAGGABLE FLOATING PANEL */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
@@ -353,9 +364,10 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
           ref={panelRef}
           style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
           className={`
-            pointer-events-auto w-full max-w-md bg-white rounded-2xl shadow-2xl
-            transition-shadow duration-300 overflow-hidden border border-gray-200
-            ${isDragging ? 'shadow-3xl cursor-grabbing' : 'cursor-default'}
+            pointer-events-auto w-full max-w-md bg-white  text-gray-900  rounded-2xl
+            shadow-2xl transition-shadow duration-300 overflow-hidden
+            ring-1 ring-gray-200 
+            ${isDragging ? 'cursor-grabbing' : 'cursor-default'}
           `}
         >
           {/* Header — DRAGGABLE */}
@@ -424,7 +436,23 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
                   onChange={(e) => setNoteText(e.target.value)}
                   placeholder="Add a note about this interaction..."
                   rows={2}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400"
+                  className="w-full px-3 py-2 text-sm bg-white  text-gray-900  border border-gray-200  rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
+                />
+              </div>
+
+              {/* Lead Location — coordinator-captured city/area, powers AI expansion insights */}
+              <div className="px-5 pt-1 pb-2">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <MapPin size={13} className="text-gray-400 " />
+                  <label className="text-xs font-medium text-gray-500  uppercase tracking-wider">Lead Location (city / area)</label>
+                </div>
+                <input
+                  type="text"
+                  value={locationText}
+                  onChange={(e) => setLocationText(e.target.value)}
+                  placeholder="e.g. Gilbert, AZ or Scottsdale"
+                  maxLength={255}
+                  className="w-full px-3 py-2 text-sm bg-white  text-gray-900  border border-gray-200  rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
                 />
               </div>
 
@@ -695,21 +723,21 @@ export const QuickActionPanel: React.FC<QuickActionPanelProps> = ({
           )}
 
           {/* Footer */}
-          <div className="border-t border-gray-200 px-5 py-3 bg-gray-50 flex items-center justify-between">
-            <span className="text-xs text-gray-400">Submitted {new Date(lead.submittedAt).toLocaleDateString()}</span>
+          <div className="border-t border-gray-200  px-5 py-3 bg-gray-50  flex items-center justify-between">
+            <span className="text-xs text-gray-500 ">Submitted {new Date(lead.submittedAt).toLocaleDateString()}</span>
             <button
               onClick={() => onViewDetails(lead.id)}
-              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium transition-colors"
+              className="flex items-center gap-1.5 text-sm text-blue-600  hover:text-blue-700  font-medium transition-colors"
             >
               View Full Profile
               <ExternalLink size={14} />
             </button>
           </div>
 
-          {/* Keyboard hint */}
-          <div className="px-5 py-2 bg-slate-800 text-center">
+          {/* Keyboard hint — intentionally dark in both themes for visual contrast */}
+          <div className="px-5 py-2 bg-slate-800  text-center">
             <p className="text-xs text-slate-400">
-              Press <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-300 font-mono text-[10px]">Esc</kbd> to {dialogView !== 'actions' ? 'go back' : 'close'}
+              Press <kbd className="px-1.5 py-0.5 bg-slate-700  rounded text-slate-300 font-mono text-[10px]">Esc</kbd> to {dialogView !== 'actions' ? 'go back' : 'close'}
             </p>
           </div>
         </div>

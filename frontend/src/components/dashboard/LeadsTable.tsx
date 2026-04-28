@@ -341,7 +341,9 @@ const TruncatedCell: React.FC<{
 // Pagination
 // =============================================================================
 
-const TABLE_PAGE_SIZE = 50;
+const TABLE_PAGE_SIZE_CHOICES = [25, 50, 100, 200] as const;
+const DEFAULT_TABLE_PAGE_SIZE = 50;
+const PAGE_SIZE_STORAGE_KEY = 'nr_table_page_size::leads';
 
 // =============================================================================
 // Component
@@ -369,17 +371,67 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   });
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  // Table pagination — 50 rows per page; resets whenever the result set changes
+  // Table pagination — configurable rows per page, persisted per-user.
   const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+      const n = raw ? parseInt(raw, 10) : NaN;
+      if (Number.isFinite(n) && TABLE_PAGE_SIZE_CHOICES.includes(n as typeof TABLE_PAGE_SIZE_CHOICES[number])) {
+        return n;
+      }
+    } catch { /* non-fatal */ }
+    return DEFAULT_TABLE_PAGE_SIZE;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(tablePageSize)); } catch { /* non-fatal */ }
+  }, [tablePageSize]);
 
   // Resizable column widths
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...DEFAULT_COLUMN_WIDTHS });
-  // Column visibility toggle
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(DEFAULT_VISIBLE));
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem('nr_table_settings::leads');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { columnWidths?: Record<string, number> };
+        if (parsed?.columnWidths) return { ...DEFAULT_COLUMN_WIDTHS, ...parsed.columnWidths };
+      }
+    } catch { /* non-fatal */ }
+    return { ...DEFAULT_COLUMN_WIDTHS };
+  });
+  // Column visibility toggle — hydrate from localStorage if present
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('nr_table_settings::leads');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { visibleColumns?: string[] };
+        if (Array.isArray(parsed?.visibleColumns) && parsed.visibleColumns.length > 0) {
+          // Always guarantee locked columns remain visible.
+          const next = new Set(parsed.visibleColumns);
+          next.add('leadId');
+          next.add('patient');
+          return next;
+        }
+      }
+    } catch { /* non-fatal */ }
+    return new Set(DEFAULT_VISIBLE);
+  });
   const [showColumnToggle, setShowColumnToggle] = useState(false);
   const columnToggleRef = useRef<HTMLDivElement>(null);
   // Resize tracking ref
   const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
+
+  // Persist column widths + visibility to localStorage on every change
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'nr_table_settings::leads',
+        JSON.stringify({
+          columnWidths,
+          visibleColumns: Array.from(visibleColumns),
+        }),
+      );
+    } catch { /* non-fatal — quota / privacy */ }
+  }, [columnWidths, visibleColumns]);
 
   // ---------------------------------------------------------------------------
   // Reset quick filter when queue/page changes
@@ -777,18 +829,20 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
         case 'submittedAt':
           comparison = new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
           break;
-        case 'lastContactAttempt':
+        case 'lastContactAttempt': {
           // Sort by last contact attempt - never contacted leads go to the bottom
           const aTime = a.lastContactAttempt ? new Date(a.lastContactAttempt).getTime() : 0;
           const bTime = b.lastContactAttempt ? new Date(b.lastContactAttempt).getTime() : 0;
           comparison = aTime - bTime;
           break;
-        case 'lastUpdatedAt':
+        }
+        case 'lastUpdatedAt': {
           // Sort by last activity - untouched leads (NULL) go first, then recently modified
           const aUpdated = a.lastUpdatedAt ? new Date(a.lastUpdatedAt).getTime() : 0;
           const bUpdated = b.lastUpdatedAt ? new Date(b.lastUpdatedAt).getTime() : 0;
           comparison = aUpdated - bUpdated;
           break;
+        }
         default:
           comparison = 0;
       }
@@ -805,10 +859,10 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   }, [filteredAndSortedLeads]);
 
   // Slice data for current page
-  const totalPages = Math.max(1, Math.ceil(filteredAndSortedLeads.length / TABLE_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedLeads.length / tablePageSize));
   const paginatedLeads = useMemo(
-    () => filteredAndSortedLeads.slice((tablePage - 1) * TABLE_PAGE_SIZE, tablePage * TABLE_PAGE_SIZE),
-    [filteredAndSortedLeads, tablePage]
+    () => filteredAndSortedLeads.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize),
+    [filteredAndSortedLeads, tablePage, tablePageSize]
   );
 
   // ---------------------------------------------------------------------------
@@ -816,9 +870,19 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
-      {/* Header — flex-shrink-0, always visible */}
-      <div className="flex-shrink-0 px-4 py-2.5 border-b border-gray-200">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col  ">
+      {/*
+        Sticky filter header.
+        - `sticky top-0 z-20` pins the queue title / call-SMS / count / filters /
+          search row to the viewport as the user scrolls down through the lead
+          rows. Metric cards above the table scroll away normally.
+        - Opaque background is required (sticky elements show whatever's behind
+          them by default — without bg-white the table rows would scroll under
+          the filter chips and look broken).
+        - z-20 puts it above table headers (z-3/z-4) and above row hover states
+          but below modals and the column-toggle popover (which use z-50).
+      */}
+      <div className="sticky top-0 z-20 flex-shrink-0 px-4 py-2.5 border-b border-gray-200  bg-white  rounded-t-xl">
         <div className="flex items-center justify-between mb-2">
           <div>
             <h2 className="text-base font-bold text-gray-900">Lead Pipeline</h2>
@@ -975,7 +1039,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
         </div>
       </div>
 
-      {/* Table Container with Scroll */}
+      {/* Table container: horizontal overflow only. Page-level vertical scroll keeps one clean scrollbar. */}
       {error ? (
         <div className="flex items-center justify-center py-16">
           <div className="text-center">
@@ -1017,17 +1081,18 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
           </p>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-auto premium-scrollbar">
+        <>
+        <div className="overflow-x-auto premium-scrollbar">
           <table className="w-full" style={{ tableLayout: 'fixed', minWidth: '1100px' }}>
             <thead>
               <tr className="bg-gray-50 border-b-2 border-gray-200">
                 {visibleColumns.has('leadId') && (
                   <th
-                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 left-0 z-[4] bg-gray-50 relative select-none"
+                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky left-0 z-[4] bg-gray-50 relative select-none"
                     style={{ width: columnWidths.leadId }}
                     onClick={() => handleSort('leadId')}
                   >
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       Lead ID {getSortIcon('leadId')}
                     </div>
                     <div
@@ -1041,7 +1106,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                 )}
                 {visibleColumns.has('patient') && (
                   <th
-                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[4] bg-gray-50 relative select-none"
+                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky z-[4] bg-gray-50 relative select-none"
                     style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
                     onClick={() => handleSort('firstName')}
                   >
@@ -1058,7 +1123,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('condition') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.condition }} onClick={() => handleSort('condition')}>
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.condition }} onClick={() => handleSort('condition')}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Condition {getSortIcon('condition')}</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'condition', startX: e.clientX, startWidth: columnWidths.condition }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, condition: DEFAULT_COLUMN_WIDTHS.condition })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1066,7 +1131,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('priority') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.priority }} onClick={() => handleSort('priority')}>
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.priority }} onClick={() => handleSort('priority')}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Priority {getSortIcon('priority')}</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'priority', startX: e.clientX, startWidth: columnWidths.priority }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, priority: DEFAULT_COLUMN_WIDTHS.priority })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1074,7 +1139,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('status') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.status }} onClick={() => handleSort('status')}>
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.status }} onClick={() => handleSort('status')}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Status {getSortIcon('status')}</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'status', startX: e.clientX, startWidth: columnWidths.status }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, status: DEFAULT_COLUMN_WIDTHS.status })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1082,7 +1147,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('scheduledFor') && (
-                  <th className="px-6 py-3 text-left sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.scheduledFor }}>
+                  <th className="px-6 py-3 text-left z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.scheduledFor }}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><Calendar size={12} /> Scheduled For</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'scheduledFor', startX: e.clientX, startWidth: columnWidths.scheduledFor }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, scheduledFor: DEFAULT_COLUMN_WIDTHS.scheduledFor })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1090,7 +1155,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('submitted') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.submitted }} onClick={() => handleSort('submittedAt')}>
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.submitted }} onClick={() => handleSort('submittedAt')}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Submitted {getSortIcon('submittedAt')}</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'submitted', startX: e.clientX, startWidth: columnWidths.submitted }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, submitted: DEFAULT_COLUMN_WIDTHS.submitted })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1098,7 +1163,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('lastActivity') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.lastActivity }} onClick={() => handleSort('lastUpdatedAt')}>
+                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.lastActivity }} onClick={() => handleSort('lastUpdatedAt')}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Last Activity {getSortIcon('lastUpdatedAt')}</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'lastActivity', startX: e.clientX, startWidth: columnWidths.lastActivity }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, lastActivity: DEFAULT_COLUMN_WIDTHS.lastActivity })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1106,7 +1171,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('preferred') && (
-                  <th className="px-4 py-3 text-left sticky top-0 z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.preferred }}>
+                  <th className="px-4 py-3 text-left z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.preferred }}>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><PhoneCall size={12} /> Preferred</div>
                     <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'preferred', startX: e.clientX, startWidth: columnWidths.preferred }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, preferred: DEFAULT_COLUMN_WIDTHS.preferred })); }}>
                       <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
@@ -1114,7 +1179,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                   </th>
                 )}
                 {visibleColumns.has('actions') && (
-                  <th className="px-6 py-3 text-right sticky top-0 z-[3] bg-gray-50 select-none" style={{ width: columnWidths.actions }}>
+                  <th className="px-6 py-3 text-right z-[3] bg-gray-50 select-none" style={{ width: columnWidths.actions }}>
                     <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</span>
                   </th>
                 )}
@@ -1137,9 +1202,11 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
                         className={`px-6 py-4 whitespace-nowrap sticky left-0 z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
                         style={{ width: columnWidths.leadId }}
                       >
-                        <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
-                          {lead.leadId}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+                            {lead.leadId}
+                          </span>
+                        </div>
                       </td>
                     )}
                     {visibleColumns.has('patient') && (
@@ -1530,6 +1597,7 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Footer — flex-shrink-0, always visible */}
@@ -1537,10 +1605,24 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
         <div className="flex-shrink-0 px-6 py-3 border-t border-gray-200 bg-gray-50">
           <div className="flex items-center justify-between">
             <p className="text-xs text-gray-500">
-              Showing {((tablePage - 1) * TABLE_PAGE_SIZE) + 1}–{Math.min(tablePage * TABLE_PAGE_SIZE, filteredAndSortedLeads.length)} of {filteredAndSortedLeads.length} lead{filteredAndSortedLeads.length !== 1 ? 's' : ''}
+              Showing {((tablePage - 1) * tablePageSize) + 1}–{Math.min(tablePage * tablePageSize, filteredAndSortedLeads.length)} of {filteredAndSortedLeads.length} lead{filteredAndSortedLeads.length !== 1 ? 's' : ''}
               {quickFilter !== 'all' && ` • Filtered: ${quickFilter}`}
               {' '}• Sorted: {sortConfig.field} ({sortConfig.direction === 'asc' ? 'asc' : 'desc'})
             </p>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                Rows per page:
+                <select
+                  value={tablePageSize}
+                  onChange={(e) => { setTablePageSize(parseInt(e.target.value, 10)); setTablePage(1); }}
+                  className="px-1.5 py-0.5 rounded border border-gray-300 bg-white text-gray-700 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {TABLE_PAGE_SIZE_CHOICES.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             {totalPages > 1 && (
               <div className="flex items-center gap-2">
                 <button

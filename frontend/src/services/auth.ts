@@ -168,6 +168,19 @@ export async function deactivateUser(id: string): Promise<void> {
   await apiClient.delete(`/api/users/${id}`);
 }
 
+/**
+ * Permanently delete a user. Irreversible. Primary-admin only.
+ *
+ * The backend requires `confirm_email` to exactly match the target user's
+ * email — pass it as a query param. The UI must collect this from the admin
+ * by having them type the email; never auto-fill it.
+ */
+export async function hardDeleteUser(id: string, confirmEmail: string): Promise<void> {
+  await apiClient.delete(`/api/users/${id}/permanent`, {
+    params: { confirm_email: confirmEmail },
+  });
+}
+
 // =============================================================================
 // Preferences
 // =============================================================================

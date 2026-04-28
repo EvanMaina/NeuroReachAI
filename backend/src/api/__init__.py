@@ -21,6 +21,7 @@ from .users import router as users_router
 from .widget import router as widget_router
 from .callrail import router as callrail_router
 from .notes import router as notes_router
+from .ai_insights import router as ai_insights_router
 
 __all__ = [
     "health_router",
@@ -39,4 +40,5 @@ __all__ = [
     "widget_router",
     "callrail_router",
     "notes_router",
+    "ai_insights_router",
 ]

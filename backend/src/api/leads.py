@@ -18,7 +18,7 @@ from sqlalchemy import desc, func, or_
 
 from ..core.config import settings
 from ..core.database import get_db
-from ..models.lead import Lead, PriorityType, LeadStatus, ContactOutcome, LeadSource, ConditionType, DurationType, UrgencyType
+from ..models.lead import Lead, PriorityType, LeadStatus, ContactOutcome, LeadSource, ConditionType, DurationType, UrgencyType, ContactMethodType
 from ..models.attachment import LeadAttachment
 from ..models.lead_note import LeadNote
 from ..models.provider import ReferringProvider
@@ -34,6 +34,8 @@ from ..schemas.lead import (
     ScheduledLeadResponse,
     UpdateContactOutcomeRequest,
     ManualLeadCreate,
+    BulkUpdateLeadsRequest,
+    BulkUpdateLeadsResponse,
 )
 from ..schemas.common import PaginatedResponse, ErrorResponse
 from ..services.lead_scoring import (
@@ -985,6 +987,7 @@ async def list_leads(
                 priority=lead.priority,
                 status=lead.status,
                 in_service_area=lead.in_service_area,
+                lead_location=lead.lead_location,
                 created_at=lead.created_at,
                 scheduled_callback_at=lead.scheduled_callback_at,
                 contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
@@ -997,6 +1000,7 @@ async def list_leads(
                 follow_up_reason=lead.follow_up_reason,
                 # Source field — identifies lead origin (widget, jotform, manual, etc.)
                 source=lead.source.value if lead.source else None,
+                tms_therapy_interest=lead.tms_therapy_interest,
                 last_updated_at=lead.last_updated_at,
             )
 
@@ -1040,6 +1044,114 @@ async def list_leads(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while loading leads. Please try again."
         )
+
+
+# =============================================================================
+# Bulk Update Endpoint
+# =============================================================================
+
+
+@router.post(
+    "/bulk-update",
+    response_model=BulkUpdateLeadsResponse,
+    summary="Bulk update leads",
+    description=(
+        "Apply the same priority / status / contact_outcome change to a set "
+        "of leads in a single request. Each update is audit-logged "
+        "per-lead so the standard compliance trail is preserved."
+    ),
+    dependencies=[Depends(require_role("administrator", "coordinator", "primary_admin"))],
+)
+async def bulk_update_leads(
+    payload: BulkUpdateLeadsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> BulkUpdateLeadsResponse:
+    """
+    Bulk-update priority / status / contact_outcome across many leads.
+
+    - Soft-deleted leads are skipped (their ids are returned in `skipped_ids`).
+    - Missing ids are also skipped (treated as already-deleted for the caller).
+    - One AuditService.log_update entry is written per successfully updated lead,
+      recording old vs. new values of each touched column.
+    - Cache is invalidated once at the end rather than per-row.
+    """
+
+    audit_service = AuditService(db)
+    ip = get_client_ip(request)
+    ua = get_user_agent(request)
+
+    # Fetch only non-deleted leads in the requested set.
+    found_leads = (
+        db.query(Lead)
+        .filter(Lead.id.in_(payload.lead_ids), Lead.deleted_at.is_(None))
+        .all()
+    )
+    found_ids = {lead.id for lead in found_leads}
+    skipped_ids = [lid for lid in payload.lead_ids if lid not in found_ids]
+
+    updated_count = 0
+
+    try:
+        for lead in found_leads:
+            old_values: dict = {}
+            new_values: dict = {}
+
+            if payload.priority is not None and lead.priority != payload.priority:
+                old_values["priority"] = lead.priority.value if lead.priority else None
+                new_values["priority"] = payload.priority.value
+                lead.priority = payload.priority
+
+            if payload.status is not None and lead.status != payload.status:
+                old_values["status"] = lead.status.value if lead.status else None
+                new_values["status"] = payload.status.value
+                lead.status = payload.status
+                # Status transitions reset transient outcome/tag fields to keep
+                # behaviour consistent with the per-lead update_lead_status endpoint.
+                clear_lead_transition_fields(lead)
+                lead.contact_outcome = ContactOutcome.NEW
+
+            if payload.contact_outcome is not None and lead.contact_outcome != payload.contact_outcome:
+                old_values["contact_outcome"] = lead.contact_outcome.value if lead.contact_outcome else None
+                new_values["contact_outcome"] = payload.contact_outcome.value
+                lead.contact_outcome = payload.contact_outcome
+
+            # Only count / audit rows that actually changed — a no-op write
+            # should not pollute the audit log.
+            if new_values:
+                mark_lead_activity(lead)
+                audit_service.log_update(
+                    table_name="leads",
+                    record_id=lead.id,
+                    ip_address=ip,
+                    endpoint="/api/leads/bulk-update",
+                    request_method="POST",
+                    user_agent=ua,
+                    old_values=old_values,
+                    new_values=new_values,
+                )
+                updated_count += 1
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error("Error during bulk lead update: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Bulk update failed. No changes were applied.",
+        )
+
+    # Invalidate cached dashboard/queue counts once per call.
+    try:
+        cache = get_cache()
+        cache.invalidate_on_lead_change()
+    except Exception:
+        pass
+
+    return BulkUpdateLeadsResponse(
+        updated_count=updated_count,
+        skipped_ids=skipped_ids,
+    )
 
 
 # =============================================================================
@@ -1161,6 +1273,7 @@ async def search_leads_phi(
                 priority=lead.priority,
                 status=lead.status,
                 in_service_area=lead.in_service_area,
+                lead_location=lead.lead_location,
                 created_at=lead.created_at,
                 scheduled_callback_at=lead.scheduled_callback_at,
                 contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
@@ -1715,6 +1828,7 @@ async def get_lead(
         insurance_provider=lead.insurance_provider,
         zip_code=lead.zip_code,
         in_service_area=lead.in_service_area,
+        lead_location=lead.lead_location,
         urgency=lead.urgency,
         hipaa_consent=lead.hipaa_consent,
         hipaa_consent_timestamp=lead.hipaa_consent_timestamp,
@@ -1728,6 +1842,8 @@ async def get_lead(
         utm_source=lead.utm_source,
         utm_medium=lead.utm_medium,
         utm_campaign=lead.utm_campaign,
+            referrer_url=lead.referrer_url,
+            source=lead.source.value if lead.source else None,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
         contacted_at=lead.contacted_at,
@@ -1816,6 +1932,13 @@ async def schedule_callback(
     lead.scheduled_notes = schedule_data.scheduled_notes
     lead.contact_method = schedule_data.contact_method
 
+    # Persist coordinator-captured location (latest known wins). Empty string
+    # is treated as no-op to avoid blanking a previously recorded location.
+    if schedule_data.lead_location is not None:
+        location_clean = schedule_data.lead_location.strip()
+        if location_clean:
+            lead.lead_location = location_clean
+
     # =========================================================================
     # CRITICAL: Route based on schedule_type
     # =========================================================================
@@ -1882,6 +2005,7 @@ async def schedule_callback(
         insurance_provider=lead.insurance_provider,
         zip_code=lead.zip_code,
         in_service_area=lead.in_service_area,
+        lead_location=lead.lead_location,
         urgency=lead.urgency,
         hipaa_consent=lead.hipaa_consent,
         hipaa_consent_timestamp=lead.hipaa_consent_timestamp,
@@ -1895,6 +2019,8 @@ async def schedule_callback(
         utm_source=lead.utm_source,
         utm_medium=lead.utm_medium,
         utm_campaign=lead.utm_campaign,
+            referrer_url=lead.referrer_url,
+            source=lead.source.value if lead.source else None,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
         contacted_at=lead.contacted_at,
@@ -2021,6 +2147,7 @@ async def log_contact_attempt(
         insurance_provider=lead.insurance_provider,
         zip_code=lead.zip_code,
         in_service_area=lead.in_service_area,
+        lead_location=lead.lead_location,
         urgency=lead.urgency,
         hipaa_consent=lead.hipaa_consent,
         hipaa_consent_timestamp=lead.hipaa_consent_timestamp,
@@ -2034,6 +2161,8 @@ async def log_contact_attempt(
         utm_source=lead.utm_source,
         utm_medium=lead.utm_medium,
         utm_campaign=lead.utm_campaign,
+        referrer_url=lead.referrer_url,
+        source=lead.source.value if lead.source else None,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
         contacted_at=lead.contacted_at,
@@ -2121,7 +2250,6 @@ async def get_scheduled_leads(
     response_model=LeadResponse,
     summary="Update Lead Status",
     description="Update the status of a lead.",
-    dependencies=[Depends(require_role("administrator", "coordinator"))],
 )
 async def update_lead_status(
     lead_id: UUID,
@@ -2129,6 +2257,10 @@ async def update_lead_status(
     request: Request,
     db: Session = Depends(get_db),
     expected_updated_at: Optional[datetime] = None,
+    # Resolve the JWT user inline (instead of using `dependencies=[Depends(...)]`)
+    # so we can attribute completions to the actual coordinator who closed the
+    # lead — see migration 027 / leads.completed_by_user_id.
+    current_user: User = Depends(require_role("administrator", "coordinator")),
 ) -> LeadResponse:
     """
     Update lead status.
@@ -2180,14 +2312,31 @@ async def update_lead_status(
 
     # Update status
     lead.status = new_status
-    
+
     # NOTE: clear_lead_transition_fields already sets contact_outcome=ContactOutcome.NEW
     # This explicit re-assignment is harmless but makes the intent crystal clear.
     lead.contact_outcome = ContactOutcome.NEW
-    
+
+    # =========================================================================
+    # CLOSER ATTRIBUTION (powers AI Insights coordinator-performance ranking)
+    # Capture WHO closed the lead — the coordinator who moved it into a fully
+    # converted status — distinct from who it was originally assigned to.
+    # SCHEDULED is "booked, not closed" so deliberately excluded here.
+    # =========================================================================
+    closing_statuses = (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED)
+    transitioning_into_closed = (
+        new_status in closing_statuses and old_status not in closing_statuses
+    )
+    if transitioning_into_closed:
+        lead.completed_by_user_id = current_user.id
+        lead.completed_at = datetime.now(timezone.utc)
+    elif old_status in closing_statuses and new_status not in closing_statuses:
+        lead.completed_by_user_id = None
+        lead.completed_at = None
+
     # Mark activity timestamp
     mark_lead_activity(lead)
-    
+
     db.commit()
     db.refresh(lead)
 
@@ -2238,6 +2387,7 @@ async def update_lead_status(
         insurance_provider=lead.insurance_provider,
         zip_code=lead.zip_code,
         in_service_area=lead.in_service_area,
+        lead_location=lead.lead_location,
         urgency=lead.urgency,
         hipaa_consent=lead.hipaa_consent,
         hipaa_consent_timestamp=lead.hipaa_consent_timestamp,
@@ -2251,6 +2401,8 @@ async def update_lead_status(
         utm_source=lead.utm_source,
         utm_medium=lead.utm_medium,
         utm_campaign=lead.utm_campaign,
+        referrer_url=lead.referrer_url,
+        source=lead.source.value if lead.source else None,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
         contacted_at=lead.contacted_at,
@@ -2335,6 +2487,15 @@ async def update_contact_outcome(
     lead.contact_outcome = outcome_data.contact_outcome
     lead.last_contact_attempt = datetime.now(timezone.utc)
     lead.contact_attempts = (lead.contact_attempts or 0) + 1
+    lead.contact_method = outcome_data.contact_method or ContactMethodType.PHONE
+
+    # Persist coordinator-captured location (latest known wins) — drives
+    # AI Insights expansion analysis. Trim and treat empty as no-op so
+    # accidentally re-submitting an action doesn't blank a previous value.
+    if outcome_data.lead_location is not None:
+        location_clean = outcome_data.lead_location.strip()
+        if location_clean:
+            lead.lead_location = location_clean
 
     # =========================================================================
     # WORKFLOW LOGIC: Outcome → Status + Follow-up Reason + Follow-up Date
@@ -2472,6 +2633,7 @@ async def update_contact_outcome(
         insurance_provider=lead.insurance_provider,
         zip_code=lead.zip_code,
         in_service_area=lead.in_service_area,
+        lead_location=lead.lead_location,
         urgency=lead.urgency,
         hipaa_consent=lead.hipaa_consent,
         hipaa_consent_timestamp=lead.hipaa_consent_timestamp,
@@ -2485,6 +2647,8 @@ async def update_contact_outcome(
         utm_source=lead.utm_source,
         utm_medium=lead.utm_medium,
         utm_campaign=lead.utm_campaign,
+        referrer_url=lead.referrer_url,
+        source=lead.source.value if lead.source else None,
         created_at=lead.created_at,
         updated_at=lead.updated_at,
         contacted_at=lead.contacted_at,
@@ -2509,12 +2673,12 @@ async def update_contact_outcome(
     "/{lead_id}/consultation-outcome",
     summary="Record Consultation Outcome",
     description="Record the outcome of a scheduled consultation.",
-    dependencies=[Depends(require_role("administrator", "coordinator"))],
 )
 async def update_consultation_outcome(
     lead_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("administrator", "coordinator")),
 ) -> dict:
     """
     Record consultation outcome for a scheduled lead.
@@ -2568,6 +2732,7 @@ async def update_consultation_outcome(
     ensure_expected_updated_at(lead, expected_updated_at, lead_id)
 
     old_status = lead.status.value if lead.status else None
+    old_status_enum = lead.status
     now = datetime.now(timezone.utc)
     outcome_lower = outcome.lower().strip()
 
@@ -2599,7 +2764,12 @@ async def update_consultation_outcome(
         lead.contact_outcome = ContactOutcome.COMPLETED
         lead.follow_up_reason = None
         lead.follow_up_date = None
+        lead.completed_by_user_id = current_user.id
+        lead.completed_at = now
     elif outcome_lower == "reschedule":
+        if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
+            lead.completed_by_user_id = None
+            lead.completed_at = None
         lead.status = LeadStatus.SCHEDULED
         lead.contact_outcome = ContactOutcome.SCHEDULED
         lead.follow_up_reason = "Rescheduled"
@@ -2607,6 +2777,9 @@ async def update_consultation_outcome(
             lead.scheduled_callback_at = scheduled_dt
             lead.follow_up_date = scheduled_dt
     elif outcome_lower == "followup":
+        if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
+            lead.completed_by_user_id = None
+            lead.completed_at = None
         # Move back to the Follow-up workflow with a coordinator callback date.
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.ANSWERED
@@ -2615,12 +2788,18 @@ async def update_consultation_outcome(
             lead.follow_up_date = scheduled_dt
             lead.next_follow_up_at = scheduled_dt
     elif outcome_lower == "no_show":
+        if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
+            lead.completed_by_user_id = None
+            lead.completed_at = None
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.ANSWERED
         lead.follow_up_reason = "No Show"
         lead.follow_up_date = now + timedelta(days=1)
         lead.next_follow_up_at = lead.follow_up_date
     elif outcome_lower == "cancelled":
+        if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
+            lead.completed_by_user_id = None
+            lead.completed_at = None
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.ANSWERED
         lead.follow_up_reason = "Cancelled Appointment"
@@ -2629,23 +2808,13 @@ async def update_consultation_outcome(
     else:
         raise HTTPException(status_code=400, detail=f"Invalid outcome: {outcome}")
 
-    # Get authenticated user info for note attribution
-    user_name = "System"
-    user_id = None
-    try:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            from ..core.security import decode_token
-            from ..models.user import User
-            token = auth_header.split(" ")[1]
-            payload = decode_token(token)
-            if payload and "sub" in payload:
-                user = db.query(User).filter(User.id == payload["sub"]).first()
-                if user:
-                    user_id = user.id
-                    user_name = f"{user.first_name} {user.last_name}".strip() or user.email
-    except Exception:
-        pass
+    # Get authenticated user info for note attribution and closer attribution.
+    user_id = current_user.id
+    user_name = (
+        f"{current_user.first_name} {current_user.last_name}".strip()
+        or current_user.email
+        or "System"
+    )
 
     # Create consultation note ONLY if the coordinator typed something.
     # If no note text was provided, the outcome is already tracked in the
@@ -3038,6 +3207,8 @@ async def update_lead(
             utm_source=lead.utm_source,
             utm_medium=lead.utm_medium,
             utm_campaign=lead.utm_campaign,
+        referrer_url=lead.referrer_url,
+        source=lead.source.value if lead.source else None,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
             contacted_at=lead.contacted_at,
@@ -3269,6 +3440,8 @@ async def restore_lead(
             utm_source=lead.utm_source,
             utm_medium=lead.utm_medium,
             utm_campaign=lead.utm_campaign,
+        referrer_url=lead.referrer_url,
+        source=lead.source.value if lead.source else None,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
             contacted_at=lead.contacted_at,
@@ -3413,3 +3586,6 @@ async def permanent_delete_lead(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to permanently delete lead: {str(e)}",
         )
+
+
+

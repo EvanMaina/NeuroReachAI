@@ -10,7 +10,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
-  Bell, BellOff, Volume2, VolumeX,
+  Bell, Volume2, VolumeX,
   Flame, Users, Calendar, Clock, CheckCircle2,
   X, ChevronRight, PlusCircle, MessageCircle, Target
 } from 'lucide-react';
@@ -165,11 +165,9 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
 
   // Notifications hook
   const {
-    enabled: notificationsEnabled,
     soundEnabled,
     unreadCount,
     notifications,
-    toggleNotifications,
     toggleSound,
     checkNewHotLeads,
     markAsRead,
@@ -451,8 +449,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
       {/* Sidebar */}
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate} />
 
-      {/* Main Content — Flexbox fixed layout: only table body rows scroll */}
-      <main className="ml-60 h-screen flex flex-col overflow-hidden">
+      {/* Main Content — the page scrolls so metrics move away and the table can breathe. */}
+      <main className="nr-sidebar-ml min-h-screen flex flex-col overflow-visible bg-gray-100 ">
         {/* Personalized Greeting */}
         <div className="flex-shrink-0 px-6 pt-4 bg-gray-100">
           <GreetingBanner />
@@ -493,16 +491,6 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
               title={soundEnabled ? 'Mute notifications' : 'Enable sound'}
             >
               {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-            </button>
-
-            {/* Notification toggle */}
-            <button
-              onClick={toggleNotifications}
-              className={`p-2 rounded-lg transition-colors ${notificationsEnabled ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:bg-gray-200'
-                }`}
-              title={notificationsEnabled ? 'Disable notifications' : 'Enable notifications'}
-            >
-              {notificationsEnabled ? <Bell size={20} /> : <BellOff size={20} />}
             </button>
 
             {/* Notification bell with count */}
@@ -688,8 +676,12 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
           )}
         </div>
 
-        {/* Main Content Area — flex-1 fills remaining viewport, min-h-0 enables nested flex scroll */}
-        <div className="flex-1 min-h-0 flex flex-col mx-6 mb-2 mt-2 rounded-xl border border-gray-200 shadow-sm bg-white overflow-hidden">
+        {/* Main Content Area
+            NOTE: `overflow-visible` (not hidden) is required so the LeadsTable's
+            sticky filter row can pin to the page-level scroll viewport instead
+            of being clipped by this rounded wrapper. Rounded corners still look
+            clean because the table's own header section uses rounded-t-xl. */}
+        <div className="mx-6 mb-6 mt-2 rounded-xl border border-gray-200 shadow-sm bg-white overflow-visible  ">
           {/* Queue Title Header — flex-shrink-0 */}
           <div className={`flex-shrink-0 px-4 py-2 border-b border-gray-200 ${queueConfig.bgColor} flex items-center justify-between`}>
             <div>
@@ -704,7 +696,7 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             {activeQueue === 'new' && (
               <button
                 onClick={() => setIsManualLeadModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-sm shadow-emerald-900/20 ring-1 ring-white/20 transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 "
               >
                 <PlusCircle size={14} />
                 Add Lead
@@ -712,8 +704,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
             )}
           </div>
 
-          {/* Clean Table View — flex-1 passes remaining space to LeadsTable */}
-          <div className="flex-1 min-h-0 flex flex-col p-2 lg:p-3">
+          {/* Clean Table View */}
+          <div className="p-2 lg:p-3">
             <LeadsTable
               leads={filteredQueueLeads}
               totalCount={filteredQueueLeads.length}

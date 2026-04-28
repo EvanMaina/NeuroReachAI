@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -39,6 +40,28 @@ export default {
         warning: '#f59e0b',
         error: '#ef4444',
         info: '#3b82f6',
+
+        // -------------------------------------------------------------------
+        // Semantic tokens — backed by CSS variables in globals.css.
+        // Use these for new components so the SaaS shell stays consistent:
+        //   bg-surface, bg-elevated, text-primary, text-secondary,
+        //   border-subtle, etc.
+        // -------------------------------------------------------------------
+        surface: 'rgb(var(--color-bg-surface) / <alpha-value>)',
+        'surface-app': 'rgb(var(--color-bg-app) / <alpha-value>)',
+        elevated: 'rgb(var(--color-bg-elevated) / <alpha-value>)',
+        overlay: 'rgb(var(--color-bg-overlay) / <alpha-value>)',
+        subtle: 'rgb(var(--color-bg-subtle) / <alpha-value>)',
+        'text-primary': 'rgb(var(--color-text-primary) / <alpha-value>)',
+        'text-secondary': 'rgb(var(--color-text-secondary) / <alpha-value>)',
+        'text-muted': 'rgb(var(--color-text-muted) / <alpha-value>)',
+        'text-disabled': 'rgb(var(--color-text-disabled) / <alpha-value>)',
+        'border-default': 'rgb(var(--color-border) / <alpha-value>)',
+        'border-strong': 'rgb(var(--color-border-strong) / <alpha-value>)',
+        'border-subtle': 'rgb(var(--color-border-subtle) / <alpha-value>)',
+        accent: 'rgb(var(--color-accent) / <alpha-value>)',
+        'accent-hover': 'rgb(var(--color-accent-hover) / <alpha-value>)',
+        'accent-soft': 'rgb(var(--color-accent-soft) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
@@ -46,6 +69,10 @@ export default {
       boxShadow: {
         'widget': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         'widget-hover': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+        // Shadows backed by CSS vars.
+        'card-token': 'var(--shadow-card)',
+        'card-hover-token': 'var(--shadow-card-hover)',
+        'modal-token': 'var(--shadow-modal)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',

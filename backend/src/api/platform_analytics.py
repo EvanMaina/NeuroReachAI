@@ -47,7 +47,7 @@ async def get_platform_summary(
     - Contact rates
     - Growth metrics
     - Daily trends
-    - AI-generated insights
+    - Operational insights
     
     **Performance**: <200ms response time, cached for 5 minutes.
     
@@ -349,7 +349,7 @@ async def get_platform_insights(
     db: Session = Depends(get_db)
 ):
     """
-    Get AI-generated insights about platform performance.
+    Get insights about platform performance.
     
     Returns actionable insights including:
     - Best converting platform

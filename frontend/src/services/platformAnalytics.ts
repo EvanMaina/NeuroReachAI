@@ -32,7 +32,7 @@ const BASE_URL = '/platform-analytics';
  * - Quality distribution
  * - Growth metrics
  * - Daily trends
- * - AI-generated insights
+ * - Operational insights
  * 
  * @param period - Time period (7d, 30d, 90d, all)
  */

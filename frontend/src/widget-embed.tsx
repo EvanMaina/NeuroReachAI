@@ -429,14 +429,6 @@ function isAssessmentPage(): boolean {
   return window.location.href.toLowerCase().includes('/assessment');
 }
 
-function isMobile(): boolean {
-  return window.innerWidth <= 768;
-}
-
-function isSmallMobile(): boolean {
-  return window.innerWidth <= 375;
-}
-
 function createWidget(config: { apiUrl: string }): void {
   const url = config.apiUrl + '/assessment?utm_source=floating_widget&utm_medium=cta';
 
@@ -514,7 +506,9 @@ function scheduleCleanup(): void {
       try {
         document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(el => el.remove());
         document.querySelectorAll('style[data-nr-cta-widget],style[data-nr-widget]').forEach(el => el.remove());
-      } catch { }
+      } catch {
+        // Best-effort cleanup only.
+      }
     }, d);
   });
 }

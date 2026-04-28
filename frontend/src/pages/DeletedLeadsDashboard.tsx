@@ -206,7 +206,7 @@ const DeletedLeadsDashboard: React.FC = () => {
     return (
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar currentPage="deleted-leads" onNavigate={() => { }} />
-        <main className="ml-60 flex-1 flex items-center justify-center">
+        <main className="nr-sidebar-ml flex-1 flex items-center justify-center">
           <div className="text-center">
             <ShieldAlert size={48} className="mx-auto text-red-400 mb-4" />
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
@@ -218,22 +218,22 @@ const DeletedLeadsDashboard: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50  ">
       <Sidebar currentPage="deleted-leads" onNavigate={() => { }} />
 
-      <main className="ml-60 flex-1 p-8">
+      <main className="nr-sidebar-ml flex-1 p-8">
         {/* Personalized Greeting */}
         <GreetingBanner />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-xl bg-red-100 flex items-center justify-center">
-              <Trash2 size={22} className="text-red-600" />
+            <div className="w-11 h-11 rounded-xl bg-red-100  flex items-center justify-center">
+              <Trash2 size={22} className="text-red-600 " />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Deleted Leads</h1>
-              <p className="text-sm text-gray-500">
+              <h1 className="text-2xl font-bold text-gray-900 ">Deleted Leads</h1>
+              <p className="text-sm text-gray-500 ">
                 {total} deleted lead{total !== 1 ? 's' : ''} — Restore or permanently remove
               </p>
             </div>
@@ -242,13 +242,13 @@ const DeletedLeadsDashboard: React.FC = () => {
           <div className="flex items-center gap-3">
             {/* Search */}
             <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 " />
               <input
                 type="text"
                 placeholder="Search deleted leads..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="pl-9 pr-4 py-2 text-sm bg-white  text-gray-900  border border-gray-200  rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
 
@@ -275,7 +275,7 @@ const DeletedLeadsDashboard: React.FC = () => {
         )}
 
         {/* Table */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white  rounded-xl border border-gray-200  shadow-sm overflow-hidden">
           {/* STATE 1: Initial loading (no cached data) — show spinner */}
           {isInitialLoading && !loadingTooLong ? (
             <div className="p-12 text-center">
@@ -310,11 +310,11 @@ const DeletedLeadsDashboard: React.FC = () => {
             /* STATE 3: Data loaded but empty — show empty state */
           ) : filteredLeads.length === 0 ? (
             <div className="p-12 text-center">
-              <Inbox size={40} className="mx-auto text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-700 mb-1">
+              <Inbox size={40} className="mx-auto text-gray-300  mb-4" />
+              <h3 className="text-lg font-medium text-gray-700  mb-1">
                 {searchQuery ? 'No matches found' : 'No deleted leads'}
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 ">
                 {searchQuery
                   ? 'Try adjusting your search query.'
                   : 'Deleted leads will appear here for recovery or permanent removal.'}
@@ -324,7 +324,7 @@ const DeletedLeadsDashboard: React.FC = () => {
             /* STATE 4: Data loaded with results — show table */
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto premium-scrollbar">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b-2 border-gray-200">
@@ -459,7 +459,7 @@ const DeletedLeadsDashboard: React.FC = () => {
 
       {/* ─── Permanent Delete Confirmation Dialog ─── */}
       {confirmDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-slate-950/[0.08]  flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
             {/* Header */}
             <div className="bg-red-50 px-6 py-4 flex items-center gap-3 border-b border-red-100">

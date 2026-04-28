@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Phone, Mail, MapPin, Calendar, FileText, Send, Clock, User, Edit2, Trash2, X, Paperclip, Download, Image, FileSpreadsheet, Upload, Loader2, Plus } from 'lucide-react';
+import { Phone, Mail, MapPin, Calendar, FileText, Send, Clock, User, Edit2, Trash2, X, Paperclip, Download, Image, FileSpreadsheet, Upload, Loader2, Plus, Megaphone, ExternalLink } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Badge } from '../common/Badge';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -55,19 +55,6 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [attachDragActive, setAttachDragActive] = useState(false);
   const attachFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load notes and attachments when lead changes
-  useEffect(() => {
-    if (isOpen && lead?.id) {
-      loadNotes(lead.id);
-      loadAttachments(lead.id);
-    }
-    if (!isOpen) {
-      // Reset state when modal closes
-      setAttachments([]);
-      setAttachDeleteConfirm(null);
-    }
-  }, [isOpen, lead?.id]);
-
   const loadNotes = useCallback(async (leadId: string) => {
     setNotesLoading(true);
     try {
@@ -92,6 +79,19 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setAttachmentsLoading(false);
     }
   }, []);
+
+  // Load notes and attachments when lead changes
+  useEffect(() => {
+    if (isOpen && lead?.id) {
+      loadNotes(lead.id);
+      loadAttachments(lead.id);
+    }
+    if (!isOpen) {
+      // Reset state when modal closes
+      setAttachments([]);
+      setAttachDeleteConfirm(null);
+    }
+  }, [isOpen, lead?.id, loadNotes, loadAttachments]);
 
   /** Get file type icon */
   const getFileIcon = useCallback((mimeType: string) => {
@@ -289,6 +289,11 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     <span className="ml-2 text-red-600 text-xs">(Out of Area)</span>
                   )}
                 </p>
+                {lead.leadLocation && (
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    <span className="text-gray-400">Coordinator note:</span> {lead.leadLocation}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
@@ -354,10 +359,18 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
           </div>
 
           {/* Attribution */}
-          {(lead.utmSource || lead.utmMedium || lead.utmCampaign) && (
+          {(lead.utmSource || lead.utmMedium || lead.utmCampaign || lead.leadSource || lead.referrerUrl) && (
             <div>
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Attribution</h4>
+              <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <Megaphone size={16} className="text-indigo-500" />
+                Where They Reached Us From
+              </h4>
               <div className="flex flex-wrap gap-2 text-xs">
+                {lead.leadSource && (
+                  <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded">
+                    Lead source: {lead.leadSource.replace(/_/g, ' ')}
+                  </span>
+                )}
                 {lead.utmSource && (
                   <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded">
                     Source: {lead.utmSource}
@@ -374,6 +387,17 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   </span>
                 )}
               </div>
+              {lead.referrerUrl && (
+                <a
+                  href={lead.referrerUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex max-w-full items-center gap-1.5 text-xs text-gray-600 hover:text-indigo-600"
+                >
+                  <ExternalLink size={12} />
+                  <span className="truncate">{lead.referrerUrl}</span>
+                </a>
+              )}
             </div>
           )}
 

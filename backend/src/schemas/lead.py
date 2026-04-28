@@ -634,7 +634,11 @@ class LeadResponse(BaseModel):
     # Location
     zip_code: str
     in_service_area: bool
-    
+    lead_location: Optional[str] = Field(
+        default=None,
+        description="Coordinator-captured city/area (e.g. 'Gilbert, AZ'). Powers expansion analysis.",
+    )
+
     # Urgency & Consent
     urgency: UrgencyType
     hipaa_consent: bool
@@ -642,7 +646,7 @@ class LeadResponse(BaseModel):
     privacy_consent_timestamp: Optional[datetime] = None
     sms_consent: bool
     sms_consent_timestamp: Optional[datetime] = None
-    
+
     # Scoring
     score: int
     priority: PriorityType
@@ -658,6 +662,8 @@ class LeadResponse(BaseModel):
     utm_source: Optional[str] = None
     utm_medium: Optional[str] = None
     utm_campaign: Optional[str] = None
+    referrer_url: Optional[str] = None
+    source: Optional[str] = None
     
     # Timestamps
     created_at: datetime
@@ -721,6 +727,10 @@ class LeadListResponse(BaseModel):
     priority: PriorityType
     status: LeadStatus
     in_service_area: bool
+    lead_location: Optional[str] = Field(
+        default=None,
+        description="Coordinator-captured city/area; surfaced in row hover and expansion insights.",
+    )
     created_at: datetime
     scheduled_callback_at: Optional[datetime] = None
     
@@ -745,6 +755,7 @@ class LeadListResponse(BaseModel):
         default=None,
         description="Lead source (widget, jotform, google_ads, referral, manual, etc.)"
     )
+    tms_therapy_interest: Optional[str] = None
 
     # Last Activity timestamp
     last_updated_at: Optional[datetime] = Field(
@@ -781,6 +792,19 @@ class UpdateContactOutcomeRequest(BaseModel):
         default=None,
         description="Next scheduled follow-up (for NO_ANSWER, CALLBACK_REQUESTED)"
     )
+    contact_method: Optional[ContactMethodType] = Field(
+        default=ContactMethodType.PHONE,
+        description="Channel used for this outreach outcome. Defaults to PHONE for call outcomes.",
+    )
+    lead_location: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Coordinator-captured city/area for the lead (e.g. 'Gilbert, AZ'). "
+            "When provided, overwrites leads.lead_location to keep the latest "
+            "known location. Powers AI Insights expansion-opportunity analysis."
+        ),
+    )
     expected_updated_at: Optional[datetime] = Field(
         default=None,
         description=(
@@ -794,10 +818,74 @@ class UpdateContactOutcomeRequest(BaseModel):
             "example": {
                 "contact_outcome": "NO_ANSWER",
                 "notes": "Called twice, no answer. Will try again tomorrow.",
-                "next_follow_up_at": "2026-01-23T10:00:00Z"
+                "next_follow_up_at": "2026-01-23T10:00:00Z",
+                "lead_location": "Gilbert, AZ"
             }
         }
     }
+
+
+# =============================================================================
+# Bulk Operations Schema
+# =============================================================================
+
+class BulkUpdateLeadsRequest(BaseModel):
+    """
+    Schema for bulk-updating multiple leads in one request.
+
+    At least one of priority / status / contact_outcome must be provided.
+    A single call is capped at 500 leads to keep the write under a
+    reasonable transaction window and audit-log volume.
+    """
+
+    lead_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="UUIDs of the leads to update (1–500).",
+    )
+    priority: Optional[PriorityType] = Field(
+        default=None,
+        description="If set, overwrite priority on every selected lead.",
+    )
+    status: Optional[LeadStatus] = Field(
+        default=None,
+        description="If set, overwrite status on every selected lead.",
+    )
+    contact_outcome: Optional[ContactOutcome] = Field(
+        default=None,
+        description="If set, overwrite contact outcome on every selected lead.",
+    )
+
+    @model_validator(mode="after")
+    def _require_at_least_one_update(self) -> "BulkUpdateLeadsRequest":
+        if self.priority is None and self.status is None and self.contact_outcome is None:
+            raise ValueError(
+                "At least one of priority, status, or contact_outcome must be provided."
+            )
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "lead_ids": [
+                    "00000000-0000-0000-0000-000000000001",
+                    "00000000-0000-0000-0000-000000000002",
+                ],
+                "priority": "MEDIUM",
+            }
+        }
+    }
+
+
+class BulkUpdateLeadsResponse(BaseModel):
+    """Result of a bulk update call."""
+
+    updated_count: int = Field(..., description="Leads successfully updated.")
+    skipped_ids: List[UUID] = Field(
+        default_factory=list,
+        description="Lead ids that were not updated (not found or soft-deleted).",
+    )
 
 
 # =============================================================================
@@ -829,6 +917,14 @@ class ScheduleCallbackRequest(BaseModel):
     schedule_type: Optional[str] = Field(
         default="callback",
         description="Type of schedule: 'callback' (stays in follow-up) or 'consultation' (moves to scheduled)"
+    )
+    lead_location: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Coordinator-captured city/area for the lead (e.g. 'Gilbert, AZ'). "
+            "When provided, overwrites leads.lead_location."
+        ),
     )
     expected_updated_at: Optional[datetime] = Field(
         default=None,

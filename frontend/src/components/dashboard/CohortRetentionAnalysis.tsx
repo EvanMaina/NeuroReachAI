@@ -140,16 +140,16 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
       const percentages = cohort.periods.map((value) =>
         cohort.cohortSize > 0 ? (value / cohort.cohortSize) * 100 : 0
       );
-      
+
       // Calculate lost leads (Initial - last period that has data)
       const lastValue = cohort.periods[cohort.periods.length - 1] || 0;
       const lostCount = cohort.lost ?? Math.max(0, cohort.cohortSize - lastValue);
       const lostPercentage = cohort.cohortSize > 0 ? (lostCount / cohort.cohortSize) * 100 : 0;
-      
+
       // Winbacks
       const winbackCount = cohort.winbacks ?? 0;
       const winbackPercentage = lostCount > 0 ? (winbackCount / lostCount) * 100 : 0;
-      
+
       return {
         ...cohort,
         percentages,
@@ -164,7 +164,7 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
   // Calculate average retention per period
   const averageRetention = useMemo(() => {
     if (processedData.length === 0) return [];
-    
+
     const maxPeriods = Math.max(...processedData.map((d) => d.percentages.length));
     return Array.from({ length: maxPeriods }, (_, i) => {
       const validValues = processedData
@@ -190,26 +190,26 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
   // Summary stats
   const summaryStats = useMemo(() => {
     if (processedData.length === 0) {
-      return { 
-        totalCohorts: 0, 
-        avgInitialSize: 0, 
-        avgRetention30: 0, 
+      return {
+        totalCohorts: 0,
+        avgInitialSize: 0,
+        avgRetention30: 0,
         totalLost: 0,
         lossRate: 0,
         totalWinbacks: 0,
       };
     }
-    
+
     const totalCohorts = processedData.length;
     const avgInitialSize = Math.round(
       processedData.reduce((a, b) => a + b.cohortSize, 0) / totalCohorts
     );
-    
+
     // Find the "Completed" index (or use index 3)
     const completedIndex = periodLabels.findIndex((l) => l.toLowerCase().includes('completed'));
     const retentionIndex = completedIndex >= 0 ? completedIndex : Math.min(3, averageRetention.length - 1);
     const avgRetention30 = averageRetention[retentionIndex] ?? 0;
-    
+
     const totalLost = processedData.reduce((a, b) => a + b.lostCount, 0);
     const totalSize = processedData.reduce((a, b) => a + b.cohortSize, 0);
     const lossRate = totalSize > 0 ? (totalLost / totalSize) * 100 : 0;
@@ -285,11 +285,10 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                           onFilterChange({ type: 'months', value: m });
                           setFilterDropdownOpen(false);
                         }}
-                        className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
-                          isActive
+                        className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${isActive
                             ? 'bg-purple-50 text-purple-700 font-medium'
                             : 'text-gray-700 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         {m === 1 ? 'Last Month' : `Last ${m} Months`}
                         {isActive && <span className="float-right text-purple-500">✓</span>}
@@ -313,11 +312,10 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                               onFilterChange({ type: 'year', value: yr });
                               setFilterDropdownOpen(false);
                             }}
-                            className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
-                              isActive
+                            className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${isActive
                                 ? 'bg-purple-50 text-purple-700 font-medium'
                                 : 'text-gray-700 hover:bg-gray-50'
-                            }`}
+                              }`}
                           >
                             {yr}
                             {isActive && <span className="float-right text-purple-500">✓</span>}
@@ -341,27 +339,25 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
             />
             Show Lost
           </label>
-          
+
           {/* Display Mode Toggle */}
           <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg">
             <button
               onClick={() => setDisplayMode('percentage')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                displayMode === 'percentage'
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${displayMode === 'percentage'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
             >
               <Percent size={14} />
               <span className="hidden sm:inline">%</span>
             </button>
             <button
               onClick={() => setDisplayMode('absolute')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                displayMode === 'absolute'
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${displayMode === 'absolute'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
-              }`}
+                }`}
             >
               <Hash size={14} />
               <span className="hidden sm:inline">#</span>
@@ -423,7 +419,7 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
       </div>
 
       {/* Cohort Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto premium-scrollbar">
         <table className="w-full border-collapse">
           <thead>
             <tr>
@@ -521,11 +517,10 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                         </td>
                         <td className="px-1 py-1">
                           <div
-                            className={`px-2 py-1.5 rounded text-center text-sm font-medium ${
-                              cohort.winbackCount > 0
+                            className={`px-2 py-1.5 rounded text-center text-sm font-medium ${cohort.winbackCount > 0
                                 ? 'bg-blue-100 text-blue-700'
                                 : 'bg-gray-50 text-gray-400'
-                            }`}
+                              }`}
                           >
                             {cohort.winbackCount.toLocaleString()}
                           </div>
@@ -543,7 +538,7 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                   <td className="px-3 py-2.5 text-center text-sm font-medium text-gray-600">
                     {Math.round(
                       processedData.reduce((a, b) => a + b.cohortSize, 0) /
-                        processedData.length
+                      processedData.length
                     ).toLocaleString()}
                   </td>
                   {averageRetention.map((avg, i) => (
@@ -554,10 +549,10 @@ export const CohortRetentionAnalysis: React.FC<CohortRetentionAnalysisProps> = (
                         {displayMode === 'percentage'
                           ? `${avg.toFixed(0)}%`
                           : Math.round(
-                              (avg / 100) *
-                                (processedData.reduce((a, b) => a + b.cohortSize, 0) /
-                                  processedData.length)
-                            ).toLocaleString()}
+                            (avg / 100) *
+                            (processedData.reduce((a, b) => a + b.cohortSize, 0) /
+                              processedData.length)
+                          ).toLocaleString()}
                       </div>
                     </td>
                   ))}

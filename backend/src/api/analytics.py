@@ -130,6 +130,63 @@ def calculate_trend_percentage(current: int, previous: int) -> float:
     return round(((current - previous) / previous) * 100, 1)
 
 
+ALL_CONDITION_TYPES = ["DEPRESSION", "ANXIETY", "OCD", "PTSD", "OTHER"]
+ALL_TMS_INTEREST_TYPES = ["daily_tms", "accelerated_tms", "not_sure"]
+
+
+def complete_condition_rows(rows: list[dict], total_leads: int) -> list[dict]:
+    """Return all known condition rows, preserving real counts and trends."""
+    by_condition = {str(row.get("condition", "")).upper(): row for row in rows}
+    completed: list[dict] = []
+
+    for condition in ALL_CONDITION_TYPES:
+        row = by_condition.get(condition, {})
+        count = int(row.get("count") or 0)
+        completed.append({
+            "condition": condition,
+            "count": count,
+            "percentage": round((count / total_leads * 100) if total_leads > 0 else 0, 2),
+            "trend": float(row.get("trend") or 0),
+        })
+
+    return sorted(
+        completed,
+        key=lambda item: (-item["count"], ALL_CONDITION_TYPES.index(item["condition"])),
+    )
+
+
+def complete_tms_interest_rows(rows: list[dict], total_with_interest: int) -> list[dict]:
+    """Return all supported TMS interest rows, preserving real counts and trends."""
+    by_interest = {
+        interest_type: {"count": 0, "trend": 0.0}
+        for interest_type in ALL_TMS_INTEREST_TYPES
+    }
+    for row in rows:
+        interest_type = str(row.get("interest_type", ""))
+        if interest_type not in by_interest:
+            interest_type = "accelerated_tms"
+        by_interest[interest_type]["count"] += int(row.get("count") or 0)
+        if row.get("trend") not in (None, 0, 0.0):
+            by_interest[interest_type]["trend"] = float(row.get("trend") or 0)
+
+    completed: list[dict] = []
+
+    for interest_type in ALL_TMS_INTEREST_TYPES:
+        row = by_interest[interest_type]
+        count = int(row["count"] or 0)
+        completed.append({
+            "interest_type": interest_type,
+            "count": count,
+            "percentage": round((count / total_with_interest * 100) if total_with_interest > 0 else 0, 2),
+            "trend": float(row["trend"] or 0),
+        })
+
+    return sorted(
+        completed,
+        key=lambda item: (-item["count"], ALL_TMS_INTEREST_TYPES.index(item["interest_type"])),
+    )
+
+
 # =============================================================================
 # Dashboard Summary Endpoint
 # =============================================================================
@@ -451,9 +508,11 @@ async def get_conditions_distribution(
     try:
         cached_data = cache.get_conditions_distribution()
         if cached_data and isinstance(cached_data, dict) and "conditions" in cached_data:
+            total_leads = cached_data.get("total", 0)
+            conditions = complete_condition_rows(cached_data["conditions"], total_leads)
             return ConditionsDistributionResponse(
-                conditions=[ConditionDistribution(**c) for c in cached_data["conditions"]],
-                total_leads=cached_data.get("total", 0),
+                conditions=[ConditionDistribution(**c) for c in conditions],
+                total_leads=total_leads,
                 cache_hit=True,
                 query_time_ms=round((time.time() - start_time) * 1000, 2)
             )
@@ -574,9 +633,11 @@ async def get_conditions_distribution(
         canonical = CONDITION_NORMALIZE.get(cond_value, cond_value.upper())
         last_week_map[canonical] = last_week_map.get(canonical, 0) + row.count
     
-    # Build final conditions list sorted by count descending
+    # Build final conditions list. Include every supported condition even when
+    # count is zero so the dashboard never hides a selectable intake option.
     conditions = []
-    for cond_name, count in sorted(condition_counts.items(), key=lambda x: x[1], reverse=True):
+    for cond_name in ALL_CONDITION_TYPES:
+        count = condition_counts.get(cond_name, 0)
         this_week_count = this_week_map.get(cond_name, 0)
         last_week_count = last_week_map.get(cond_name, 0)
         trend = calculate_trend_percentage(this_week_count, last_week_count)
@@ -587,6 +648,7 @@ async def get_conditions_distribution(
             "percentage": round((count / total_leads * 100) if total_leads > 0 else 0, 2),
             "trend": trend,
         })
+    conditions = complete_condition_rows(conditions, total_leads)
     
     # Cache result as proper dict format
     cache.set_conditions_distribution({"conditions": conditions, "total": total_leads})
@@ -645,9 +707,11 @@ async def get_tms_therapy_distribution(
     try:
         cached_data = cache.get(cache_key)
         if cached_data and isinstance(cached_data, dict) and "interests" in cached_data:
+            total_with_interest = cached_data.get("total_with_interest", 0)
+            interests = complete_tms_interest_rows(cached_data["interests"], total_with_interest)
             return TMSInterestDistributionResponse(
-                interests=[TMSInterestDistribution(**i) for i in cached_data["interests"]],
-                total_with_interest=cached_data.get("total_with_interest", 0),
+                interests=[TMSInterestDistribution(**i) for i in interests],
+                total_with_interest=total_with_interest,
                 total_leads=cached_data.get("total_leads", 0),
                 cache_hit=True,
                 query_time_ms=round((time.time() - start_time) * 1000, 2)
@@ -690,7 +754,12 @@ async def get_tms_therapy_distribution(
         Lead.tms_therapy_interest != '',
         Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
     ).group_by(Lead.tms_therapy_interest).all()
-    this_week_map = {row.tms_therapy_interest: row.count for row in this_week_q}
+    this_week_map = {interest_type: 0 for interest_type in ALL_TMS_INTEREST_TYPES}
+    for row in this_week_q:
+        interest_type = row.tms_therapy_interest
+        if interest_type not in this_week_map:
+            interest_type = "accelerated_tms"
+        this_week_map[interest_type] += int(row.count or 0)
     
     last_week_q = db.query(
         Lead.tms_therapy_interest,
@@ -701,13 +770,27 @@ async def get_tms_therapy_distribution(
         Lead.tms_therapy_interest != '',
         Lead.deleted_at.is_(None),  # EXCLUDE soft-deleted leads
     ).group_by(Lead.tms_therapy_interest).all()
-    last_week_map = {row.tms_therapy_interest: row.count for row in last_week_q}
+    last_week_map = {interest_type: 0 for interest_type in ALL_TMS_INTEREST_TYPES}
+    for row in last_week_q:
+        interest_type = row.tms_therapy_interest
+        if interest_type not in last_week_map:
+            interest_type = "accelerated_tms"
+        last_week_map[interest_type] += int(row.count or 0)
     
-    # Build result
-    interests = []
+    # Build result. Include every supported TMS therapy option so the dashboard
+    # shows the complete intake vocabulary even before a category has leads.
+    counts_by_interest = {interest_type: 0 for interest_type in ALL_TMS_INTEREST_TYPES}
     for row in distribution:
         interest_type = row.tms_therapy_interest
-        count = row.count
+        if interest_type not in counts_by_interest:
+            # Legacy/free-text TMS interest values are treated as TMS interest,
+            # but normalized into the closest supported bucket for reporting.
+            interest_type = "accelerated_tms"
+        counts_by_interest[interest_type] += int(row.count or 0)
+
+    interests = []
+    for interest_type in ALL_TMS_INTEREST_TYPES:
+        count = counts_by_interest.get(interest_type, 0)
         this_wk = this_week_map.get(interest_type, 0)
         last_wk = last_week_map.get(interest_type, 0)
         trend = calculate_trend_percentage(this_wk, last_wk)
@@ -718,6 +801,7 @@ async def get_tms_therapy_distribution(
             "percentage": round((count / total_with_interest * 100) if total_with_interest > 0 else 0, 2),
             "trend": trend,
         })
+    interests = complete_tms_interest_rows(interests, total_with_interest)
     
     result = {
         "interests": interests,

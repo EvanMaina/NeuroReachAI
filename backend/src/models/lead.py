@@ -242,6 +242,9 @@ class Lead(Base):
     # Location
     zip_code = Column(String(10), nullable=False)
     in_service_area = Column(Boolean, nullable=False, default=False)
+    # Coordinator-captured city/area (e.g. "Gilbert, AZ"). Optional; powers
+    # AI Insights expansion analysis. See migration 026_add_lead_location.sql.
+    lead_location = Column(String(255), nullable=True)
     
     # Urgency & Consent
     urgency = Column(
@@ -281,6 +284,17 @@ class Lead(Base):
     )
     assigned_to = Column(PGUUID(as_uuid=True), nullable=True)  # Future: FK to users
     notes = Column(Text, nullable=True)
+
+    # Coordinator who moved this lead into a converted status (closer attribution).
+    # Populated from JWT at the moment of transition into CONSULTATION_COMPLETE
+    # or TREATMENT_STARTED. See migration 027_add_completed_by_user_id.sql.
+    completed_by_user_id = Column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Lead Source/Platform
     source = Column(

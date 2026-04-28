@@ -560,6 +560,12 @@ class CacheService:
         
         # Invalidate ALL cohort retention caches (per-filter keys: months:3, year:2026, etc.)
         self.delete_pattern(f"{self.PREFIX_COHORT}:*")
+
+        # AI Insights is lead-derived. Clear both the dashboard cache and
+        # per-lead email drafts so follow-up copy/geographic metrics cannot lag
+        # behind a fresh intake, location capture, schedule, or outcome update.
+        self.delete("ai_insights:v1")
+        self.delete_pattern("ai_email_draft:v1:*")
         
         logger.debug("Lead change cache invalidation completed (all related caches cleared)")
     

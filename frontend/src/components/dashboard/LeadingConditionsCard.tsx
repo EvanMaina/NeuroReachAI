@@ -76,27 +76,30 @@ const CONDITION_CONFIG: Record<ConditionType, {
   },
 };
 
+const CONDITION_ORDER: ConditionType[] = ['DEPRESSION', 'ANXIETY', 'OCD', 'PTSD', 'OTHER'];
+
 const ConditionRow: React.FC<{ data: ConditionData; maxCount: number }> = ({
   data,
   maxCount,
 }) => {
-  const config = CONDITION_CONFIG[data.condition];
+  const config = CONDITION_CONFIG[data.condition] || CONDITION_CONFIG.OTHER;
   const barWidth = maxCount > 0 ? (data.count / maxCount) * 100 : 0;
+  const muted = data.count === 0;
 
   return (
-    <div className="group">
+    <div className={`group ${muted ? 'opacity-75' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${config.bgColor} ${config.color}`}>
             {config.icon}
           </div>
           <div>
-            <span className="font-medium text-gray-900">{config.label}</span>
-            <span className="text-gray-500 ml-2 text-sm">({data.count})</span>
+            <span className="font-medium text-gray-900 ">{config.label}</span>
+            <span className="text-gray-500  ml-2 text-sm">({data.count})</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-semibold text-gray-900">
+          <span className="text-lg font-semibold text-gray-900 ">
             {data.percentage.toFixed(1)}%
           </span>
           {data.trend !== undefined && (
@@ -114,7 +117,7 @@ const ConditionRow: React.FC<{ data: ConditionData; maxCount: number }> = ({
         </div>
       </div>
       {/* Progress bar */}
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-2 bg-gray-100  rounded-full overflow-hidden">
         <div
           className={`h-full ${config.barColor} rounded-full transition-all duration-500 ease-out`}
           style={{ width: `${barWidth}%` }}
@@ -129,25 +132,33 @@ export const LeadingConditionsCard: React.FC<LeadingConditionsCardProps> = ({
   totalLeads,
   isLoading = false,
 }) => {
-  const sortedConditions = [...conditions].sort((a, b) => b.count - a.count);
+  const conditionMap = new Map(conditions.map(condition => [condition.condition, condition]));
+  const sortedConditions = CONDITION_ORDER
+    .map(condition => conditionMap.get(condition) ?? {
+      condition,
+      count: 0,
+      percentage: 0,
+      trend: 0,
+    })
+    .sort((a, b) => b.count - a.count || CONDITION_ORDER.indexOf(a.condition) - CONDITION_ORDER.indexOf(b.condition));
   const maxCount = sortedConditions.length > 0 ? sortedConditions[0].count : 0;
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+      <div className="bg-white  rounded-2xl shadow-sm border border-gray-100  p-6">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-48 mb-6" />
+          <div className="h-6 bg-gray-200  rounded w-48 mb-6" />
           <div className="space-y-6">
             {[1, 2, 3, 4, 5].map((i) => (
               <div key={i}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-200 rounded-lg" />
-                    <div className="h-4 bg-gray-200 rounded w-24" />
+                    <div className="w-10 h-10 bg-gray-200  rounded-lg" />
+                    <div className="h-4 bg-gray-200  rounded w-24" />
                   </div>
-                  <div className="h-4 bg-gray-200 rounded w-16" />
+                  <div className="h-4 bg-gray-200  rounded w-16" />
                 </div>
-                <div className="h-2 bg-gray-200 rounded-full" />
+                <div className="h-2 bg-gray-200  rounded-full" />
               </div>
             ))}
           </div>
@@ -157,18 +168,18 @@ export const LeadingConditionsCard: React.FC<LeadingConditionsCardProps> = ({
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white  rounded-2xl shadow-sm border border-gray-100  p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-lg font-semibold text-gray-900 ">
             Leading Conditions
           </h3>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 ">
             Distribution of {totalLeads.toLocaleString()} leads by primary condition
           </p>
         </div>
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50  text-blue-700  rounded-lg text-sm font-medium">
           <Brain size={16} />
           <span>TMS Eligible</span>
         </div>
@@ -193,14 +204,14 @@ export const LeadingConditionsCard: React.FC<LeadingConditionsCardProps> = ({
 
       {/* Summary Footer */}
       {sortedConditions.length > 0 && (
-        <div className="mt-6 pt-4 border-t border-gray-100">
+        <div className="mt-6 pt-4 border-t border-gray-100 ">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-500">
-              Top condition: <span className="font-medium text-gray-900">
-                {CONDITION_CONFIG[sortedConditions[0].condition].label}
+            <span className="text-gray-500 ">
+              Top condition: <span className="font-medium text-gray-900 ">
+                {(CONDITION_CONFIG[sortedConditions[0].condition] || CONDITION_CONFIG.OTHER).label}
               </span>
             </span>
-            <span className="text-gray-500">
+            <span className="text-gray-500 ">
               {sortedConditions[0].percentage.toFixed(1)}% of all leads
             </span>
           </div>

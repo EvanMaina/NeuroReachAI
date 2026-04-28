@@ -80,14 +80,14 @@ export const GreetingBanner: React.FC = () => {
     return (
         <div className="mb-4">
             <div className="flex items-baseline gap-2">
-                <h2 className="text-lg font-semibold text-gray-800 tracking-tight">
-                    {greetingText}, <span className="font-bold text-gray-900">{firstName}</span>
+                <h2 className="text-lg font-semibold text-gray-800  tracking-tight">
+                    {greetingText}, <span className="font-bold text-gray-900 ">{firstName}</span>
                 </h2>
                 <span className="text-base" role="img" aria-label={period}>
                     {emoji}
                 </span>
             </div>
-            <p className="text-xs text-gray-400 mt-0.5 font-medium tracking-wide">
+            <p className="text-xs text-gray-400  mt-0.5 font-medium tracking-wide">
                 {dateStr}
             </p>
         </div>

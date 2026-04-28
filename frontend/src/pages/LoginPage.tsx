@@ -11,6 +11,10 @@ import { Shield, Lock, Activity, Eye, EyeOff, Check, X } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import bgImage from '../assets/TMS_19200x800_1.jpg';
 
+const PASSWORD_SPECIAL_CHARACTERS = new Set('!@#$%^&*(),.?":{}|<>-_=+[]\\/~`'.split(''));
+const hasPasswordSpecialCharacter = (value: string) =>
+  Array.from(value).some(char => PASSWORD_SPECIAL_CHARACTERS.has(char));
+
 // =============================================================================
 // Change-Password Screen (shown after login when must_change_password is true)
 // =============================================================================
@@ -30,7 +34,7 @@ const ChangePasswordScreen: React.FC = () => {
     hasUppercase: /[A-Z]/.test(newPassword),
     hasLowercase: /[a-z]/.test(newPassword),
     hasNumber: /[0-9]/.test(newPassword),
-    hasSpecial: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword),
+    hasSpecial: hasPasswordSpecialCharacter(newPassword),
     passwordsMatch: newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword,
   }), [newPassword, confirmPassword]);
 

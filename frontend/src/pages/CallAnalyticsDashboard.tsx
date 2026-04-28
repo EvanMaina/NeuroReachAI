@@ -76,10 +76,10 @@ const CallAnalyticsDashboard: React.FC = () => {
   const dateRangeLabel = DATE_RANGE_OPTIONS.find(o => o.value === dateRange)?.label || 'Last 30 Days';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50  ">
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate} />
 
-      <main className="ml-60 p-8">
+      <main className="nr-sidebar-ml p-8">
         {/* Personalized Greeting */}
         <GreetingBanner />
 
@@ -90,8 +90,8 @@ const CallAnalyticsDashboard: React.FC = () => {
               <Phone size={22} className="text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Call Analytics</h1>
-              <p className="text-sm text-gray-500">
+              <h1 className="text-2xl font-bold text-gray-900  tracking-tight">Call Analytics</h1>
+              <p className="text-sm text-gray-500 ">
                 Live call data from CallRail · {dateRangeLabel}
               </p>
             </div>
@@ -108,7 +108,7 @@ const CallAnalyticsDashboard: React.FC = () => {
               <select
                 value={dateRange}
                 onChange={(e) => setDateRange(e.target.value as DateRangeType)}
-                className="appearance-none pl-10 pr-9 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 cursor-pointer hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="appearance-none pl-10 pr-9 py-2.5 bg-white  border border-gray-200  rounded-xl text-sm font-medium text-gray-700  cursor-pointer hover:border-gray-300  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
               >
                 {DATE_RANGE_OPTIONS.map(opt => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -132,14 +132,14 @@ const CallAnalyticsDashboard: React.FC = () => {
 
         {/* ── Tabs ── */}
         <div className="mb-6">
-          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+          <div className="flex items-center gap-1 p-1 bg-gray-100  rounded-xl w-fit">
             {TAB_ITEMS.map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={`px-5 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === tab.key
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white  text-gray-900  shadow-sm'
+                  : 'text-gray-500  hover:text-gray-700 '
                   }`}
               >
                 {tab.label}

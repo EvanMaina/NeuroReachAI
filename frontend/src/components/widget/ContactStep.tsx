@@ -124,6 +124,8 @@ const CONTACT_METHOD_OPTIONS: Array<{
   { value: 'any', label: 'Any', icon: <Check size={14} /> },
 ];
 
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
 export const ContactStep: React.FC<ContactStepProps> = ({
   firstName, lastName, email, phone, dateOfBirth, smsConsent, preferredContactMethod,
   onFirstNameChange, onLastNameChange, onEmailChange, onPhoneChange,
@@ -131,7 +133,6 @@ export const ContactStep: React.FC<ContactStepProps> = ({
 }) => {
   const [touched, setTouched] = useState({ firstName: false, lastName: false, email: false, phone: false });
   const [errors, setErrors] = useState({ firstName: '', lastName: '', email: '', phone: '' });
-  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
   useEffect(() => {
     const e = { firstName: '', lastName: '', email: '', phone: '' };
@@ -139,7 +140,7 @@ export const ContactStep: React.FC<ContactStepProps> = ({
     if (touched.lastName && !lastName.trim()) e.lastName = 'Required';
     if (touched.email) {
       if (!email.trim()) e.email = 'Required';
-      else if (!emailRegex.test(email.trim())) e.email = 'Invalid email';
+      else if (!EMAIL_REGEX.test(email.trim())) e.email = 'Invalid email';
     }
     if (touched.phone) e.phone = validatePhoneNumber(phone);
     setErrors(e);

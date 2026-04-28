@@ -144,6 +144,15 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
     const MAX_SEGMENTS = 3;
     const MAX_LENGTH = SMS_SEGMENT_LENGTH * MAX_SEGMENTS;
 
+    const replaceVariables = useCallback((text: string, leadData: Lead): string => {
+        return text
+            .replace(/\{\{first_name\}\}/g, leadData.firstName || 'there')
+            .replace(/\{\{last_name\}\}/g, leadData.lastName || '')
+            .replace(/\{\{lead_number\}\}/g, leadData.leadId || '')
+            .replace(/\{\{support_phone\}\}/g, '(480) 668-3599')
+            .replace(/\{\{clinic_name\}\}/g, 'TMS Institute of Arizona');
+    }, []);
+
     // ---------------------------------------------------------------------------
     // Effects
     // ---------------------------------------------------------------------------
@@ -170,7 +179,7 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
                 setMessage('');
             }
         }
-    }, [isOpen]);
+    }, [isOpen, replaceVariables]);
 
     // Update message when category changes (read lead from ref to avoid re-triggers)
     useEffect(() => {
@@ -181,20 +190,11 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
                 setMessage(replaceVariables(template.message, currentLead));
             }
         }
-    }, [selectedCategory]);
+    }, [selectedCategory, replaceVariables]);
 
     // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
-
-    const replaceVariables = useCallback((text: string, leadData: Lead): string => {
-        return text
-            .replace(/\{\{first_name\}\}/g, leadData.firstName || 'there')
-            .replace(/\{\{last_name\}\}/g, leadData.lastName || '')
-            .replace(/\{\{lead_number\}\}/g, leadData.leadId || '')
-            .replace(/\{\{support_phone\}\}/g, '(480) 668-3599')
-            .replace(/\{\{clinic_name\}\}/g, 'TMS Institute of Arizona');
-    }, []);
 
     const getSegmentCount = useCallback((text: string): number => {
         if (!text) return 0;
@@ -278,7 +278,7 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
     const isOverLimit = message.length > MAX_LENGTH;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.03] ">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] flex flex-col">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">

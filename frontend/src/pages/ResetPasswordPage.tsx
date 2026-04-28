@@ -6,6 +6,10 @@ import { Shield, Lock, Eye, EyeOff, ArrowLeft, Check, X, CheckCircle, AlertTrian
 import { validateResetToken, resetPassword } from '../services/auth';
 import bgImage from '../assets/TMS_19200x800_1.jpg';
 
+const PASSWORD_SPECIAL_CHARACTERS = new Set('!@#$%^&*(),.?":{}|<>-_=+[]\\/~`'.split(''));
+const hasPasswordSpecialCharacter = (value: string) =>
+  Array.from(value).some(char => PASSWORD_SPECIAL_CHARACTERS.has(char));
+
 const ResetPasswordPage: React.FC = () => {
   // Extract token from hash: #reset-password?token=xxx
   const [token, setToken] = useState('');
@@ -53,7 +57,7 @@ const ResetPasswordPage: React.FC = () => {
     hasUppercase: /[A-Z]/.test(newPassword),
     hasLowercase: /[a-z]/.test(newPassword),
     hasNumber: /[0-9]/.test(newPassword),
-    hasSpecial: /[!@#$%^&*(),.?":{}|<>\-_=+\[\]\\\/~`]/.test(newPassword),
+    hasSpecial: hasPasswordSpecialCharacter(newPassword),
     passwordsMatch: newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword,
   }), [newPassword, confirmPassword]);
 

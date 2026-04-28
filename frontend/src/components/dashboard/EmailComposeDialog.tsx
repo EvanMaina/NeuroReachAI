@@ -3,9 +3,9 @@
  * 
  * Modal dialog for composing and sending emails to leads.
  * Features:
- * - Category dropdown with pre-defined templates
+ * - Compact chip-based template selection
  * - Auto-populated subject based on category
- * - Rich text body with template variables
+ * - Editable body with template variables
  * - Send button with loading state
  * 
  * @module components/dashboard/EmailComposeDialog
@@ -15,9 +15,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     X, Mail, Send, Loader2, CheckCircle, AlertCircle,
-    FileText, Calendar, Phone, Clock, Heart
+    Sparkles
 } from 'lucide-react';
 import { sendEmail } from '../../services/communications';
+import { getAIEmailDraft } from '../../services/aiInsights';
 
 // =============================================================================
 // Types
@@ -53,7 +54,6 @@ interface EmailSendData {
 interface EmailTemplate {
     id: string;
     label: string;
-    icon: React.ReactNode;
     subject: string;
     body: string;
 }
@@ -66,7 +66,6 @@ const EMAIL_TEMPLATES: EmailTemplate[] = [
     {
         id: 'follow_up',
         label: 'Follow-up',
-        icon: <Clock size={16} />,
         subject: 'Following Up on Your TMS Therapy Inquiry',
         body: `Hi {{first_name}},
 
@@ -85,7 +84,6 @@ TMS Institute of Arizona
     {
         id: 'appointment_confirmation',
         label: 'Appointment Confirmation',
-        icon: <Calendar size={16} />,
         subject: 'Your TMS Consultation Appointment is Confirmed',
         body: `Hi {{first_name}},
 
@@ -117,7 +115,6 @@ TMS Institute of Arizona
     {
         id: 'appointment_reminder',
         label: 'Appointment Reminder',
-        icon: <Calendar size={16} />,
         subject: 'Reminder: Your TMS Consultation Tomorrow',
         body: `Hi {{first_name}},
 
@@ -145,7 +142,6 @@ TMS Institute of Arizona
     {
         id: 'missed_call',
         label: 'Missed Call Follow-up',
-        icon: <Phone size={16} />,
         subject: 'We Tried to Reach You About Your TMS Inquiry',
         body: `Hi {{first_name}},
 
@@ -167,7 +163,6 @@ TMS Institute of Arizona
     {
         id: 'thank_you',
         label: 'Thank You',
-        icon: <Heart size={16} />,
         subject: 'Thank You for Speaking with Us About TMS Therapy',
         body: `Hi {{first_name}},
 
@@ -187,9 +182,54 @@ TMS Institute of Arizona
 {{support_phone}}`,
     },
     {
+        id: 'day_3_education',
+        label: 'Day 3 — Educational',
+        subject: 'A Quick TMS Resource for You',
+        body: `Hi {{first_name}},
+
+I wanted to share a quick follow-up on TMS therapy in case you're still exploring options.
+
+TMS is non-invasive, does not require anesthesia, and is commonly used when symptoms have not improved enough with medication or therapy alone.
+
+If it would help, we can walk through eligibility, insurance, and what treatment looks like in a short call. You can reply here or call {{support_phone}}.
+
+Best regards,
+TMS Institute of Arizona
+{{support_phone}}`,
+    },
+    {
+        id: 'day_7_why_us',
+        label: 'Day 7 — Why Patients Choose Us',
+        subject: 'Why Patients Choose TMS Institute of Arizona',
+        body: `Hi {{first_name}},
+
+I know choosing a treatment provider is personal. Patients often choose us because we take time to verify coverage, explain the treatment process clearly, and help them understand whether TMS is a good fit before moving forward.
+
+If you're still considering TMS therapy, I'd be happy to answer questions and help you decide on next steps without pressure.
+
+You can reply to this email or call {{support_phone}}.
+
+Warm regards,
+TMS Institute of Arizona
+{{support_phone}}`,
+    },
+    {
+        id: 'day_14_reengagement',
+        label: 'Day 14 — Re-engagement',
+        subject: "No Pressure — We're Here When You're Ready",
+        body: `Hi {{first_name}},
+
+I completely understand if now is not the right time to pursue treatment. I just wanted to check in one more time and make sure you have a clear path back to us if TMS therapy is still something you want to explore.
+
+If questions come up later, you can reply here or call {{support_phone}}. There's no pressure from us.
+
+Wishing you well,
+TMS Institute of Arizona
+{{support_phone}}`,
+    },
+    {
         id: 'no_response_final',
         label: 'Final Outreach',
-        icon: <AlertCircle size={16} />,
         subject: 'Final Outreach From Our TMS Care Team',
         body: `Hi {{first_name}},
 
@@ -208,7 +248,6 @@ TMS Institute of Arizona
     {
         id: 'custom',
         label: 'Custom Email',
-        icon: <FileText size={16} />,
         subject: '',
         body: `Hi {{first_name}},
 
@@ -219,6 +258,19 @@ TMS Institute of Arizona
 {{support_phone}}`,
     },
 ];
+
+const TEMPLATE_CHIP_ORDER = [
+    'follow_up',
+    'appointment_confirmation',
+    'appointment_reminder',
+    'missed_call',
+    'thank_you',
+    'day_3_education',
+    'day_7_why_us',
+    'day_14_reengagement',
+    'no_response_final',
+    'custom',
+] as const;
 
 // =============================================================================
 // Component
@@ -242,13 +294,64 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
     const [body, setBody] = useState('');
     const [isSending, setIsSending] = useState(false);
     const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
-
-    // ---------------------------------------------------------------------------
-    // Refs — track previous open state to detect open/close transitions
-    // ---------------------------------------------------------------------------
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
+    // Queue context used for the AI chip tooltip so coordinators can inspect
+    // why the draft was selected without adding visual weight to the modal.
+    const [aiQueueContext, setAiQueueContext] = useState<{
+        status?: string | null;
+        contact_outcome?: string | null;
+        priority?: string | null;
+        follow_up_reason?: string | null;
+    } | null>(null);
+    const aiRequestRef = useRef(0);
     const prevIsOpenRef = useRef(false);
     const leadRef = useRef(lead);
     leadRef.current = lead;
+
+    const replaceVariables = useCallback((text: string, leadData: Lead): string => {
+        return text
+            .replace(/\{\{first_name\}\}/g, leadData.firstName || 'there')
+            .replace(/\{\{last_name\}\}/g, leadData.lastName || '')
+            .replace(/\{\{lead_number\}\}/g, leadData.leadId || '')
+            .replace(/\{\{support_phone\}\}/g, '(480) 668-3599')
+            .replace(/\{\{clinic_name\}\}/g, 'TMS Institute of Arizona');
+    }, []);
+
+    const handleAIRecommended = useCallback(async () => {
+        if (!lead) return;
+        const requestId = aiRequestRef.current + 1;
+        aiRequestRef.current = requestId;
+        setAiLoading(true);
+        setAiError(null);
+        try {
+            const draft = await getAIEmailDraft(lead.id);
+            if (requestId !== aiRequestRef.current || leadRef.current?.id !== lead.id) {
+                return;
+            }
+            setSelectedCategory('ai_recommended');
+            setSubject(draft.subject);
+            setBody(draft.body);
+            setAiQueueContext(draft.queue_context || null);
+        } catch (err) {
+            if (requestId !== aiRequestRef.current) {
+                return;
+            }
+            // Strict-AI policy: there is no silent template fallback. We show
+            // the real backend error so the user knows whether to retry or ask
+            // an admin to configure the AI provider key.
+            const axiosErr = err as { response?: { data?: { detail?: string } } };
+            setAiError(
+                axiosErr?.response?.data?.detail
+                    || (err instanceof Error ? err.message : 'Could not generate AI email draft.'),
+            );
+            setAiQueueContext(null);
+        } finally {
+            if (requestId === aiRequestRef.current) {
+                setAiLoading(false);
+            }
+        }
+    }, [lead]);
 
     // ---------------------------------------------------------------------------
     // Effects
@@ -269,8 +372,10 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
                 setBody(replaceVariables(template.body, lead));
             }
             setSendResult(null);
+            setAiQueueContext(null);
+            void handleAIRecommended();
         }
-    }, [isOpen, lead]);
+    }, [isOpen, lead, replaceVariables, handleAIRecommended]);
 
     // Update subject and body ONLY when the coordinator explicitly changes the template category.
     // The lead ref is used so this effect doesn't re-run on lead reference changes.
@@ -283,21 +388,7 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
                 setBody(replaceVariables(template.body, currentLead));
             }
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedCategory]);
-
-    // ---------------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------------
-
-    const replaceVariables = useCallback((text: string, leadData: Lead): string => {
-        return text
-            .replace(/\{\{first_name\}\}/g, leadData.firstName || 'there')
-            .replace(/\{\{last_name\}\}/g, leadData.lastName || '')
-            .replace(/\{\{lead_number\}\}/g, leadData.leadId || '')
-            .replace(/\{\{support_phone\}\}/g, '(480) 668-3599')
-            .replace(/\{\{clinic_name\}\}/g, 'TMS Institute of Arizona');
-    }, []);
+    }, [selectedCategory, replaceVariables]);
 
     // ---------------------------------------------------------------------------
     // Handlers
@@ -353,152 +444,154 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
     // ---------------------------------------------------------------------------
 
     if (!isOpen || !lead) return null;
+    const aiContextSummary = [
+        aiQueueContext?.priority ? `${aiQueueContext.priority.toLowerCase()} priority` : null,
+        aiQueueContext?.status ? aiQueueContext.status.replace(/_/g, ' ').toLowerCase() : null,
+        aiQueueContext?.contact_outcome ? aiQueueContext.contact_outcome.replace(/_/g, ' ').toLowerCase() : null,
+    ].filter(Boolean).join(' - ');
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.04] p-3">
+            <div className="w-full max-w-[512px] max-h-[92vh] overflow-hidden rounded-2xl bg-white text-gray-900 shadow-2xl ring-1 ring-gray-200 flex flex-col">
+                <div className="flex items-start justify-between px-6 pt-6 pb-3">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
                             <Mail size={20} className="text-blue-600" />
+                            <h3 className="text-lg font-bold text-gray-900">Send Email</h3>
                         </div>
-                        <div>
-                            <h3 className="text-lg font-bold text-gray-900">Compose Email</h3>
-                            <p className="text-sm text-gray-500">
-                                To: {lead.firstName} {lead.lastName} &lt;{lead.email}&gt;
-                            </p>
-                        </div>
+                        <p className="mt-4 text-sm text-gray-500 truncate">
+                            To: {lead.firstName} {lead.lastName} &lt;{lead.email}&gt;
+                        </p>
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        aria-label="Close email dialog"
                     >
                         <X size={20} />
                     </button>
                 </div>
 
-                {/* Body */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {/* Category Selector */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Email Template
-                        </label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {EMAIL_TEMPLATES.map(template => (
+                <div className="flex-1 overflow-y-auto premium-scrollbar px-6 pb-4">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500">
+                        Templates
+                    </p>
+                    <div className="mb-4 flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={handleAIRecommended}
+                            disabled={aiLoading}
+                            title={aiContextSummary || 'Generate the recommended draft from lead context'}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                                selectedCategory === 'ai_recommended' && !aiError
+                                    ? 'border-purple-300 bg-purple-50 text-purple-700'
+                                    : 'border-gray-200 bg-white text-gray-600 hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700'
+                            } ${aiLoading ? 'cursor-wait opacity-75' : ''}`}
+                        >
+                            {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                            AI Recommended
+                        </button>
+                        {TEMPLATE_CHIP_ORDER.map((id) => {
+                            const template = EMAIL_TEMPLATES.find(t => t.id === id);
+                            if (!template) return null;
+                            const selected = selectedCategory === template.id;
+                            return (
                                 <button
                                     key={template.id}
-                                    onClick={() => setSelectedCategory(template.id)}
-                                    className={`
-                    flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg
-                    border transition-all duration-200
-                    ${selectedCategory === template.id
-                                            ? 'bg-blue-50 border-blue-300 text-blue-700'
-                                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
-                  `}
+                                    type="button"
+                                    onClick={() => {
+                                        aiRequestRef.current += 1;
+                                        setAiLoading(false);
+                                        setSelectedCategory(template.id);
+                                        setAiError(null);
+                                    }}
+                                    className={`inline-flex items-center rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                                        selected
+                                            ? 'border-blue-300 bg-blue-50 text-blue-700'
+                                            : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                                    }`}
                                 >
-                                    {template.icon}
-                                    <span className="truncate">{template.label}</span>
+                                    {template.label}
                                 </button>
-                            ))}
-                        </div>
+                            );
+                        })}
                     </div>
+
+                    {aiError && (
+                        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                            <div className="flex items-center gap-1.5 font-semibold">
+                                <AlertCircle size={12} /> AI draft unavailable
+                            </div>
+                            <p className="mt-1 text-red-700">{aiError}</p>
+                            <p className="mt-1 text-red-600">
+                                Pick a manual template to send, or click <span className="font-semibold">AI Recommended</span> to retry.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Subject */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Subject
-                        </label>
                         <input
                             type="text"
                             value={subject}
                             onChange={(e) => setSubject(e.target.value)}
                             placeholder="Email subject..."
-                            className="
-                w-full px-4 py-2.5 text-sm
-                border border-gray-300 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-              "
+                            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                     </div>
 
-                    {/* Body */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Message
-                        </label>
+                    <div className="mt-3">
                         <textarea
                             value={body}
                             onChange={(e) => setBody(e.target.value)}
                             placeholder="Type your message..."
-                            rows={12}
-                            className="
-                w-full px-4 py-3 text-sm font-mono
-                border border-gray-300 rounded-lg
-                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                resize-none
-              "
+                            rows={8}
+                            className="w-full resize-none rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm leading-relaxed text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                     </div>
+                    <p className="mt-2 text-xs text-gray-400">
+                        Templates are editable before sending.
+                    </p>
 
-                    {/* Result Message */}
                     {sendResult && (
-                        <div className={`
-              flex items-center gap-2 px-4 py-3 rounded-lg
-              ${sendResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}
-            `}>
+                        <div className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                            sendResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                        }`}>
                             {sendResult.success ? (
-                                <CheckCircle size={18} />
+                                <CheckCircle size={16} />
                             ) : (
-                                <AlertCircle size={18} />
+                                <AlertCircle size={16} />
                             )}
-                            <span className="text-sm font-medium">{sendResult.message}</span>
+                            <span className="font-medium">{sendResult.message}</span>
                         </div>
                     )}
                 </div>
 
-                {/* Footer */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 bg-gray-50">
-                    <p className="text-xs text-gray-500">
-                        Reference: {lead.leadId}
-                    </p>
-                    <div className="flex items-center gap-3">
-                        <button
-                            onClick={onClose}
-                            disabled={isSending}
-                            className="
-                px-4 py-2 text-sm font-medium
-                text-gray-700 bg-white border border-gray-300 rounded-lg
-                hover:bg-gray-50 transition-colors
-                disabled:opacity-50 disabled:cursor-not-allowed
-              "
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSend}
-                            disabled={isSending || !subject.trim() || !body.trim()}
-                            className="
-                flex items-center gap-2 px-4 py-2 text-sm font-medium
-                text-white bg-blue-600 rounded-lg
-                hover:bg-blue-700 transition-colors
-                disabled:opacity-50 disabled:cursor-not-allowed
-              "
-                        >
-                            {isSending ? (
-                                <>
-                                    <Loader2 size={16} className="animate-spin" />
-                                    Sending...
-                                </>
-                            ) : (
-                                <>
-                                    <Send size={16} />
-                                    Send Email
-                                </>
-                            )}
-                        </button>
-                    </div>
+                <div className="flex items-center justify-end gap-2 px-6 pt-2 pb-6">
+                    <button
+                        onClick={onClose}
+                        disabled={isSending}
+                        className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSend}
+                        disabled={isSending || !subject.trim() || !body.trim()}
+                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isSending ? (
+                            <>
+                                <Loader2 size={16} className="animate-spin" />
+                                Sending...
+                            </>
+                        ) : (
+                            <>
+                                <Send size={16} />
+                                Send Email
+                            </>
+                        )}
+                    </button>
                 </div>
             </div>
         </div>

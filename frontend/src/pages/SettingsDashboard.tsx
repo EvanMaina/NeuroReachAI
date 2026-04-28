@@ -11,14 +11,14 @@ import React, { useState, useEffect } from 'react';
 import {
   Settings, Users, Shield, Key, UserPlus, Edit2, Trash2,
   Check, X, AlertCircle, Mail, Phone, MapPin, Clock, Lock,
-  Save, RefreshCw, CheckCircle,
+  Save, RefreshCw, CheckCircle, ShieldAlert,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sidebar } from '../components/dashboard/Sidebar';
 import { GreetingBanner } from '../components/common/GreetingBanner';
 import { useAuth } from '../hooks/useAuth';
 import {
-  listUsers, createUser, updateUser, deactivateUser,
+  listUsers, createUser, updateUser, deactivateUser, hardDeleteUser,
   getMyPreferences, updateMyPreferences,
   getClinicSettings, updateClinicSettings,
 } from '../services/auth';
@@ -217,8 +217,8 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.08] ">
+      <div className="bg-white  ring-1 ring-gray-200  rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -238,28 +238,28 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
+            <div className="p-3 bg-red-50  border border-red-200  rounded-lg text-red-700  text-sm">{error}</div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">First Name</label>
+              <label className="block text-xs font-semibold text-gray-500  uppercase tracking-wider mb-1.5">First Name</label>
               <input
                 required
                 value={form.first_name}
                 onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
                 placeholder="Jane"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Last Name</label>
+              <label className="block text-xs font-semibold text-gray-500  uppercase tracking-wider mb-1.5">Last Name</label>
               <input
                 required
                 value={form.last_name}
                 onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
                 placeholder="Smith"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
           </div>
@@ -272,7 +272,7 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
               value={form.email}
               onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
               placeholder="jane.smith@clinic.com"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
             />
           </div>
 
@@ -281,7 +281,7 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
             <select
               value={form.role}
               onChange={e => setForm(f => ({ ...f, role: e.target.value as IUserCreatePayload['role'] }))}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="coordinator">Coordinator</option>
               <option value="specialist">Specialist</option>
@@ -290,7 +290,7 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700  bg-gray-100  rounded-lg hover:bg-gray-200  transition-colors">
               Cancel
             </button>
             <button
@@ -348,8 +348,8 @@ function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.08] ">
+      <div className="bg-white  ring-1 ring-gray-200  rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
         <div className="bg-gradient-to-r from-slate-700 to-slate-900 px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -367,26 +367,26 @@ function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>
+            <div className="p-3 bg-red-50  border border-red-200  rounded-lg text-red-700  text-sm">{error}</div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">First Name</label>
+              <label className="block text-xs font-semibold text-gray-500  uppercase tracking-wider mb-1.5">First Name</label>
               <input
                 required
                 value={form.first_name}
                 onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Last Name</label>
+              <label className="block text-xs font-semibold text-gray-500  uppercase tracking-wider mb-1.5">Last Name</label>
               <input
                 required
                 value={form.last_name}
                 onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
           </div>
@@ -396,7 +396,7 @@ function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
             <select
               value={form.role}
               onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="coordinator">Coordinator</option>
               <option value="specialist">Specialist</option>
@@ -409,7 +409,7 @@ function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
             <select
               value={form.status}
               onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
@@ -418,7 +418,7 @@ function EditUserModal({ user, onClose, onSaved }: EditUserModalProps) {
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700  bg-gray-100  rounded-lg hover:bg-gray-200  transition-colors">
               Cancel
             </button>
             <button
@@ -453,23 +453,121 @@ function DeactivateConfirmModal({
 }) {
   if (!user) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.08] ">
+      <div className="bg-white  ring-1 ring-gray-200  rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
-            <Trash2 size={22} className="text-red-600" />
+          <div className="w-12 h-12 bg-red-100  rounded-xl flex items-center justify-center">
+            <Trash2 size={22} className="text-red-600 " />
           </div>
           <div>
-            <h3 className="font-bold text-gray-900">Deactivate User</h3>
-            <p className="text-sm text-gray-500">This will revoke {user.first_name}'s access immediately.</p>
+            <h3 className="font-bold text-gray-900 ">Deactivate User</h3>
+            <p className="text-sm text-gray-500 ">This will revoke {user.first_name}'s access immediately.</p>
           </div>
         </div>
         <div className="flex gap-3 mt-6">
-          <button onClick={onCancel} disabled={isLoading} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50">
+          <button onClick={onCancel} disabled={isLoading} className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700  bg-gray-100  rounded-lg hover:bg-gray-200  transition-colors disabled:opacity-50">
             Cancel
           </button>
           <button onClick={onConfirm} disabled={isLoading} className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
             {isLoading ? 'Deactivating…' : 'Deactivate'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// Hard-Delete (Permanent) Modal
+// =============================================================================
+//
+// This is the destructive twin of DeactivateConfirmModal. To prevent accidental
+// purges (a misclick on the trash icon should NOT erase a real human's row),
+// the admin MUST type the user's email into a confirmation field. Same pattern
+// GitHub uses for repo deletion.
+
+function HardDeleteConfirmModal({
+  user,
+  onConfirm,
+  onCancel,
+  isLoading,
+  error,
+}: {
+  user: IUserProfile | null;
+  onConfirm: (typedEmail: string) => void;
+  onCancel: () => void;
+  isLoading?: boolean;
+  error?: string;
+}) {
+  const [typedEmail, setTypedEmail] = useState('');
+
+  // Reset the field whenever the modal target changes — never carry typed
+  // input across two different victims.
+  useEffect(() => {
+    setTypedEmail('');
+  }, [user?.id]);
+
+  if (!user) return null;
+
+  const matches = typedEmail.trim().toLowerCase() === user.email.trim().toLowerCase();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.08]  p-4">
+      <div className="bg-white  ring-1 ring-gray-200  rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 bg-red-100  rounded-xl flex items-center justify-center">
+            <ShieldAlert size={22} className="text-red-600 " />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-bold text-gray-900 ">Permanently delete user</h3>
+            <p className="text-sm text-gray-500  truncate">
+              {user.first_name} {user.last_name} · {user.email}
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-lg bg-red-50  ring-1 ring-red-200  p-3 mb-4 text-sm text-red-800 ">
+          <p className="font-semibold mb-1">This is irreversible.</p>
+          <ul className="list-disc list-inside space-y-0.5 text-xs">
+            <li>The user row will be erased from the database.</li>
+            <li>Lead notes and conversion attribution will show "Deleted user".</li>
+            <li>HIPAA audit logs are kept for compliance.</li>
+            <li>This cannot be undone — use Deactivate if unsure.</li>
+          </ul>
+        </div>
+
+        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600  mb-1.5">
+          Type <span className="font-mono normal-case lowercase text-red-700 ">{user.email}</span> to confirm
+        </label>
+        <input
+          type="email"
+          value={typedEmail}
+          onChange={(e) => setTypedEmail(e.target.value)}
+          autoFocus
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={user.email}
+          className="w-full px-3 py-2.5 text-sm font-mono bg-white  text-gray-900  border border-gray-300  rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent placeholder:text-gray-400 "
+        />
+
+        {error && (
+          <p className="mt-2 text-xs text-red-600 ">{error}</p>
+        )}
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onCancel}
+            disabled={isLoading}
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700  bg-gray-100  rounded-lg hover:bg-gray-200  transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(typedEmail.trim())}
+            disabled={isLoading || !matches}
+            className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Deleting…' : 'Permanently delete'}
           </button>
         </div>
       </div>
@@ -491,7 +589,14 @@ function UsersTab() {
   const [editUser_state, setEditUser] = useState<IUserProfile | null>(null);
   const [deactivateUser_state, setDeactivateUser] = useState<IUserProfile | null>(null);
   const [deactivateLoading, setDeactivateLoading] = useState(false);
+  // Hard-delete modal state — separate from deactivate, primary_admin only.
+  const [hardDeleteUser_state, setHardDeleteUser] = useState<IUserProfile | null>(null);
+  const [hardDeleteLoading, setHardDeleteLoading] = useState(false);
+  const [hardDeleteError, setHardDeleteError] = useState('');
   const [actionError, setActionError] = useState('');
+
+  // Only primary_admin can permanently delete a user.
+  const canHardDelete = currentUser?.role === 'primary_admin';
 
   // React Query: persistent user list with caching
   const { data: usersData, isLoading: loading, error: queryError, refetch: fetchUsers } = useQuery({
@@ -529,6 +634,27 @@ function UsersTab() {
     }
   };
 
+  const handleHardDelete = async (typedEmail: string) => {
+    if (!hardDeleteUser_state) return;
+    setHardDeleteLoading(true);
+    setHardDeleteError('');
+    try {
+      await hardDeleteUser(hardDeleteUser_state.id, typedEmail);
+      // Remove the user from cache so the table updates immediately —
+      // there is no server-side row to mark "inactive" anymore.
+      queryClient.setQueryData<IUserProfile[]>(SETTINGS_KEYS.users, (prev) =>
+        prev?.filter(u => u.id !== hardDeleteUser_state.id) || []
+      );
+      setHardDeleteUser(null);
+    } catch (err: unknown) {
+      // Surface the backend's actual reason (wrong email, not allowed, etc.)
+      // inline in the modal so the admin can correct it without losing context.
+      setHardDeleteError(parseApiError(err, 'Failed to permanently delete user'));
+    } finally {
+      setHardDeleteLoading(false);
+    }
+  };
+
   const filtered = users.filter(u => {
     const q = search.toLowerCase();
     return u.email.includes(q) || u.first_name.toLowerCase().includes(q) || u.last_name.toLowerCase().includes(q);
@@ -536,12 +662,12 @@ function UsersTab() {
 
   return (
     <>
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="bg-white  rounded-2xl border border-gray-100  overflow-hidden">
         {/* Sub-header */}
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-100  flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Team Members</h2>
-            <p className="text-sm text-gray-500">{users.length} user{users.length !== 1 ? 's' : ''} in your organization</p>
+            <h2 className="text-lg font-semibold text-gray-900 ">Team Members</h2>
+            <p className="text-sm text-gray-500 ">{users.length} user{users.length !== 1 ? 's' : ''} in your organization</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -550,9 +676,9 @@ function UsersTab() {
                 placeholder="Search users…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-9 pr-4 py-2 w-56 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="pl-9 pr-4 py-2 w-56 bg-gray-50  text-gray-900  border border-gray-200  rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 " width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
               </svg>
             </div>
@@ -576,45 +702,69 @@ function UsersTab() {
           </div>
         ) : (
           <table className="w-full">
-            <thead className="bg-gray-50/50">
+            <thead className="bg-gray-50/50 ">
               <tr>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Login</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500  uppercase tracking-wider">User</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500  uppercase tracking-wider">Role</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500  uppercase tracking-wider">Status</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500  uppercase tracking-wider">Last Login</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-500  uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(u => {
                 const isSelf = currentUser?.id === u.id;
                 return (
-                  <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                  <tr key={u.id} className="border-b border-gray-50  hover:bg-gray-50/50  transition-colors">
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium text-sm">
-                          {u.first_name.charAt(0)}{u.last_name.charAt(0)}
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-medium text-sm">
+                            {u.first_name.charAt(0)}{u.last_name.charAt(0)}
+                          </div>
+                          {/* Online presence dot when status === 'active' */}
+                          {u.status === 'active' && (
+                            <span
+                              aria-label="Active"
+                              className="absolute bottom-0 right-0 block w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white "
+                            />
+                          )}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900 text-sm">{u.first_name} {u.last_name}{isSelf && <span className="ml-1.5 text-xs text-blue-600 font-normal">(you)</span>}</p>
-                          <p className="text-xs text-gray-500">{u.email}</p>
+                          <p className="font-medium text-gray-900  text-sm">{u.first_name} {u.last_name}{isSelf && <span className="ml-1.5 text-xs text-blue-600  font-normal">(you)</span>}</p>
+                          <p className="text-xs text-gray-500 ">{u.email}</p>
                         </div>
                       </div>
                     </td>
                     <td className="py-4 px-4"><RoleBadge role={u.role} /></td>
                     <td className="py-4 px-4"><StatusBadge status={u.status} /></td>
-                    <td className="py-4 px-4 text-sm text-gray-500">
+                    <td className="py-4 px-4 text-sm text-gray-500 ">
                       {u.last_login ? new Date(u.last_login).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => setEditUser(u)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                        <button onClick={() => setEditUser(u)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50  rounded-lg transition-colors" title="Edit">
                           <Edit2 size={16} />
                         </button>
                         {!isSelf && u.role !== 'primary_admin' && (
-                          <button onClick={() => setDeactivateUser(u)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Deactivate">
-                            <Trash2 size={16} />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => setDeactivateUser(u)}
+                              className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50  rounded-lg transition-colors"
+                              title="Deactivate (revokes access; row preserved)"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            {canHardDelete && (
+                              <button
+                                onClick={() => { setHardDeleteError(''); setHardDeleteUser(u); }}
+                                className="p-2 text-gray-400 hover:text-red-700 hover:bg-red-50  rounded-lg transition-colors"
+                                title="Permanently delete (irreversible) — primary admin only"
+                              >
+                                <ShieldAlert size={16} />
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -623,7 +773,7 @@ function UsersTab() {
               })}
               {filtered.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="py-10 text-center text-sm text-gray-500">No users match your search.</td>
+                  <td colSpan={5} className="py-10 text-center text-sm text-gray-500 ">No users match your search.</td>
                 </tr>
               )}
             </tbody>
@@ -647,6 +797,13 @@ function UsersTab() {
         onConfirm={handleDeactivate}
         onCancel={() => setDeactivateUser(null)}
         isLoading={deactivateLoading}
+      />
+      <HardDeleteConfirmModal
+        user={hardDeleteUser_state}
+        onConfirm={handleHardDelete}
+        onCancel={() => { setHardDeleteUser(null); setHardDeleteError(''); }}
+        isLoading={hardDeleteLoading}
+        error={hardDeleteError}
       />
     </>
   );
@@ -688,7 +845,7 @@ function RolesTab() {
           <h2 className="text-lg font-semibold text-gray-900">Permission Matrix</h2>
           <p className="text-sm text-gray-500">Exact permissions enforced by the backend for each role</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto premium-scrollbar">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
@@ -831,7 +988,7 @@ function SiteSettingsTab() {
                 value={clinic.clinic_name}
                 onChange={e => setClinic(c => ({ ...c, clinic_name: e.target.value }))}
                 placeholder="TMS Institute of Arizona"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
 
@@ -843,7 +1000,7 @@ function SiteSettingsTab() {
                 value={clinic.clinic_address}
                 onChange={e => setClinic(c => ({ ...c, clinic_address: e.target.value }))}
                 placeholder="123 Medical Drive, Suite 400"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
               />
             </div>
 
@@ -856,7 +1013,7 @@ function SiteSettingsTab() {
                   value={clinic.clinic_phone}
                   onChange={e => setClinic(c => ({ ...c, clinic_phone: e.target.value }))}
                   placeholder="+1 (555) 123-4567"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
                 />
               </div>
               <div>
@@ -868,7 +1025,7 @@ function SiteSettingsTab() {
                   value={clinic.clinic_email}
                   onChange={e => setClinic(c => ({ ...c, clinic_email: e.target.value }))}
                   placeholder="info@clinic.com"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2.5 bg-white  text-gray-900  border border-gray-200  rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400 "
                 />
               </div>
             </div>
@@ -995,10 +1152,10 @@ export const SettingsDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-50  ">
       <Sidebar currentPage={currentPage} onNavigate={page => setCurrentPage(page)} />
 
-      <main className="ml-60 p-8">
+      <main className="nr-sidebar-ml p-8">
         {/* Personalized Greeting */}
         <GreetingBanner />
 
@@ -1008,21 +1165,21 @@ export const SettingsDashboard: React.FC = () => {
             <Settings size={24} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Settings</h1>
-            <p className="text-gray-500">Manage users, roles, and clinic configuration</p>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600   bg-clip-text text-transparent">Settings</h1>
+            <p className="text-gray-500 ">Manage users, roles, and clinic configuration</p>
           </div>
         </div>
 
         {/* Tab bar */}
-        <div className="bg-white rounded-2xl border border-gray-100 mb-6">
-          <div className="flex border-b border-gray-100">
+        <div className="bg-white  rounded-2xl border border-gray-100  mb-6">
+          <div className="flex border-b border-gray-100 ">
             {TABS.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-6 py-4 font-medium text-sm transition-colors ${activeTab === tab.id
                   ? 'text-blue-600 border-b-2 border-blue-600 -mb-px'
-                  : 'text-gray-500 hover:text-gray-700'
+                  : 'text-gray-500  hover:text-gray-700 '
                   }`}
               >
                 {tab.icon}

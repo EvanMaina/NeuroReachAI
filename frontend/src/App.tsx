@@ -14,6 +14,8 @@
 import React, { useState, useEffect, lazy, Suspense, memo, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { SidebarProvider } from './hooks/useSidebarCollapsed';
+import { ThemeProvider } from './hooks/useTheme';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -35,71 +37,73 @@ const SettingsDashboard = lazy(() => import(/* webpackChunkName: "settings" */ '
 const ProvidersDashboard = lazy(() => import(/* webpackChunkName: "providers" */ './pages/ProvidersDashboard'));
 const CallAnalyticsDashboard = lazy(() => import(/* webpackChunkName: "call-analytics" */ './pages/CallAnalyticsDashboard'));
 const DeletedLeadsDashboard = lazy(() => import(/* webpackChunkName: "deleted-leads" */ './pages/DeletedLeadsDashboard'));
+const ProfilePage = lazy(() => import(/* webpackChunkName: "profile" */ './pages/ProfilePage'));
+const AIInsightsDashboard = lazy(() => import(/* webpackChunkName: "ai-insights" */ './pages/AIInsightsDashboard'));
 
 // =============================================================================
 // Lightweight Skeleton Page Loader (Better UX than spinner)
 // =============================================================================
 
 const PageLoader: React.FC = memo(() => (
-  <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
+  <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50  ">
     {/* Skeleton Sidebar */}
-    <div className="fixed left-0 top-0 w-60 h-screen bg-white border-r border-gray-100 p-4">
+    <div className="nr-sidebar-w fixed left-0 top-0 h-screen bg-white  border-r border-gray-100  p-4">
       <div className="animate-pulse">
         {/* Logo skeleton */}
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 bg-gray-200 rounded-xl"></div>
-          <div className="h-5 bg-gray-200 rounded w-24"></div>
+          <div className="w-10 h-10 bg-gray-200  rounded-xl"></div>
+          <div className="h-5 bg-gray-200  rounded w-24"></div>
         </div>
         {/* Navigation skeletons */}
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="flex items-center gap-3 py-3 mb-1">
-            <div className="w-5 h-5 bg-gray-200 rounded"></div>
-            <div className="h-4 bg-gray-200 rounded w-20"></div>
+            <div className="w-5 h-5 bg-gray-200  rounded"></div>
+            <div className="h-4 bg-gray-200  rounded w-20"></div>
           </div>
         ))}
       </div>
     </div>
 
     {/* Skeleton Main Content */}
-    <div className="ml-60 p-8">
+    <div className="nr-sidebar-ml p-8">
       <div className="animate-pulse">
         {/* Header skeleton */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gray-200 rounded-2xl"></div>
+            <div className="w-12 h-12 bg-gray-200  rounded-2xl"></div>
             <div>
-              <div className="h-8 bg-gray-200 rounded w-48 mb-2"></div>
-              <div className="h-4 bg-gray-200 rounded w-64"></div>
+              <div className="h-8 bg-gray-200  rounded w-48 mb-2"></div>
+              <div className="h-4 bg-gray-200  rounded w-64"></div>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="w-32 h-10 bg-gray-200 rounded-xl"></div>
-            <div className="w-24 h-10 bg-gray-200 rounded-xl"></div>
+            <div className="w-32 h-10 bg-gray-200  rounded-xl"></div>
+            <div className="w-24 h-10 bg-gray-200  rounded-xl"></div>
           </div>
         </div>
 
         {/* KPI Cards skeleton */}
         <div className="grid grid-cols-4 gap-6 mb-8">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 p-6">
-              <div className="w-10 h-10 bg-gray-200 rounded-xl mb-4"></div>
-              <div className="h-8 bg-gray-200 rounded w-16 mb-2"></div>
-              <div className="h-4 bg-gray-200 rounded w-24"></div>
+            <div key={i} className="bg-white  rounded-2xl border border-gray-100  p-6">
+              <div className="w-10 h-10 bg-gray-200  rounded-xl mb-4"></div>
+              <div className="h-8 bg-gray-200  rounded w-16 mb-2"></div>
+              <div className="h-4 bg-gray-200  rounded w-24"></div>
             </div>
           ))}
         </div>
 
         {/* Main content skeleton */}
         <div className="grid grid-cols-2 gap-8">
-          <div className="bg-white rounded-2xl border border-gray-100 p-6 h-80">
-            <div className="h-6 bg-gray-200 rounded w-40 mb-4"></div>
-            <div className="h-full bg-gray-100 rounded-xl"></div>
+          <div className="bg-white  rounded-2xl border border-gray-100  p-6 h-80">
+            <div className="h-6 bg-gray-200  rounded w-40 mb-4"></div>
+            <div className="h-full bg-gray-100  rounded-xl"></div>
           </div>
-          <div className="bg-white rounded-2xl border border-gray-100 p-6 h-80">
-            <div className="h-6 bg-gray-200 rounded w-40 mb-4"></div>
+          <div className="bg-white  rounded-2xl border border-gray-100  p-6 h-80">
+            <div className="h-6 bg-gray-200  rounded w-40 mb-4"></div>
             <div className="space-y-4">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-12 bg-gray-100 rounded-lg"></div>
+                <div key={i} className="h-12 bg-gray-100  rounded-lg"></div>
               ))}
             </div>
           </div>
@@ -115,7 +119,7 @@ PageLoader.displayName = 'PageLoader';
 // Types
 // =============================================================================
 
-type PageType = 'dashboard' | 'coordinator' | 'leads' | 'deleted-leads' | 'providers' | 'analytics' | 'call-analytics' | 'settings';
+type PageType = 'dashboard' | 'coordinator' | 'leads' | 'deleted-leads' | 'providers' | 'analytics' | 'call-analytics' | 'settings' | 'profile' | 'ai-insights';
 
 // Valid coordinator queue types
 const COORDINATOR_QUEUES = [
@@ -146,7 +150,7 @@ const parseHash = (): RouteInfo => {
     return { page: 'coordinator', queueType: 'all' };
   }
 
-  const validPages: PageType[] = ['dashboard', 'coordinator', 'leads', 'deleted-leads', 'providers', 'analytics', 'call-analytics', 'settings'];
+  const validPages: PageType[] = ['dashboard', 'coordinator', 'leads', 'deleted-leads', 'providers', 'analytics', 'call-analytics', 'settings', 'profile', 'ai-insights'];
   if (validPages.includes(hash as PageType)) {
     return { page: hash as PageType };
   }
@@ -205,6 +209,15 @@ interface PageRendererProps {
 }
 
 const PageRenderer: React.FC<PageRendererProps> = memo(({ routeInfo }) => {
+  const { user } = useAuth();
+  const canAccessSettings = user?.role === 'primary_admin' || user?.role === 'administrator';
+
+  useEffect(() => {
+    if (routeInfo.page === 'settings' && !canAccessSettings) {
+      window.location.hash = 'dashboard';
+    }
+  }, [routeInfo.page, canAccessSettings]);
+
   const content = useMemo(() => {
     switch (routeInfo.page) {
       case 'coordinator':
@@ -220,12 +233,16 @@ const PageRenderer: React.FC<PageRendererProps> = memo(({ routeInfo }) => {
       case 'call-analytics':
         return <CallAnalyticsDashboard />;
       case 'settings':
-        return <SettingsDashboard />;
+        return canAccessSettings ? <SettingsDashboard /> : <Dashboard />;
+      case 'profile':
+        return <ProfilePage />;
+      case 'ai-insights':
+        return <AIInsightsDashboard />;
       case 'dashboard':
       default:
         return <Dashboard />;
     }
-  }, [routeInfo.page, routeInfo.queueType]);
+  }, [routeInfo.page, routeInfo.queueType, canAccessSettings]);
 
   // KEY FIX: ErrorBoundary uses `key` derived from the current route.
   // When the user navigates to a different page/queue, React unmounts the old
@@ -242,19 +259,19 @@ const PageRenderer: React.FC<PageRendererProps> = memo(({ routeInfo }) => {
     <ErrorBoundary
       key={errorBoundaryKey}
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 p-6">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
-            <div className="mx-auto w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mb-5">
-              <svg className="w-7 h-7 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50   p-6">
+          <div className="max-w-md w-full bg-white  rounded-2xl shadow-lg border border-gray-100  p-8 text-center">
+            <div className="mx-auto w-14 h-14 bg-amber-100  rounded-full flex items-center justify-center mb-5">
+              <svg className="w-7 h-7 text-amber-600 " fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
             </div>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">This page encountered an error</h2>
-            <p className="text-gray-500 text-sm mb-6">The rest of the application is still working. You can navigate to another page or reload this one.</p>
+            <h2 className="text-lg font-bold text-gray-900  mb-2">This page encountered an error</h2>
+            <p className="text-gray-500  text-sm mb-6">The rest of the application is still working. You can navigate to another page or reload this one.</p>
             <div className="flex gap-3 justify-center">
               <button onClick={() => { window.location.hash = 'dashboard'; window.location.reload(); }}
-                className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-medium">
+                className="px-4 py-2 bg-white  border border-gray-200  text-gray-700  rounded-xl hover:bg-gray-50  transition-colors text-sm font-medium">
                 Go to Dashboard
               </button>
               <button onClick={() => window.location.reload()}
@@ -416,13 +433,17 @@ const AuthGate: React.FC = () => {
 const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <AuthGate />
-        </AuthProvider>
-      </QueryClientProvider>
-      {/* Global Toast Notification System — renders outside React Query/Auth for reliability */}
-      <ToastContainer />
+      <ThemeProvider>
+        <SidebarProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <AuthGate />
+            </AuthProvider>
+          </QueryClientProvider>
+          {/* Global Toast Notification System — renders outside React Query/Auth for reliability */}
+          <ToastContainer />
+        </SidebarProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 };

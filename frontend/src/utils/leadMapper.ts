@@ -71,6 +71,7 @@ export function mapApiResponseToLead(response: Record<string, unknown>, fallback
     // Location
     zipCode: safe(response.zip_code || response.zipCode),
     isInServiceArea: (response.in_service_area ?? response.isInServiceArea ?? false) as boolean,
+    leadLocation: safe(response.lead_location || response.leadLocation) || undefined,
 
     // Preferences
     desiredStart: (safe(response.urgency).toLowerCase() || 'exploring') as Lead['desiredStart'],
@@ -92,6 +93,8 @@ export function mapApiResponseToLead(response: Record<string, unknown>, fallback
     utmSource: safe(response.utm_source || response.utmSource) || undefined,
     utmMedium: safe(response.utm_medium || response.utmMedium) || undefined,
     utmCampaign: safe(response.utm_campaign || response.utmCampaign) || undefined,
+    referrerUrl: safe(response.referrer_url || response.referrerUrl) || undefined,
+    leadSource: safe(response.source || response.leadSource) || undefined,
 
     // Timestamps
     createdAt: safe(response.created_at || response.createdAt) || new Date().toISOString(),

@@ -266,6 +266,8 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
     setDialogView('confirmation');
   }, []);
 
+  const executeOutcomeRef = useRef<((outcome: ConsultationOutcome, scheduledAt?: string) => Promise<void>) | null>(null);
+
   // Step 2: User confirms → either execute immediately or show date picker
   const handleConfirm = useCallback(() => {
     if (!pendingOutcome || isUpdating) return;
@@ -296,7 +298,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
     }
 
     // For Complete, No Show, Cancelled → execute immediately
-    executeOutcome(pendingOutcome);
+    void executeOutcomeRef.current?.(pendingOutcome);
   }, [pendingOutcome, isUpdating]);
 
   // Step 3 (reschedule/followup): User submits date → execute
@@ -314,7 +316,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
       return;
     }
 
-    executeOutcome(pendingOutcome, scheduledDt.toISOString());
+    void executeOutcomeRef.current?.(pendingOutcome, scheduledDt.toISOString());
   }, [lead, pendingOutcome, isUpdating, pickerDate, pickerTime]);
 
   // Core execution: call API, save note, close panel
@@ -393,6 +395,8 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
       setIsUpdating(false);
     }
   }, [lead, noteText, onClose]);
+
+  executeOutcomeRef.current = executeOutcome;
 
   // Format scheduled date/time
   const formatScheduledDateTime = (dateString: string) => {

@@ -69,9 +69,9 @@ interface PerformanceIndicatorProps {
 }
 
 const PerformanceIndicator = memo<PerformanceIndicatorProps>(({ cacheHit, queryTimeMs }) => (
-  <div className="flex items-center gap-2 text-xs text-gray-500">
+  <div className="flex items-center gap-2 text-xs text-gray-500 ">
     {cacheHit ? (
-      <span className="flex items-center gap-1 text-green-600">
+      <span className="flex items-center gap-1 text-green-600 ">
         <Zap size={12} />
         Cached
       </span>
@@ -293,12 +293,12 @@ export const Dashboard: React.FC = () => {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100  ">
       {/* Sidebar */}
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate} />
 
       {/* Main Content */}
-      <main className="ml-60 p-8">
+      <main className="nr-sidebar-ml p-8">
         {/* Personalized Greeting */}
         <GreetingBanner />
 
@@ -309,8 +309,8 @@ export const Dashboard: React.FC = () => {
               <Activity size={20} className="text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
-              <p className="text-gray-500 text-sm">Lead analytics and performance metrics overview</p>
+              <h1 className="text-2xl font-bold text-gray-900 ">Analytics Dashboard</h1>
+              <p className="text-gray-500  text-sm">Lead analytics and performance metrics overview</p>
             </div>
           </div>
 
@@ -332,11 +332,11 @@ export const Dashboard: React.FC = () => {
 
         {/* Performance Banner (when all data is cached) */}
         {summaryData?.cache_hit && conditionsData?.cache_hit && cohortData?.cache_hit && (
-          <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
-            <div className="flex items-center gap-2 text-green-700 text-sm">
+          <div className="mb-4 bg-green-50  border border-green-200  rounded-lg px-4 py-2">
+            <div className="flex items-center gap-2 text-green-700  text-sm">
               <TrendingUp size={16} />
               <span className="font-medium">High Performance Mode</span>
-              <span className="text-green-600">— All data served from cache for instant loading</span>
+              <span className="text-green-600 ">— All data served from cache for instant loading</span>
             </div>
           </div>
         )}

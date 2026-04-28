@@ -47,7 +47,7 @@ const PLATFORM_ICONS: Record<string, React.ReactNode> = {
 
 // Loading skeleton component
 const SkeletonCard: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <div className={`animate-pulse bg-gray-200 rounded-xl ${className}`} />
+  <div className={`animate-pulse bg-gray-200  rounded-xl ${className}`} />
 );
 
 // Platform Card Component
@@ -65,7 +65,7 @@ const PlatformCard: React.FC<{
     <div
       onClick={onClick}
       className={`
-        relative bg-white rounded-2xl border border-gray-100 p-6 
+        relative bg-white  rounded-2xl border border-gray-100  p-6
         hover:shadow-lg hover:border-gray-200 transition-all duration-300 cursor-pointer
         ${isTopPerforming ? 'ring-2 ring-amber-400 ring-offset-2' : ''}
       `}
@@ -85,8 +85,8 @@ const PlatformCard: React.FC<{
             {icon}
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">{platform.platform}</h3>
-            <p className="text-xs text-gray-500">{platform.percentage_of_total.toFixed(1)}% of total</p>
+            <h3 className="font-semibold text-gray-900 ">{platform.platform}</h3>
+            <p className="text-xs text-gray-500 ">{platform.percentage_of_total.toFixed(1)}% of total</p>
           </div>
         </div>
         <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${trendUp ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
@@ -98,12 +98,12 @@ const PlatformCard: React.FC<{
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className={`${bgLight} rounded-xl p-3`}>
-          <p className="text-2xl font-bold text-gray-900">{platform.total_leads}</p>
-          <p className="text-xs text-gray-500">Total Leads</p>
+          <p className="text-2xl font-bold text-gray-900 ">{platform.total_leads}</p>
+          <p className="text-xs text-gray-500 ">Total Leads</p>
         </div>
         <div className="bg-red-50 rounded-xl p-3">
           <p className="text-2xl font-bold text-red-600">{platform.hot_leads}</p>
-          <p className="text-xs text-gray-500">Hot Leads</p>
+          <p className="text-xs text-gray-500 ">Hot Leads</p>
         </div>
       </div>
 
@@ -111,15 +111,15 @@ const PlatformCard: React.FC<{
       <div className="flex items-center justify-between pt-4 border-t border-gray-100">
         <div className="text-center">
           <p className="text-lg font-semibold text-emerald-600">{platform.conversion_rate}%</p>
-          <p className="text-xs text-gray-400">Conversion</p>
+          <p className="text-xs text-gray-400 ">Conversion</p>
         </div>
         <div className="text-center">
           <p className="text-lg font-semibold text-blue-600">{platform.scheduled_leads}</p>
-          <p className="text-xs text-gray-400">Scheduled</p>
+          <p className="text-xs text-gray-400 ">Scheduled</p>
         </div>
         <div className="text-center">
-          <p className="text-lg font-semibold text-gray-900">{platform.avg_score}</p>
-          <p className="text-xs text-gray-400">Avg Score</p>
+          <p className="text-lg font-semibold text-gray-900 ">{platform.avg_score}</p>
+          <p className="text-xs text-gray-400 ">Avg Score</p>
         </div>
       </div>
     </div>
@@ -132,30 +132,30 @@ const HotLeadsPlatformCard: React.FC<{ platform: HotLeadPlatform }> = ({ platfor
   const icon = PLATFORM_ICONS[platform.platform] || <Globe size={16} />;
 
   return (
-    <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 hover:shadow-md transition-shadow">
+    <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-white   rounded-xl border border-gray-100  hover:shadow-md transition-shadow">
       <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white`}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
-          <h4 className="font-medium text-gray-900">{platform.platform}</h4>
+          <h4 className="font-medium text-gray-900 ">{platform.platform}</h4>
           <span className="text-lg font-bold text-red-600">{platform.count}</span>
         </div>
         <div className="flex items-center gap-3 mt-1">
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500 ">
             <span className="text-emerald-600 font-medium">{platform.converted}</span> converted
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500 ">
             <span className="text-blue-600 font-medium">{platform.scheduled}</span> scheduled
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-500 ">
             <span className="text-amber-600 font-medium">{platform.new_untouched}</span> new
           </span>
         </div>
       </div>
       <div className="text-right">
         <p className="text-sm font-semibold text-emerald-600">{platform.conversion_rate}%</p>
-        <p className="text-xs text-gray-400">conv rate</p>
+        <p className="text-xs text-gray-400 ">conv rate</p>
       </div>
     </div>
   );
@@ -243,10 +243,10 @@ export const AnalyticsDashboard: React.FC = () => {
   const showKpiValues = !!sourceData || loadingTooLong || sourceQuery.isError;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50  ">
       <Sidebar currentPage={currentPage} onNavigate={(page) => setCurrentPage(page)} />
 
-      <main className="ml-60 p-8">
+      <main className="nr-sidebar-ml p-8">
         {/* Personalized Greeting */}
         <GreetingBanner />
 
@@ -257,10 +257,10 @@ export const AnalyticsDashboard: React.FC = () => {
               <BarChart3 size={24} className="text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600   bg-clip-text text-transparent">
                 Source Analytics
               </h1>
-              <p className="text-gray-500">Track lead performance across all platforms</p>
+              <p className="text-gray-500 ">Track lead performance across all platforms</p>
             </div>
           </div>
 
@@ -269,7 +269,7 @@ export const AnalyticsDashboard: React.FC = () => {
             <select
               value={daysBack}
               onChange={(e) => setDaysBack(Number(e.target.value))}
-              className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="px-4 py-2 bg-white  border border-gray-200  rounded-xl text-sm font-medium text-gray-700  hover:border-gray-300  focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value={7}>Last 7 days</option>
               <option value={14}>Last 14 days</option>
@@ -278,7 +278,7 @@ export const AnalyticsDashboard: React.FC = () => {
               <option value={90}>Last 90 days</option>
             </select>
 
-            <span className="text-xs text-gray-400">Updated: {formatTimeAgo(lastRefresh)}</span>
+            <span className="text-xs text-gray-400 ">Updated: {formatTimeAgo(lastRefresh)}</span>
 
             <RefreshButton
               onRefresh={() => { handleRefresh(); }}
@@ -303,12 +303,12 @@ export const AnalyticsDashboard: React.FC = () => {
 
         {/* SAFETY NET: If source overview loading timed out or errored with no cache */}
         {(loadingTooLong || (sourceQuery.isError && !sourceData)) && (
-          <div className="mb-8 p-8 bg-white rounded-2xl border border-gray-200 text-center">
+          <div className="mb-8 p-8 bg-white  rounded-2xl border border-gray-200  text-center">
             <AlertTriangle size={40} className="mx-auto text-amber-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-700 mb-1">
+            <h3 className="text-lg font-medium text-gray-700  mb-1">
               {loadingTooLong ? 'Taking too long' : 'Failed to load analytics'}
             </h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-gray-500  mb-4">
               {loadingTooLong
                 ? 'The server is taking longer than expected to respond.'
                 : (sourceQuery.error?.message || 'An error occurred while loading analytics data.')}
@@ -340,17 +340,17 @@ export const AnalyticsDashboard: React.FC = () => {
               ].map((kpi, idx) => (
                 <div
                   key={idx}
-                  className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg transition-shadow"
+                  className="bg-white  rounded-2xl border border-gray-100  p-5 hover:shadow-lg transition-shadow"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${kpi.color} flex items-center justify-center text-white shadow-lg`}>
                       {kpi.icon}
                     </div>
                   </div>
-                  <p className="text-3xl font-bold text-gray-900">
+                  <p className="text-3xl font-bold text-gray-900 ">
                     {showKpiValues ? kpi.value : '—'}
                   </p>
-                  <p className="text-sm text-gray-500 mt-1">{kpi.label}</p>
+                  <p className="text-sm text-gray-500  mt-1">{kpi.label}</p>
                 </div>
               ))}
             </div>
@@ -358,9 +358,9 @@ export const AnalyticsDashboard: React.FC = () => {
             {/* Platform Cards */}
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Leads by Platform</h2>
+                <h2 className="text-xl font-bold text-gray-900 ">Leads by Platform</h2>
                 {sourceData?.top_performing && (
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-gray-500 ">
                     Best performing: <span className="font-semibold text-amber-600">{sourceData.top_performing}</span>
                   </span>
                 )}
@@ -392,15 +392,15 @@ export const AnalyticsDashboard: React.FC = () => {
             {/* Two Column Layout */}
             <div className="grid grid-cols-2 gap-8">
               {/* Hot Leads by Platform */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="bg-white  rounded-2xl border border-gray-100  p-6">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white shadow-lg">
                       <Flame size={20} />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-gray-900">Hot Leads by Platform</h2>
-                      <p className="text-xs text-gray-500">{hotLeadsData?.total_hot_leads || 0} total hot leads</p>
+                      <h2 className="text-lg font-bold text-gray-900 ">Hot Leads by Platform</h2>
+                      <p className="text-xs text-gray-500 ">{hotLeadsData?.total_hot_leads || 0} total hot leads</p>
                     </div>
                   </div>
                 </div>
@@ -433,15 +433,15 @@ export const AnalyticsDashboard: React.FC = () => {
               </div>
 
               {/* Source Performance */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="bg-white  rounded-2xl border border-gray-100  p-6">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white shadow-lg">
                       <Target size={20} />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-gray-900">Source Performance</h2>
-                      <p className="text-xs text-gray-500">
+                      <h2 className="text-lg font-bold text-gray-900 ">Source Performance</h2>
+                      <p className="text-xs text-gray-500 ">
                         {sourceData?.top_performing
                           ? `Top channel: ${sourceData.top_performing}`
                           : 'Lead intake by channel'}
@@ -464,8 +464,8 @@ export const AnalyticsDashboard: React.FC = () => {
                         <div
                           key={platform.platform}
                           className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isTop
-                            ? 'border-amber-200 bg-amber-50/40'
-                            : 'border-gray-100 bg-gray-50/40 hover:bg-gray-50'
+                            ? 'border-amber-200 bg-amber-50/40  '
+                            : 'border-gray-100 bg-gray-50/40 hover:bg-gray-50   '
                             }`}
                         >
                           <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white flex-shrink-0`}>
@@ -474,19 +474,19 @@ export const AnalyticsDashboard: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-0.5">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-sm font-semibold text-gray-900">{platform.platform}</span>
+                                <span className="text-sm font-semibold text-gray-900 ">{platform.platform}</span>
                                 {isTop && <Award size={12} className="text-amber-500" />}
                               </div>
-                              <span className="text-base font-bold text-gray-900">{platform.total_leads} leads</span>
+                              <span className="text-base font-bold text-gray-900 ">{platform.total_leads} leads</span>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 ">
                                 <span className="text-red-600 font-semibold">{platform.hot_leads}</span> hot
                               </span>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 ">
                                 <span className="text-emerald-600 font-semibold">{platform.conversion_rate}%</span> conv
                               </span>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-500 ">
                                 <span className="text-blue-600 font-semibold">{platform.avg_score}</span> avg score
                               </span>
                             </div>
@@ -502,14 +502,14 @@ export const AnalyticsDashboard: React.FC = () => {
             </div>
 
             {/* Performance Insights — dynamic */}
-            <div className="mt-8 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl p-6">
+            <div className="mt-8 bg-gradient-to-r from-indigo-50 to-purple-50   border border-indigo-100  rounded-2xl p-6">
               <div className="flex items-start gap-4">
                 <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-sm flex-shrink-0">
                   <BarChart3 size={20} className="text-indigo-600" />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-indigo-900">Analytics Insights</h4>
-                  <p className="text-sm text-indigo-700 mt-1">
+                  <h4 className="font-semibold text-indigo-900 ">Analytics Insights</h4>
+                  <p className="text-sm text-indigo-700  mt-1">
                     {sourceData?.top_performing && totals.total_leads > 0 ? (
                       <>
                         <strong>{sourceData.top_performing}</strong> is your top-performing channel

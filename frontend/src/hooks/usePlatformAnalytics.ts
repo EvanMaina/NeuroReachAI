@@ -262,7 +262,7 @@ interface UsePlatformInsightsOptions {
 }
 
 /**
- * Hook for fetching AI-generated platform insights.
+ * Hook for fetching platform insights.
  * 
  * @param options - Query options
  * @returns Query result with insights

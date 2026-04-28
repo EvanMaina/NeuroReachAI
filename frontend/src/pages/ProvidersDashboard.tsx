@@ -1092,7 +1092,10 @@ const ProvidersTable: React.FC<ProvidersTableProps> = ({
         </div>
       </div>
 
-      <div style={{ maxHeight: '600px' }} className="overflow-auto premium-scrollbar">
+      <div
+        style={{ maxHeight: 'calc(100vh - 360px)', minHeight: '320px' }}
+        className="overflow-x-auto overflow-y-scroll premium-scrollbar"
+      >
         <table className="w-full" style={{ tableLayout: 'fixed', minWidth: '900px' }}>
           <thead>
             <tr className="bg-gray-50 border-b-2 border-gray-200">
@@ -1420,7 +1423,7 @@ export const ProvidersDashboard: React.FC = () => {
       <Sidebar currentPage="providers" onNavigate={handleNavigate} />
 
       {/* Main Content */}
-      <main className="ml-60 p-6">
+      <main className="nr-sidebar-ml p-6">
         {/* Personalized Greeting */}
         <GreetingBanner />
 
@@ -1495,8 +1498,15 @@ export const ProvidersDashboard: React.FC = () => {
             />
           </div>
 
-          {/* Search & Filters */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          {/*
+            Sticky search & filters bar.
+            - `sticky top-0 z-20` pins the filters and the Add Provider button
+              to the viewport as the user scrolls through the providers table.
+              The KPI cards above scroll normally.
+            - Opaque background prevents the table rows from showing
+              through when the bar is pinned.
+          */}
+          <div className="sticky top-0 z-20 bg-white  rounded-xl shadow-sm border border-gray-200  p-4">
             <div className="flex flex-col sm:flex-row gap-4">
               {/* Search */}
               <div className="flex-1 relative">

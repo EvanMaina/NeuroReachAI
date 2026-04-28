@@ -272,15 +272,18 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
     switch (filter) {
-      case 'today':
+      case 'today': {
         const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
         return date >= today && date < tomorrow;
-      case 'week':
+      }
+      case 'week': {
         const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
         return date >= weekAgo;
-      case 'month':
+      }
+      case 'month': {
         const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
         return date >= monthAgo;
+      }
       default:
         return true;
     }
@@ -330,7 +333,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         switch (filters.sort) {
           case 'oldest':
             return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
-          case 'priority':
+          case 'priority': {
             // Priority order: hot > medium > low
             const priorityOrder = { hot: 0, medium: 1, low: 2 };
             const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 2;
@@ -338,6 +341,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             if (aPriority !== bPriority) return aPriority - bPriority;
             // If same priority, sort by newest
             return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
+          }
           case 'newest':
           default:
             // For scheduled column, sort by scheduled callback date (earliest first)

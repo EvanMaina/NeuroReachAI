@@ -290,7 +290,7 @@ services:
       - MAILDEV_INCOMING_USER=
       - MAILDEV_INCOMING_PASS=
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:1080"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:1080"]
       interval: 30s
       timeout: 10s
       retries: 3

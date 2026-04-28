@@ -415,3 +415,136 @@ async def deactivate_user(
     user.status = UserStatus.INACTIVE
     db.commit()
     return {"success": True, "message": "User deactivated"}
+
+
+# =============================================================================
+# Permanently Delete User (HARD DELETE)
+# =============================================================================
+#
+# WHY THIS EXISTS
+#   Deactivation (status=INACTIVE) hides the user from the UI but the row
+#   stays — sometimes that's not what you want (employee left under bad
+#   circumstances; HIPAA right-to-erasure for non-PHI users; cleanup of
+#   accidental test accounts). This endpoint hard-deletes the row.
+#
+# SAFEGUARDS
+#   1. primary_admin role required (one rank above regular admins).
+#   2. Cannot hard-delete yourself.
+#   3. Cannot hard-delete another primary_admin (defense in depth).
+#   4. Caller must echo the target user's email exactly as a query param —
+#      same pattern GitHub / Stripe use to prevent fat-finger purges.
+#   5. Audit log is written BEFORE the DELETE so the trail survives.
+#
+# FK STRATEGY
+#   - user_preferences.user_id (CASCADE)            → row deleted automatically
+#   - password_reset_tokens.user_id (CASCADE)       → row deleted automatically
+#   - leads.completed_by_user_id (SET NULL)         → conversion attribution preserved as anonymous
+#   - lead_notes.created_by (SET NULL)              → note authorship preserved as anonymous
+#   - lead_attachments.uploaded_by_id (no FK)       → manually NULL'd here
+#   - audit_logs.user_id (no FK)                    → INTENTIONALLY KEPT — HIPAA requires
+#                                                     audit history to remain intact even after
+#                                                     the user row is gone.
+# =============================================================================
+
+
+@router.delete("/{user_id}/permanent")
+async def hard_delete_user(
+    user_id: str,
+    confirm_email: str,
+    caller: User = Depends(require_role("primary_admin")),
+    db: Session = Depends(get_db),
+):
+    """
+    Permanently delete a user. Irreversible. primary_admin only.
+
+    The caller MUST pass `confirm_email` matching the target user's email
+    (case-insensitive). This is a SaaS-standard guard against accidental
+    purges from a misclick.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    # Cannot hard-delete yourself.
+    if str(caller.id) == str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot permanently delete your own account.",
+        )
+
+    # Defense in depth: don't allow primary_admin → primary_admin purges.
+    # Even though require_role(primary_admin) gates the endpoint, this protects
+    # against multi-primary-admin orgs accidentally nuking each other.
+    if user.role == UserRole.PRIMARY_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A primary admin account cannot be permanently deleted.",
+        )
+
+    # Email confirmation guard — caller must echo the email back exactly.
+    # Case-insensitive match because users sometimes register with mixed case.
+    expected = (user.email or "").strip().lower()
+    provided = (confirm_email or "").strip().lower()
+    if not expected or provided != expected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Confirmation email does not match. Type the user's email "
+                "exactly to confirm permanent deletion."
+            ),
+        )
+
+    # Capture identity for the audit log BEFORE we delete the row.
+    deleted_user_snapshot = {
+        "user_id": str(user.id),
+        "email": user.email,
+        "role": user.role.value if user.role else None,
+        "status": user.status.value if user.status else None,
+        "deleted_by": str(caller.id),
+        "deleted_by_email": caller.email,
+    }
+
+    # Manually NULL columns that point at users.id but have no FK constraint.
+    # SQLAlchemy can't auto-handle these because they're plain UUID columns.
+    try:
+        from ..models.attachment import LeadAttachment
+        db.query(LeadAttachment).filter(
+            LeadAttachment.uploaded_by_id == user.id
+        ).update({"uploaded_by_id": None}, synchronize_session=False)
+    except Exception as exc:
+        # If attachments table is missing in some installs, log and continue —
+        # the actual delete still proceeds.
+        logger.warning("Could not null lead_attachments.uploaded_by_id: %s", exc)
+
+    # Audit log BEFORE deletion so the row references a valid user_id at insert.
+    try:
+        from ..services.audit import AuditService
+        AuditService(db).log_delete(
+            table_name="users",
+            record_id=user.id,
+            user_id=caller.id,
+            user_email=caller.email,
+            new_values=deleted_user_snapshot,
+        )
+    except Exception as exc:
+        # Audit failure must not abort the delete — log and continue.
+        logger.error("Audit log for hard-delete failed: %s", exc)
+
+    # The actual delete. ON DELETE rules on user_preferences/password_reset_tokens
+    # cascade; SET NULL on lead_notes.created_by and leads.completed_by_user_id
+    # preserves orphaned attribution as anonymous.
+    db.delete(user)
+    db.commit()
+
+    logger.warning(
+        "[HARD DELETE] %s permanently deleted user %s (%s)",
+        caller.email, deleted_user_snapshot["email"], deleted_user_snapshot["user_id"],
+    )
+
+    return {
+        "success": True,
+        "message": f"User {deleted_user_snapshot['email']} permanently deleted",
+        "deleted_user_id": deleted_user_snapshot["user_id"],
+    }

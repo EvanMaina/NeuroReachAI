@@ -82,7 +82,7 @@ export const CallsTableTab: React.FC<Props> = ({ dateRange, startDate, endDate }
       {/* Table */}
       {isLoading ? (
         <div className="p-4 space-y-3">
-          {[1,2,3,4,5,6,7,8].map(i => (
+          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
             <div key={i} className="animate-pulse flex items-center gap-4 py-3">
               <div className="w-32 h-4 bg-gray-200 rounded" />
               <div className="w-40 h-4 bg-gray-200 rounded" />
@@ -100,7 +100,7 @@ export const CallsTableTab: React.FC<Props> = ({ dateRange, startDate, endDate }
           <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filter criteria</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto premium-scrollbar">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50/50">
@@ -129,10 +129,9 @@ export const CallsTableTab: React.FC<Props> = ({ dateRange, startDate, endDate }
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700 font-mono">{formatDuration(call.duration)}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                        call.answered ? 'bg-emerald-50 text-emerald-600' :
-                        call.voicemail ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-600'
-                      }`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${call.answered ? 'bg-emerald-50 text-emerald-600' :
+                          call.voicemail ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-600'
+                        }`}>
                         {call.answered ? 'Answered' : call.voicemail ? 'Voicemail' : 'Missed'}
                       </span>
                     </td>
@@ -181,9 +180,8 @@ export const CallsTableTab: React.FC<Props> = ({ dateRange, startDate, endDate }
               if (p < 1 || p > totalPages) return null;
               return (
                 <button key={p} onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${
-                    p === page ? 'bg-blue-600 text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}>{p}</button>
+                  className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${p === page ? 'bg-blue-600 text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}>{p}</button>
               );
             })}
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}

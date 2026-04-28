@@ -29,7 +29,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .core.config import settings
 from .core.database import engine, Base
-from .api import health_router, leads_router, analytics_router, metrics_router, calls_router, source_analytics_router, platform_analytics_router, webhooks_router, providers_router, google_ads_analytics_router, communications_router, auth_router, users_router, widget_router, callrail_router, notes_router
+from .api import health_router, leads_router, analytics_router, metrics_router, calls_router, source_analytics_router, platform_analytics_router, webhooks_router, providers_router, google_ads_analytics_router, communications_router, auth_router, users_router, widget_router, callrail_router, notes_router, ai_insights_router
 from .api.attachments import router as attachments_router
 from .services.cache import get_cache
 
@@ -502,6 +502,7 @@ def create_application() -> FastAPI:
     app.include_router(widget_router)
     app.include_router(callrail_router)
     app.include_router(notes_router)
+    app.include_router(ai_insights_router)
 
     return app
 

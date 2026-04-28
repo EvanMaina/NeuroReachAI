@@ -390,6 +390,8 @@ function mapLeadResponse(lead: Record<string, unknown>): ILeadListItem {
     conditions: lead.conditions as string[] | undefined,
     otherConditionText: lead.other_condition_text as string | undefined,
     preferredContactMethod: lead.preferred_contact_method as string | undefined,
+    tmsTherapyInterest: lead.tms_therapy_interest as string | undefined,
+    leadLocation: lead.lead_location as string | undefined,
     // Lead source — widget, jotform, manual, etc.
     // CRITICAL: Must be mapped here so checkNewHotLeads() can read lead.source !== 'manual'
     // and suppress notifications for coordinator-added leads.
@@ -464,6 +466,38 @@ export async function updateLeadStatus(
 }
 
 /**
+ * Bulk update multiple leads in one request.
+ *
+ * Backend endpoint: POST /api/leads/bulk-update
+ * Audit log is written per-lead on the server; the caller just sees
+ * the aggregate result.
+ */
+export interface IBulkUpdateLeadsRequest {
+  lead_ids: string[];
+  priority?: 'HOT' | 'MEDIUM' | 'LOW';
+  status?: string;
+  contact_outcome?:
+    | 'NEW' | 'ANSWERED' | 'NO_ANSWER' | 'UNREACHABLE'
+    | 'CALLBACK_REQUESTED' | 'NOT_INTERESTED' | 'SCHEDULED';
+}
+
+export interface IBulkUpdateLeadsResponse {
+  updated_count: number;
+  skipped_ids: string[];
+}
+
+export async function bulkUpdateLeads(
+  payload: IBulkUpdateLeadsRequest,
+): Promise<IBulkUpdateLeadsResponse> {
+  const response = await apiClient.post<IBulkUpdateLeadsResponse>(
+    '/api/leads/bulk-update',
+    payload,
+  );
+  return response.data;
+}
+
+
+/**
  * Contact method options
  */
 export type ContactMethod = 'PHONE' | 'EMAIL' | 'SMS' | 'VIDEO_CALL';
@@ -482,6 +516,8 @@ export interface IScheduleCallbackRequest {
   contact_method: ContactMethod;
   /** Type of schedule - 'callback' stays in follow-up queue, 'consultation' moves to scheduled */
   schedule_type?: ScheduleType;
+  /** Coordinator-captured city/area (e.g. "Gilbert, AZ"). Powers expansion insights. */
+  lead_location?: string;
   /** Optimistic locking timestamp from the last lead fetch */
   expected_updated_at?: string;
 }
@@ -577,8 +613,11 @@ export async function getScheduledLeads(
  */
 export interface IUpdateContactOutcomeRequest {
   contact_outcome: ContactOutcome;
+  contact_method?: ContactMethod;
   notes?: string;
   next_follow_up_at?: string; // ISO datetime
+  /** Coordinator-captured city/area (e.g. "Gilbert, AZ"). Powers expansion insights. */
+  lead_location?: string;
   /** Optimistic locking timestamp from the last lead fetch */
   expected_updated_at?: string;
 }
