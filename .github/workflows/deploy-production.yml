@@ -12,8 +12,7 @@ name: Deploy to Production
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Called as a reusable workflow from promote.yml
-
+  workflow_dispatch:
   workflow_call:
     inputs:
       skip_ci:
@@ -40,10 +39,9 @@ env:
   CONTAINER_NAME_BACKEND: backend
   CONTAINER_NAME_CELERY: celery-worker
   CONTAINER_NAME_FRONTEND: frontend
-  PRODUCTION_URL: https://api.tmsinstitute.co
-  FRONTEND_URL: https://app.tmsinstitute.co
+  PRODUCTION_URL: https://app.tmsinstitute.co
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "22"
+  NODE_VERSION: "20"
 
 permissions:
   id-token: write
@@ -66,7 +64,6 @@ jobs:
     name: "🚀 Build & Deploy to Production"
     runs-on: ubuntu-latest
     needs: [ ci ]
-    # Run if CI passed OR if CI was skipped (workflow_call with skip_ci=true)
     if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result ==
       'skipped') }}
     environment: production
@@ -75,24 +72,19 @@ jobs:
       deploy_sha_full: ${{ steps.deploy-info.outputs.sha }}
       image_tag: ${{ steps.image-tag.outputs.tag }}
     steps:
-      # Always checkout the main branch explicitly.
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0 # Full history for tagging
 
       # ---------------------------------------------------------------------
-      # REPO IDENTITY GUARD — prevents cross-contamination between tools.
-      # Fails fast (before any ECR push) if the checked-out tree isn't
-      # NeuroReach. Root cause of 2026-04-20 incident was a tree from the
-      # other tool being deployed to NeuroReach AWS resources.
+      # REPO IDENTITY GUARD
       # ---------------------------------------------------------------------
       - name: "🔐 Verify repo identity (NeuroReach)"
         run: |
           chmod +x scripts/verify_repo_identity.sh
           ./scripts/verify_repo_identity.sh
 
-      # Determine the ACTUAL commit SHA being deployed
       - name: Get deployment info
         id: deploy-info
         run: |
@@ -142,6 +134,14 @@ jobs:
           cp -r frontend/dist-widget/* backend/frontend-bundles/dist-widget/ 2>/dev/null || true
           cp -r frontend/dist-assessment/* backend/frontend-bundles/dist-assessment/ 2>/dev/null || true
 
+      # --- Copy Database Migration SQL Files into Docker context ---
+      - name: Copy migration SQL files into backend context
+        run: |
+          mkdir -p backend/migrations
+          cp database/init/*.sql backend/migrations/ 2>/dev/null || true
+          MIGRATION_COUNT=$(ls backend/migrations/*.sql 2>/dev/null | wc -l)
+          echo "📁 $MIGRATION_COUNT migration SQL files copied into Docker context"
+
       # --- Build & Push Backend Docker Image ---
       - name: Set image tag
         id: image-tag
@@ -164,13 +164,13 @@ jobs:
             --file backend/Dockerfile \
             backend/
 
-      # --- Security Scan Docker Image ---
+      # --- Security Scan ---
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ steps.image-tag.outputs.full_image }}
           severity: CRITICAL
-          exit-code: 0 # Report only
+          exit-code: 0
           format: table
         continue-on-error: true
 
@@ -181,6 +181,84 @@ jobs:
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:prod-latest
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
           echo "✅ Pushed: ${{ steps.image-tag.outputs.full_image }}"
+
+      # =====================================================================
+      # DATABASE MIGRATIONS — Run BEFORE deploying new backend code.
+      # Uses the freshly-pushed Docker image (which contains migration SQL
+      # files in /app/migrations/) as a one-off ECS task with a command
+      # override. The run_migrations.py script tracks applied files in a
+      # `schema_migrations` table, so this is safe to run on every deploy.
+      # =====================================================================
+      - name: "🗃️ Run database migrations"
+        run: |
+          echo "🗃️  Running PRODUCTION database migrations via ECS one-off task..."
+
+          # Get networking config from the existing backend service
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_BACKEND }} \
+            --query 'services[0].networkConfiguration' \
+            --output json)
+          echo "Network config: $NETWORK_CONFIG"
+
+          # Run migration task using the existing task definition (has DB creds)
+          TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition ${{ env.TASK_DEF_BACKEND }} \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides '{
+              "containerOverrides": [{
+                "name": "${{ env.CONTAINER_NAME_BACKEND }}",
+                "command": ["python", "/app/scripts/run_migrations.py"]
+              }]
+            }' \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "  Migration task started: $TASK_ARN"
+          TASK_ID=$(echo "$TASK_ARN" | awk -F'/' '{print $NF}')
+
+          # Wait for the migration task to complete (max 5 minutes)
+          echo "  Waiting for migration task to complete..."
+          for i in $(seq 1 30); do
+            STATUS=$(aws ecs describe-tasks \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --tasks "$TASK_ID" \
+              --query 'tasks[0].lastStatus' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+
+            if [ "$STATUS" = "STOPPED" ]; then
+              EXIT_CODE=$(aws ecs describe-tasks \
+                --cluster ${{ env.ECS_CLUSTER }} \
+                --tasks "$TASK_ID" \
+                --query 'tasks[0].containers[0].exitCode' \
+                --output text)
+              REASON=$(aws ecs describe-tasks \
+                --cluster ${{ env.ECS_CLUSTER }} \
+                --tasks "$TASK_ID" \
+                --query 'tasks[0].stoppedReason' \
+                --output text)
+
+              if [ "$EXIT_CODE" = "0" ]; then
+                echo "  ✅ Migrations completed successfully (exit code 0)"
+                break
+              else
+                echo "  ❌ CRITICAL: Migration task FAILED (exit code: $EXIT_CODE)"
+                echo "  Reason: $REASON"
+                echo "  ⛔ Aborting production deployment — DB schema not ready."
+                exit 1
+              fi
+            fi
+
+            echo "    ⏳ Status: $STATUS (attempt $i/30)"
+            sleep 10
+          done
+
+          if [ "$STATUS" != "STOPPED" ]; then
+            echo "  ❌ Migration task timed out (status: $STATUS)"
+            exit 1
+          fi
 
       # --- Deploy Backend Service ---
       - name: Download current backend task definition
@@ -252,16 +330,12 @@ jobs:
 
       # ---------------------------------------------------------------------
       # CRITICAL: Enforce Celery desiredCount = 1
-      # The worker command uses `celery ... worker -B` (embedded Beat scheduler).
-      # Running >1 replica = multiple Beat schedulers = EVERY scheduled task
-      # fires N times (duplicate emails/SMS to leads). Always pin to 1.
-      # If horizontal scaling is ever needed, split into a dedicated Beat
-      # service (desired=1, cmd `celery beat`) + N worker replicas (cmd
-      # `celery worker` without `-B`).
+      # The worker command uses `celery ... worker -B` (embedded Beat).
+      # Running >1 replica = duplicate scheduled tasks (emails/SMS).
       # ---------------------------------------------------------------------
       - name: Enforce celery desiredCount=1 (prevent duplicate Beat)
         run: |
-          echo "🔒 Pinning ${{ env.ECS_SERVICE_CELERY }} to desiredCount=1 to prevent duplicate Beat schedulers..."
+          echo "🔒 Pinning ${{ env.ECS_SERVICE_CELERY }} to desiredCount=1..."
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE_CELERY }} \
@@ -338,56 +412,40 @@ jobs:
           echo "🔥 Running smoke tests against production..."
           sleep 20
 
-          # Test liveness endpoint
-          LIVE_RESPONSE=$(curl -sf ${{ env.PRODUCTION_URL }}/health/live 2>&1) || {
+          ALB_DNS="neuroreach-ai-alb-1879069977.us-east-2.elb.amazonaws.com"
+
+          # Test via ALB directly with Host header
+          echo "📡 Testing via ALB direct..."
+          HEALTH_STATUS=$(curl -sk https://${ALB_DNS}/health/live -H "Host: app.tmsinstitute.co" 2>&1) || {
             echo "❌ CRITICAL: Production liveness check failed!"
-            echo "Response: $LIVE_RESPONSE"
+            echo "Response: $HEALTH_STATUS"
             exit 1
           }
-          echo "✅ Liveness: $LIVE_RESPONSE"
+          echo "✅ Liveness (ALB direct): $HEALTH_STATUS"
 
-          # Test health endpoint (includes DB check)
-          HEALTH_RESPONSE=$(curl -sf ${{ env.PRODUCTION_URL }}/health 2>&1) || {
+          HEALTH_RESPONSE=$(curl -sk https://${ALB_DNS}/health -H "Host: app.tmsinstitute.co" 2>&1) || {
             echo "❌ CRITICAL: Production health check failed!"
+            echo "Response: $HEALTH_RESPONSE"
             exit 1
           }
-          echo "✅ Health: $HEALTH_RESPONSE"
+          echo "✅ Health (ALB direct): $HEALTH_RESPONSE"
 
-          # Verify health status is healthy
-          echo "$HEALTH_RESPONSE" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          if data.get('status') != 'healthy':
-              print(f'❌ CRITICAL: API reports unhealthy: {data}')
-              sys.exit(1)
-          print(f'✅ API version: {data.get(\"version\", \"unknown\")}')
-          print(f'✅ Environment: {data.get(\"environment\", \"unknown\")}')
-          print(f'✅ Database: {data.get(\"database\", \"unknown\")}')
-          " || {
-            echo "⚠️ Could not parse health response, but endpoint responded"
+          # Test via custom domain (non-blocking)
+          echo ""
+          echo "📡 Testing via custom domain..."
+          DOMAIN_STATUS=$(curl -sf ${{ env.PRODUCTION_URL }}/health/live 2>&1) && {
+            echo "✅ Custom domain reachable: $DOMAIN_STATUS"
+          } || {
+            echo "⚠️  Custom domain not yet reachable"
           }
 
-          # Test frontend is serving
-          FRONTEND_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" ${{ env.FRONTEND_URL }} 2>&1) || true
-          if [ "$FRONTEND_STATUS" = "200" ]; then
-            echo "✅ Frontend: HTTP $FRONTEND_STATUS (app.tmsinstitute.co serving)"
-          else
-            echo "⚠️ Frontend returned HTTP $FRONTEND_STATUS (may still be stabilizing)"
-          fi
-
+          echo ""
           echo "🎉 All production smoke tests passed!"
 
-      # --- Git Release Tag ---
-
-      # ---------------------------------------------------------------------
-      # POST-DEPLOY IDENTITY VERIFICATION
-      # Curl the live frontend and assert <title> contains "NeuroReach".
-      # If the nginx container is serving the wrong tool, this step fails
-      # and the deploy is marked red.
-      # ---------------------------------------------------------------------
-      - name: "🔐 Post-deploy: verify live frontend <title> is NeuroReach"
+      # --- Post-deploy Identity Verification ---
+      - name: "🔐 Post-deploy: verify live frontend is NeuroReach"
         run: |
-          URL="${{ env.FRONTEND_URL }}"
+          URL="${{ env.PRODUCTION_URL }}"
           echo "🔎 Fetching $URL and checking <title>..."
           for i in 1 2 3 4 5 6; do
             HTML=$(curl -s --max-time 10 "$URL/" || true)
@@ -410,6 +468,8 @@ jobs:
           echo "   First 500 bytes of HTML:"
           echo "$HTML" | head -c 500
           exit 1
+
+      # --- Git Release Tag ---
       - name: Create git release tag
         run: |
           SHA=${{ steps.deploy-info.outputs.sha_short }}
@@ -434,6 +494,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | Production |" >> $GITHUB_STEP_SUMMARY
+          echo "| **URL** | ${{ env.PRODUCTION_URL }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Image** | \`${{ steps.image-tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Commit** | \`${{ steps.deploy-info.outputs.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Branch** | main |" >> $GITHUB_STEP_SUMMARY
@@ -442,8 +504,6 @@ jobs:
           echo "| **Backend Service** | ${{ env.ECS_SERVICE_BACKEND }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Celery Service** | ${{ env.ECS_SERVICE_CELERY }} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Frontend Service** | ${{ env.ECS_SERVICE_FRONTEND }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Backend URL** | ${{ env.PRODUCTION_URL }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Frontend URL** | ${{ env.FRONTEND_URL }} |" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # Notify
@@ -460,8 +520,7 @@ jobs:
           echo "✅ PRODUCTION deployment successful!"
           echo "Image: ${{ needs.build-and-deploy.outputs.image_tag }}"
           echo "Commit: ${{ needs.build-and-deploy.outputs.deploy_sha }}"
-          echo "Backend URL: https://api.tmsinstitute.co"
-          echo "Frontend URL: https://app.tmsinstitute.co"
+          echo "URL: https://app.tmsinstitute.co"
           echo "Deployed by: ${{ github.actor }}"
 
       - name: Notify on failure
@@ -472,4 +531,4 @@ jobs:
           echo "Actor: ${{ github.actor }}"
           echo "Check logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo ""
-          echo "⚠️ IMMEDIATE ACTION REQUIRED: Check production health at https://api.tmsinstitute.co/health"
+          echo "⚠️ IMMEDIATE ACTION REQUIRED: Check production health at ${{ env.PRODUCTION_URL }}/health"

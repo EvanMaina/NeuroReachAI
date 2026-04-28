@@ -55,6 +55,10 @@ COPY --chown=neuroreach:neuroreach static/ /app/static/
 # Copy scripts (setup_fresh_admin.py, etc.)
 COPY --chown=neuroreach:neuroreach scripts/ /app/scripts/
 
+# Copy database migration SQL files (populated by CI from database/init/)
+# Falls back gracefully if directory doesn't exist (local dev without migrations)
+COPY --chown=neuroreach:neuroreach migrations/ /app/migrations/
+
 # Copy frontend widget/assessment bundles (built by CI pipeline)
 # In local dev these directories contain only .gitkeep; in CI they have real bundles.
 COPY --chown=neuroreach:neuroreach frontend-bundles/ /app/frontend/
