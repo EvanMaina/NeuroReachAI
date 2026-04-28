@@ -193,18 +193,43 @@ jobs:
         run: |
           echo "🗃️  Running PRODUCTION database migrations via ECS one-off task..."
 
-          # Get networking config from the existing backend service
+          # Step 1: Register a NEW task definition revision with the freshly-pushed image.
+          # The current task def still references the OLD image (no run_migrations.py).
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_DEF_BACKEND }} \
+            --query 'taskDefinition' \
+            --output json > migration-task-def.json
+
+          python3 -c "
+          import json
+          with open('migration-task-def.json') as f:
+              td = json.load(f)
+          for key in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy']:
+              td.pop(key, None)
+          for c in td['containerDefinitions']:
+              if c['name'] == '${{ env.CONTAINER_NAME_BACKEND }}':
+                  c['image'] = '${{ steps.image-tag.outputs.full_image }}'
+          with open('migration-task-def.json','w') as f:
+              json.dump(td, f, indent=2)
+          "
+
+          MIGRATION_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://migration-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "  Registered migration task def: $MIGRATION_TD_ARN"
+
+          # Step 2: Get networking config from the existing backend service
           NETWORK_CONFIG=$(aws ecs describe-services \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE_BACKEND }} \
             --query 'services[0].networkConfiguration' \
             --output json)
-          echo "Network config: $NETWORK_CONFIG"
 
-          # Run migration task using the existing task definition (has DB creds)
+          # Step 3: Run migration task with the NEW image
           TASK_ARN=$(aws ecs run-task \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --task-definition ${{ env.TASK_DEF_BACKEND }} \
+            --task-definition "$MIGRATION_TD_ARN" \
             --launch-type FARGATE \
             --network-configuration "$NETWORK_CONFIG" \
             --overrides '{
