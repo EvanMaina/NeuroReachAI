@@ -11,9 +11,9 @@ name: Deploy to Production
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-  # Called as a reusable workflow from promote.yml
+    branches: [ main ]
+  workflow_dispatch: # Called as a reusable workflow from promote.yml
+
   workflow_call:
     inputs:
       skip_ci:
@@ -43,7 +43,7 @@ env:
   PRODUCTION_URL: https://api.tmsinstitute.co
   FRONTEND_URL: https://app.tmsinstitute.co
   PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
 
 permissions:
   id-token: write
@@ -65,9 +65,10 @@ jobs:
   build-and-deploy:
     name: "🚀 Build & Deploy to Production"
     runs-on: ubuntu-latest
-    needs: [ci]
+    needs: [ ci ]
     # Run if CI passed OR if CI was skipped (workflow_call with skip_ci=true)
-    if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result ==
+      'skipped') }}
     environment: production
     outputs:
       deploy_sha: ${{ steps.deploy-info.outputs.sha_short }}
@@ -75,13 +76,23 @@ jobs:
       image_tag: ${{ steps.image-tag.outputs.tag }}
     steps:
       # Always checkout the main branch explicitly.
-      # This ensures correct code is deployed regardless of trigger type.
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0 # Full history for tagging
 
-      # Determine the ACTUAL commit SHA being deployed (from the checked-out branch)
+      # ---------------------------------------------------------------------
+      # REPO IDENTITY GUARD — prevents cross-contamination between tools.
+      # Fails fast (before any ECR push) if the checked-out tree isn't
+      # NeuroReach. Root cause of 2026-04-20 incident was a tree from the
+      # other tool being deployed to NeuroReach AWS resources.
+      # ---------------------------------------------------------------------
+      - name: "🔐 Verify repo identity (NeuroReach)"
+        run: |
+          chmod +x scripts/verify_repo_identity.sh
+          ./scripts/verify_repo_identity.sh
+
+      # Determine the ACTUAL commit SHA being deployed
       - name: Get deployment info
         id: deploy-info
         run: |
@@ -131,7 +142,7 @@ jobs:
           cp -r frontend/dist-widget/* backend/frontend-bundles/dist-widget/ 2>/dev/null || true
           cp -r frontend/dist-assessment/* backend/frontend-bundles/dist-assessment/ 2>/dev/null || true
 
-      # --- Build & Push Docker Image ---
+      # --- Build & Push Backend Docker Image ---
       - name: Set image tag
         id: image-tag
         run: |
@@ -159,7 +170,7 @@ jobs:
         with:
           image-ref: ${{ steps.image-tag.outputs.full_image }}
           severity: CRITICAL
-          exit-code: 0 # Report only — block manually if critical issues
+          exit-code: 0 # Report only
           format: table
         continue-on-error: true
 
@@ -178,7 +189,6 @@ jobs:
             --task-definition ${{ env.TASK_DEF_BACKEND }} \
             --query 'taskDefinition' \
             --output json > backend-task-def.json
-          # Remove fields that can't be re-registered
           python3 -c "
           import json
           with open('backend-task-def.json') as f:
@@ -239,6 +249,26 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
           wait-for-minutes: 15
+
+      # ---------------------------------------------------------------------
+      # CRITICAL: Enforce Celery desiredCount = 1
+      # The worker command uses `celery ... worker -B` (embedded Beat scheduler).
+      # Running >1 replica = multiple Beat schedulers = EVERY scheduled task
+      # fires N times (duplicate emails/SMS to leads). Always pin to 1.
+      # If horizontal scaling is ever needed, split into a dedicated Beat
+      # service (desired=1, cmd `celery beat`) + N worker replicas (cmd
+      # `celery worker` without `-B`).
+      # ---------------------------------------------------------------------
+      - name: Enforce celery desiredCount=1 (prevent duplicate Beat)
+        run: |
+          echo "🔒 Pinning ${{ env.ECS_SERVICE_CELERY }} to desiredCount=1 to prevent duplicate Beat schedulers..."
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_CELERY }} \
+            --desired-count 1 \
+            --query 'service.{svc:serviceName,desired:desiredCount,running:runningCount}' \
+            --output json
+          echo "✅ Celery service pinned to 1 replica."
 
       # --- Build & Deploy Frontend Service (nginx + React SPA) ---
       - name: Set frontend image tag
@@ -306,8 +336,6 @@ jobs:
       - name: Run production smoke tests
         run: |
           echo "🔥 Running smoke tests against production..."
-
-          # Wait for service to stabilize
           sleep 20
 
           # Test liveness endpoint
@@ -350,6 +378,38 @@ jobs:
           echo "🎉 All production smoke tests passed!"
 
       # --- Git Release Tag ---
+
+      # ---------------------------------------------------------------------
+      # POST-DEPLOY IDENTITY VERIFICATION
+      # Curl the live frontend and assert <title> contains "NeuroReach".
+      # If the nginx container is serving the wrong tool, this step fails
+      # and the deploy is marked red.
+      # ---------------------------------------------------------------------
+      - name: "🔐 Post-deploy: verify live frontend <title> is NeuroReach"
+        run: |
+          URL="${{ env.FRONTEND_URL }}"
+          echo "🔎 Fetching $URL and checking <title>..."
+          for i in 1 2 3 4 5 6; do
+            HTML=$(curl -s --max-time 10 "$URL/" || true)
+            TITLE=$(echo "$HTML" | grep -oiE '<title>[^<]*</title>' | head -n1 || echo '')
+            if echo "$TITLE" | grep -iq 'NeuroReach'; then
+              echo "✅ Live frontend title OK: $TITLE"
+              if echo "$HTML" | grep -iq 'SleepReach\|sleeplessinarizona'; then
+                echo "❌ CRITICAL: live HTML contains forbidden markers!"
+                echo "$HTML" | grep -iE 'SleepReach\|sleeplessinarizona' | head -5
+                exit 1
+              fi
+              echo "✅ No cross-contamination markers in live HTML."
+              exit 0
+            fi
+            echo "⏳ Attempt $i/6: title was '$TITLE' — waiting 10s for ALB to cut over..."
+            sleep 10
+          done
+          echo "❌ CRITICAL: $URL is NOT serving NeuroReach — contamination detected."
+          echo "   Last title seen: $TITLE"
+          echo "   First 500 bytes of HTML:"
+          echo "$HTML" | head -c 500
+          exit 1
       - name: Create git release tag
         run: |
           SHA=${{ steps.deploy-info.outputs.sha_short }}
@@ -391,7 +451,7 @@ jobs:
   notify:
     name: "📧 Notify"
     runs-on: ubuntu-latest
-    needs: [build-and-deploy]
+    needs: [ build-and-deploy ]
     if: always()
     steps:
       - name: Notify on success
