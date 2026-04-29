@@ -99,6 +99,17 @@ PLATFORM_ICONS = {
     "Referral": "users",
 }
 
+# Display-name map for condition enum values — mirrors the one in ai_insights_service.py.
+# Keeps "DEPRESSION" etc. from leaking into the hot-leads top_condition field.
+_CONDITION_DISPLAY: Dict[str, str] = {
+    "DEPRESSION": "Depression",
+    "ANXIETY": "Anxiety",
+    "OCD": "OCD",
+    "PTSD": "PTSD",
+    "OTHER": "Other",
+}
+
+
 # Default empty metrics for platforms with no data
 def get_empty_platform_metrics(platform: str) -> Dict[str, Any]:
     """Return empty metrics structure for a platform with no data."""
@@ -331,9 +342,12 @@ async def get_source_analytics(
             elif lead.priority == PriorityType.LOW:
                 platform_data[platform]["low"] += 1
             
-            # Conversion tracking
-            if lead.status in [LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED]:
-                platform_data[platform]["converted"] += 1
+            # NOTE: We do NOT count windowed-query conversions here.
+            # Conversion rates are computed from ALL-TIME data below so that
+            # recently-created leads (which haven't had time to complete) do not
+            # artificially suppress the platform conversion rate.
+            
+            # Scheduled count is still from the window (for current activity display)
             if lead.status == LeadStatus.SCHEDULED:
                 platform_data[platform]["scheduled"] += 1
             
@@ -343,6 +357,42 @@ async def get_source_analytics(
             elif lead.created_at >= two_weeks_ago:
                 platform_data[platform]["last_week"] += 1
         
+        # =====================================================================
+        # ALL-TIME CONVERSION RATE — queried separately from the window.
+        #
+        # Root cause of "Widget shows 0% despite completed leads":
+        #   The windowed query only fetches leads created within `days_back`.
+        #   Leads created before that window — including those that have already
+        #   completed — are invisible, making conversion = 0 / recent_total = 0%.
+        #
+        # Fix: count conversions (CONSULTATION_COMPLETE + TREATMENT_STARTED) from
+        # ALL non-deleted, non-manual leads regardless of creation date, then
+        # divide by the same all-time total for that platform.
+        # =====================================================================
+        all_time_leads = db.query(
+            Lead.utm_source,
+            Lead.utm_medium,
+            Lead.status,
+            Lead.is_referral,
+        ).filter(
+            Lead.deleted_at.is_(None),
+            Lead.source != LeadSource.manual,
+        ).all()
+
+        all_time_data: Dict[str, Dict[str, int]] = {
+            p: {"total": 0, "converted": 0} for p in ALLOWED_PLATFORMS
+        }
+        for al in all_time_leads:
+            if al.is_referral:
+                p = "Referral"
+            else:
+                p = get_platform_from_source(al.utm_source, al.utm_medium)
+            if p not in all_time_data:
+                p = "Widget"
+            all_time_data[p]["total"] += 1
+            if al.status in [LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED]:
+                all_time_data[p]["converted"] += 1
+
         # Build response - ALWAYS include all 4 platforms
         platforms: List[PlatformMetrics] = []
         top_conversion_rate = 0
@@ -352,8 +402,12 @@ async def get_source_analytics(
         for platform in ALLOWED_PLATFORMS:
             data = platform_data[platform]
             total = data["total"]
-            converted = data["converted"]
-            conversion_rate = round((converted / total * 100) if total > 0 else 0, 2)
+            # Use all-time conversion rate so completed leads are never hidden by
+            # the time-window filter.  converted_leads is also from all-time so
+            # the UI "Converted" count matches the rate numerator.
+            at = all_time_data[platform]
+            converted = at["converted"]
+            conversion_rate = round((at["converted"] / at["total"] * 100) if at["total"] > 0 else 0, 2)
             avg_score = round(sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0, 1)
             percentage = round((total / total_leads * 100) if total_leads > 0 else 0, 2)
             
@@ -655,8 +709,13 @@ async def get_hot_leads_by_platform(
             avg_score = round(sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0, 1)
             conversion_rate = round((data["converted"] / data["count"] * 100) if data["count"] > 0 else 0, 1)
             
-            # Top condition for this platform
-            top_condition = max(data["conditions"].items(), key=lambda x: x[1])[0] if data["conditions"] else "N/A"
+            # Top condition for this platform — formatted as a display label, not a raw enum value.
+            raw_top = max(data["conditions"].items(), key=lambda x: x[1])[0] if data["conditions"] else "N/A"
+            top_condition = (
+                _CONDITION_DISPLAY.get(raw_top, raw_top.replace("_", " ").title())
+                if raw_top != "N/A"
+                else "N/A"
+            )
             
             platforms.append({
                 "platform": platform,

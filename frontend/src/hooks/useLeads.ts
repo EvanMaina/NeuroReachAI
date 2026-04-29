@@ -309,6 +309,8 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
       queryClient.refetchQueries({ queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }) });
+      // Cross-invalidate source analytics so conversion rates update without a manual refresh
+      queryClient.invalidateQueries({ queryKey: ['source-analytics'] });
     },
   });
 
@@ -335,11 +337,11 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
           previousLeads.map((lead) =>
             lead.id === leadId
               ? {
-                  ...lead,
-                  contactOutcome: newOutcome,
-                  contactAttempts: (lead.contactAttempts || 0) + 1,
-                  lastContactAttempt: new Date().toISOString(),
-                }
+                ...lead,
+                contactOutcome: newOutcome,
+                contactAttempts: (lead.contactAttempts || 0) + 1,
+                lastContactAttempt: new Date().toISOString(),
+              }
               : lead
           )
         );
@@ -359,6 +361,8 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
       queryClient.refetchQueries({ queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }) });
+      // Cross-invalidate source analytics so conversion rates update without a manual refresh
+      queryClient.invalidateQueries({ queryKey: ['source-analytics'] });
     },
   });
 

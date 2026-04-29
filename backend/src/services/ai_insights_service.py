@@ -41,12 +41,75 @@ EMAIL_DRAFT_CACHE_KEY = "ai_email_draft:v1:{lead_id}"
 EMAIL_DRAFT_TTL = 30 * 60  # 30 minutes
 
 
-ZIP_PLACE_OVERRIDES: dict[str, str] = {
-    "85001": "Phoenix, AZ",
-    "85258": "Scottsdale, AZ",
-    "87001": "Algodones, NM",
-    "89001": "Alamo, NV",
+# ---------------------------------------------------------------------------
+# ZIP → Location resolution (offline, via zipcodes library)
+# ---------------------------------------------------------------------------
+# We use the `zipcodes` library which ships a bundled JSON dataset of every
+# US ZIP code. No network calls, no SQLAlchemy dependency, no hardcoded maps.
+#
+# Root cause of the previous failure: uszipcode==1.0.1 depends on
+# sqlalchemy_mate, which dropped `ExtendedBase` in a newer version. This
+# caused uszipcode to crash at import with an AttributeError that was silently
+# caught by the try/except, returning None every time and causing every ZIP
+# to fall back to "ZIP XXXXX".
+#
+# The `zipcodes` library is pure Python with a bundled JSON file — zero
+# external runtime dependencies and no SQLAlchemy conflict.
+# ---------------------------------------------------------------------------
+
+# In-process LRU cache so repeated lookups for the same ZIP in a single
+# aggregation run don't hit the JSON dataset multiple times.
+_zip_cache: dict[str, tuple[str, str]] = {}
+
+# Module-level flag so we only log the import warning once.
+_zipcodes_available: Optional[bool] = None
+
+# ---------------------------------------------------------------------------
+# Display-name maps — convert raw DB enum values to human-readable labels.
+#
+# These prevent raw constants like "DEPRESSION", "google_ads", "VIDEO_CALL"
+# from leaking into the coordinator dashboard, AI model prompts, or email
+# drafts.  The fallback (unknown key → .replace("_", " ").title()) is a
+# safety net so new enum members degrade gracefully instead of silently
+# showing ugly constants.
+# ---------------------------------------------------------------------------
+
+_CONDITION_DISPLAY: dict[str, str] = {
+    "DEPRESSION": "Depression",
+    "ANXIETY": "Anxiety",
+    "OCD": "OCD",       # acronym — keep uppercase
+    "PTSD": "PTSD",     # acronym — keep uppercase
+    "OTHER": "Other",
 }
+
+_SOURCE_DISPLAY: dict[str, str] = {
+    "widget": "Widget",
+    "google_ads": "Google Ads",
+    "jotform": "Jotform",
+    "referral": "Referral",
+    "manual": "Manual",
+    "api": "API",
+    "import": "Import",
+    "unknown": "Unknown",
+}
+
+_METHOD_DISPLAY: dict[str, str] = {
+    "PHONE": "Phone",
+    "EMAIL": "Email",
+    "SMS": "SMS",            # acronym — keep uppercase
+    "VIDEO_CALL": "Video Call",
+    "unknown": "Unknown",
+}
+
+# Reusable helper — call everywhere we convert a raw enum value to a label.
+def _display_name(raw: str, lookup: dict[str, str]) -> str:
+    """Return a human-readable label for a raw enum value.
+
+    Falls back to title-casing the raw value (replacing underscores with
+    spaces) so any unmapped future enum members degrade gracefully rather
+    than silently showing raw constants.
+    """
+    return lookup.get(raw, raw.replace("_", " ").title())
 
 
 def _normalize_zip5(zip_code: Any) -> str:
@@ -57,18 +120,52 @@ def _normalize_zip5(zip_code: Any) -> str:
 
 def _resolve_zip_location(zip_code: Any) -> tuple[str, str]:
     """
-    Resolve a ZIP to a display label.
+    Resolve a ZIP to a human-readable "City, ST" display label using the
+    offline `zipcodes` bundled JSON dataset.
 
-    Returns (label, kind). kind is "location" when a verified place is known
-    and "zip" when the system has to fall back to the raw ZIP code.
+    Returns (label, kind):
+      - kind="location" when a verified city+state is known.
+      - kind="zip" when falling back to raw ZIP (e.g. invalid or 00000).
+
+    Never raises — degrades gracefully to "ZIP XXXXX" on any failure.
     """
+    global _zipcodes_available
+
     zip5 = _normalize_zip5(zip_code)
-    if not zip5:
-        return "", "zip"
-    place = ZIP_PLACE_OVERRIDES.get(zip5)
-    if place:
-        return place, "location"
-    return f"ZIP {zip5}", "zip"
+    if not zip5 or zip5 == "00000":
+        return (f"ZIP {zip5}" if zip5 else ""), "zip"
+
+    # Check in-process cache first
+    if zip5 in _zip_cache:
+        return _zip_cache[zip5]
+
+    # Try zipcodes offline lookup
+    try:
+        import zipcodes as _zipcodes_lib
+        _zipcodes_available = True
+        results = _zipcodes_lib.matching(zip5)
+        if results:
+            city = results[0].get("city", "")
+            state = results[0].get("state", "")
+            if city and state:
+                label = f"{city}, {state}"
+                _zip_cache[zip5] = (label, "location")
+                logger.debug("ZIP %s resolved to %s", zip5, label)
+                return label, "location"
+    except ImportError:
+        if _zipcodes_available is not False:
+            logger.warning(
+                "zipcodes library not available — ZIP codes will display as raw numbers. "
+                "Install with: pip install zipcodes==1.2.0"
+            )
+            _zipcodes_available = False
+    except Exception as exc:
+        logger.debug("zipcodes lookup failed for %s: %s", zip5, exc)
+
+    # Fallback: raw ZIP display
+    fallback = (f"ZIP {zip5}", "zip")
+    _zip_cache[zip5] = fallback
+    return fallback
 
 
 def _extract_json_object(text: str) -> Any:
@@ -243,7 +340,14 @@ def collect_metrics(db: Session) -> InsightMetrics:
         .all()
     )
     top_conditions = [
-        {"name": (cond.value if hasattr(cond, "value") else str(cond)), "count": count}
+        {
+            # Convert raw enum value ("DEPRESSION") to display label ("Depression").
+            "name": _display_name(
+                cond.value if hasattr(cond, "value") else str(cond),
+                _CONDITION_DISPLAY,
+            ),
+            "count": count,
+        }
         for cond, count in cond_rows
         if cond is not None
     ]
@@ -279,7 +383,11 @@ def collect_metrics(db: Session) -> InsightMetrics:
     )
     lead_sources = [
         {
-            "name": (src.value if hasattr(src, "value") else str(src or "unknown")),
+            # Convert raw enum value ("google_ads") to display label ("Google Ads").
+            "name": _display_name(
+                src.value if hasattr(src, "value") else str(src or "unknown"),
+                _SOURCE_DISPLAY,
+            ),
             "count": int(count or 0),
             "percentage": round(100.0 * int(count or 0) / total_leads, 1) if total_leads else 0.0,
         }
@@ -402,7 +510,9 @@ def collect_metrics(db: Session) -> InsightMetrics:
             .all()
         )
         for method, outcome in rows:
-            key = method.value if method and hasattr(method, "value") else str(method or "unknown")
+            raw_key = method.value if method and hasattr(method, "value") else str(method or "unknown")
+            # Use display name as key so the frontend never sees "PHONE", "VIDEO_CALL" etc.
+            key = _display_name(raw_key, _METHOD_DISPLAY)
             bucket = success_rate_by_method.setdefault(
                 key, {"attempts": 0, "successes": 0, "pct": 0.0}
             )
@@ -720,8 +830,12 @@ defensible from the input:
         - active_pipeline
      Do NOT introduce metrics like "Avg first contact" with a number unless
      `avg_first_contact_hours` is non-null in the input.
-  4. `geographic.note` should reference real place labels from
-     `signals.geographic_breakdown` if present. If empty, say so plainly.
+  4. `geographic.note` MUST use the resolved location names from
+     `signals.geographic_breakdown[].label` (e.g. "Scottsdale, AZ") — NEVER
+     output raw ZIP codes like "ZIP 85032" or bare 5-digit numbers. Location
+     names are pre-resolved offline and supplied in the input data. If
+     `signals.geographic_breakdown` is empty, state "No intake location data
+     captured yet."
   5. `expansion.signals` must come from `signals.expansion_opportunities`
      entries. If the array is empty, return a single signal of "No locations
      captured yet — encourage coordinators to fill the location field on
@@ -905,12 +1019,14 @@ def _best_channel(metrics: InsightMetrics) -> str:
     eligible = [
         (method, data["pct"], data["attempts"])
         for method, data in metrics.success_rate_by_method.items()
-        if data["attempts"] >= 3 and method.lower() != "unknown"
+        if data["attempts"] >= 3 and method.lower() not in ("unknown", "none", "")
     ]
     if not eligible:
         return "Insufficient data"
     method, _pct, _ = max(eligible, key=lambda t: t[1])
-    return method.replace("_", " ").title()
+    # Keys are already display-formatted (e.g. "Phone", "SMS", "Video Call")
+    # because success_rate_by_method is built with _display_name() in collect_metrics.
+    return method
 
 
 def _stub_insights(metrics: InsightMetrics) -> dict[str, Any]:

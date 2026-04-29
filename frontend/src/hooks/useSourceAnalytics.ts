@@ -68,6 +68,9 @@ export function useSourceOverview(daysBack: number = 30) {
     placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,   // prevent blank flash on alt-tab
     networkMode: 'always',         // keep stale data visible on network errors
+    // Auto-refresh every 30 s while the user is on the Analytics page so
+    // conversion rates update even if they don't navigate away and back.
+    refetchInterval: 30 * 1000,
   });
 }
 
@@ -87,6 +90,8 @@ export function useHotLeadsByPlatformQuery(daysBack: number = 30) {
     placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
     networkMode: 'always',
+    // Auto-refresh every 30 s while the user is on the Analytics page
+    refetchInterval: 30 * 1000,
   });
 }
 

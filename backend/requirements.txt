@@ -97,3 +97,8 @@ tenacity==8.2.3
 
 # Date/Time utilities
 python-dateutil==2.8.2
+
+# ZIP code → city/state resolution (pure Python, bundled JSON dataset, no SQLAlchemy dep)
+# Replaces uszipcode==1.0.1 which is broken in Python 3.11+ due to sqlalchemy_mate
+# dropping ExtendedBase — causing silent None returns and every ZIP falling back to "ZIP XXXXX"
+zipcodes==1.2.0

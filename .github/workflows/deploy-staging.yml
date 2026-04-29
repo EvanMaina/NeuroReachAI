@@ -407,28 +407,54 @@ jobs:
 
           # ALB DNS for direct access (bypasses external DNS dependency)
           ALB_DNS="neuroreach-ai-alb-1879069977.us-east-2.elb.amazonaws.com"
+          HOST_HDR="Host: app-staging.tmsinstitute.co"
+
+          # ── Helper: curl with -f so HTTP 4xx/5xx are real failures ──────
+          # -s = silent, -k = skip TLS verify (self-signed on ALB), -f = fail on HTTP error
+          # --max-time 15 = abort if server hangs
+          _curl() { curl -skf --max-time 15 "$@"; }
 
           # Test via ALB directly with Host header (always works, no DNS dependency)
           echo "📡 Testing via ALB direct (Host header routing)..."
-          HEALTH_STATUS=$(curl -sk https://${ALB_DNS}/health/live -H "Host: app-staging.tmsinstitute.co" 2>&1) || {
-            echo "❌ Staging liveness check failed via ALB!"
-            echo "Response: $HEALTH_STATUS"
-            exit 1
-          }
-          echo "✅ Liveness (ALB direct): $HEALTH_STATUS"
 
-          HEALTH_RESPONSE=$(curl -sk https://${ALB_DNS}/health -H "Host: app-staging.tmsinstitute.co" 2>&1) || {
-            echo "❌ Staging health check failed via ALB!"
-            echo "Response: $HEALTH_RESPONSE"
+          # 1. /health/live — expects HTTP 200 + body contains "ok" or "alive"
+          LIVE_BODY=$(_curl "https://${ALB_DNS}/health/live" -H "${HOST_HDR}") || {
+            echo "❌ /health/live returned HTTP error or timed out!"
+            echo "   (curl exit code $?)"
             exit 1
           }
-          echo "✅ Health (ALB direct): $HEALTH_RESPONSE"
+          if ! echo "${LIVE_BODY}" | grep -qiE '"?(ok|alive|healthy)"?'; then
+            echo "❌ /health/live responded HTTP 200 but body is unexpected:"
+            echo "   ${LIVE_BODY}"
+            exit 1
+          fi
+          echo "✅ Liveness (ALB direct): ${LIVE_BODY}"
+
+          # 2. /health — expects HTTP 200 + body contains "status"
+          HEALTH_BODY=$(_curl "https://${ALB_DNS}/health" -H "${HOST_HDR}") || {
+            echo "❌ /health returned HTTP error or timed out!"
+            echo "   (curl exit code $?)"
+            exit 1
+          }
+          if ! echo "${HEALTH_BODY}" | grep -qiE '"status"'; then
+            echo "❌ /health responded HTTP 200 but body is missing 'status' key:"
+            echo "   ${HEALTH_BODY}"
+            exit 1
+          fi
+          echo "✅ Health (ALB direct): ${HEALTH_BODY}"
+
+          # 3. API version/root — soft check (non-fatal, informational)
+          API_BODY=$(_curl "https://${ALB_DNS}/api/v1/health" -H "${HOST_HDR}" 2>/dev/null) && {
+            echo "✅ API v1 health: ${API_BODY}"
+          } || {
+            echo "ℹ️  /api/v1/health not available (may not be exposed — non-fatal)"
+          }
 
           # Also test via custom domain if DNS is configured (non-blocking)
           echo ""
           echo "📡 Testing via custom domain (non-blocking)..."
-          DOMAIN_STATUS=$(curl -sf ${{ env.STAGING_URL }}/health/live 2>&1) && {
-            echo "✅ Custom domain reachable: $DOMAIN_STATUS"
+          DOMAIN_STATUS=$(curl -skf --max-time 15 "${{ env.STAGING_URL }}/health/live" 2>&1) && {
+            echo "✅ Custom domain reachable: ${DOMAIN_STATUS}"
           } || {
             echo "⚠️  Custom domain not yet reachable (DNS CNAME may not be configured)"
             echo "   Configure CNAME: app-staging.tmsinstitute.co → ${ALB_DNS}"
@@ -447,10 +473,15 @@ jobs:
       # ---------------------------------------------------------------------
       - name: "🔐 Post-deploy: verify live frontend <title> is NeuroReach"
         run: |
-          URL="${{ env.STAGING_URL }}"
-          echo "🔎 Fetching $URL and checking <title>..."
+          # Use ALB direct access with Host header — immune to external DNS
+          # configuration. The custom domain CNAME (app-staging.tmsinstitute.co)
+          # is NOT required for the deploy to pass; smoke tests already proved
+          # this pattern works reliably.
+          ALB_DNS="neuroreach-ai-alb-1879069977.us-east-2.elb.amazonaws.com"
+          HOST_HEADER="app-staging.tmsinstitute.co"
+          echo "🔎 Fetching https://${ALB_DNS}/ (Host: ${HOST_HEADER}) and checking <title>..."
           for i in 1 2 3 4 5 6; do
-            HTML=$(curl -s --max-time 10 "$URL/" || true)
+            HTML=$(curl -sk --max-time 10 "https://${ALB_DNS}/" -H "Host: ${HOST_HEADER}" || true)
             TITLE=$(echo "$HTML" | grep -oiE '<title>[^<]*</title>' | head -n1 || echo '')
             if echo "$TITLE" | grep -iq 'NeuroReach'; then
               echo "✅ Live frontend title OK: $TITLE"
@@ -465,7 +496,7 @@ jobs:
             echo "⏳ Attempt $i/6: title was '$TITLE' — waiting 10s for ALB to cut over..."
             sleep 10
           done
-          echo "❌ CRITICAL: $URL is NOT serving NeuroReach — contamination detected."
+          echo "❌ CRITICAL: ALB is NOT serving NeuroReach frontend — possible contamination."
           echo "   Last title seen: $TITLE"
           echo "   First 500 bytes of HTML:"
           echo "$HTML" | head -c 500

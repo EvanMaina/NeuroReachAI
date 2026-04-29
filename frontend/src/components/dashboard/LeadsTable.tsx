@@ -231,10 +231,17 @@ function formatPreferredContact(method: string | undefined): string {
 // Column Config
 // =============================================================================
 
+/**
+ * Bump this version whenever DEFAULT_COLUMN_WIDTHS change.
+ * When the stored version doesn't match, cached widths are discarded
+ * so every user picks up the new compact defaults automatically.
+ */
+const COLUMN_WIDTHS_VERSION = 3;
+
 const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
-  leadId: 140, patient: 200, condition: 150, priority: 120,
-  status: 170, scheduledFor: 180, submitted: 140, lastActivity: 150,
-  preferred: 130, actions: 170,
+  leadId: 100, patient: 130, condition: 85, priority: 65,
+  status: 85, scheduledFor: 135, submitted: 100, lastActivity: 90,
+  preferred: 70, actions: 100,
 };
 
 const COLUMN_LABELS: Record<string, string> = {
@@ -387,13 +394,17 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
     try { localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(tablePageSize)); } catch { /* non-fatal */ }
   }, [tablePageSize]);
 
-  // Resizable column widths
+  // Resizable column widths — version-gated so new defaults propagate to all users
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     try {
       const raw = localStorage.getItem('nr_table_settings::leads');
       if (raw) {
-        const parsed = JSON.parse(raw) as { columnWidths?: Record<string, number> };
-        if (parsed?.columnWidths) return { ...DEFAULT_COLUMN_WIDTHS, ...parsed.columnWidths };
+        const parsed = JSON.parse(raw) as { columnWidths?: Record<string, number>; version?: number };
+        // Only reuse cached widths when the stored version matches the current code version.
+        // A mismatch means we shipped new defaults → discard stale widths.
+        if (parsed?.columnWidths && parsed.version === COLUMN_WIDTHS_VERSION) {
+          return { ...DEFAULT_COLUMN_WIDTHS, ...parsed.columnWidths };
+        }
       }
     } catch { /* non-fatal */ }
     return { ...DEFAULT_COLUMN_WIDTHS };
@@ -403,8 +414,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
     try {
       const raw = localStorage.getItem('nr_table_settings::leads');
       if (raw) {
-        const parsed = JSON.parse(raw) as { visibleColumns?: string[] };
-        if (Array.isArray(parsed?.visibleColumns) && parsed.visibleColumns.length > 0) {
+        const parsed = JSON.parse(raw) as { visibleColumns?: string[]; version?: number };
+        if (parsed?.version === COLUMN_WIDTHS_VERSION && Array.isArray(parsed?.visibleColumns) && parsed.visibleColumns.length > 0) {
           // Always guarantee locked columns remain visible.
           const next = new Set(parsed.visibleColumns);
           next.add('leadId');
@@ -420,12 +431,13 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
   // Resize tracking ref
   const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
 
-  // Persist column widths + visibility to localStorage on every change
+  // Persist column widths + visibility + version to localStorage on every change
   useEffect(() => {
     try {
       localStorage.setItem(
         'nr_table_settings::leads',
         JSON.stringify({
+          version: COLUMN_WIDTHS_VERSION,
           columnWidths,
           visibleColumns: Array.from(visibleColumns),
         }),
@@ -1082,521 +1094,525 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({
         </div>
       ) : (
         <>
-        <div className="overflow-x-auto premium-scrollbar">
-          <table className="w-full" style={{ tableLayout: 'fixed', minWidth: '1100px' }}>
-            <thead>
-              <tr className="bg-gray-50 border-b-2 border-gray-200">
-                {visibleColumns.has('leadId') && (
-                  <th
-                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky left-0 z-[4] bg-gray-50 relative select-none"
-                    style={{ width: columnWidths.leadId }}
-                    onClick={() => handleSort('leadId')}
-                  >
-                    <div className="flex items-center gap-2 text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                      Lead ID {getSortIcon('leadId')}
-                    </div>
-                    <div
-                      className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'leadId', startX: e.clientX, startWidth: columnWidths.leadId }; }}
-                      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, leadId: DEFAULT_COLUMN_WIDTHS.leadId })); }}
+          <div className="overflow-x-auto premium-scrollbar">
+            <table className="w-full" style={{ tableLayout: 'fixed', minWidth: '950px' }}>
+              <thead>
+                <tr className="bg-gray-50 border-b-2 border-gray-200">
+                  {visibleColumns.has('leadId') && (
+                    <th
+                      className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky left-0 z-[4] bg-gray-50 relative select-none"
+                      style={{ width: columnWidths.leadId }}
+                      onClick={() => handleSort('leadId')}
                     >
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('patient') && (
-                  <th
-                    className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky z-[4] bg-gray-50 relative select-none"
-                    style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
-                    onClick={() => handleSort('firstName')}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                      Patient {getSortIcon('firstName')}
-                    </div>
-                    <div
-                      className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'patient', startX: e.clientX, startWidth: columnWidths.patient }; }}
-                      onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, patient: DEFAULT_COLUMN_WIDTHS.patient })); }}
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Lead ID {getSortIcon('leadId')}
+                      </div>
+                      <div
+                        className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'leadId', startX: e.clientX, startWidth: columnWidths.leadId }; }}
+                        onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, leadId: DEFAULT_COLUMN_WIDTHS.leadId })); }}
+                      >
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('patient') && (
+                    <th
+                      className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors sticky z-[4] bg-gray-50 relative select-none"
+                      style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
+                      onClick={() => handleSort('firstName')}
                     >
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('condition') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.condition }} onClick={() => handleSort('condition')}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Condition {getSortIcon('condition')}</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'condition', startX: e.clientX, startWidth: columnWidths.condition }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, condition: DEFAULT_COLUMN_WIDTHS.condition })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('priority') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.priority }} onClick={() => handleSort('priority')}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Priority {getSortIcon('priority')}</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'priority', startX: e.clientX, startWidth: columnWidths.priority }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, priority: DEFAULT_COLUMN_WIDTHS.priority })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('status') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.status }} onClick={() => handleSort('status')}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Status {getSortIcon('status')}</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'status', startX: e.clientX, startWidth: columnWidths.status }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, status: DEFAULT_COLUMN_WIDTHS.status })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('scheduledFor') && (
-                  <th className="px-6 py-3 text-left z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.scheduledFor }}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><Calendar size={12} /> Scheduled For</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'scheduledFor', startX: e.clientX, startWidth: columnWidths.scheduledFor }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, scheduledFor: DEFAULT_COLUMN_WIDTHS.scheduledFor })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('submitted') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.submitted }} onClick={() => handleSort('submittedAt')}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Submitted {getSortIcon('submittedAt')}</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'submitted', startX: e.clientX, startWidth: columnWidths.submitted }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, submitted: DEFAULT_COLUMN_WIDTHS.submitted })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('lastActivity') && (
-                  <th className="px-6 py-3 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.lastActivity }} onClick={() => handleSort('lastUpdatedAt')}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Last Activity {getSortIcon('lastUpdatedAt')}</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'lastActivity', startX: e.clientX, startWidth: columnWidths.lastActivity }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, lastActivity: DEFAULT_COLUMN_WIDTHS.lastActivity })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('preferred') && (
-                  <th className="px-4 py-3 text-left z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.preferred }}>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><PhoneCall size={12} /> Preferred</div>
-                    <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'preferred', startX: e.clientX, startWidth: columnWidths.preferred }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, preferred: DEFAULT_COLUMN_WIDTHS.preferred })); }}>
-                      <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.has('actions') && (
-                  <th className="px-6 py-3 text-right z-[3] bg-gray-50 select-none" style={{ width: columnWidths.actions }}>
-                    <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</span>
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {paginatedLeads.map((lead, index) => {
-                // Determine opaque row background for frozen cells (must be solid, not transparent)
-                const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
-                return (
-                  <tr
-                    key={lead.id}
-                    className={`
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Patient {getSortIcon('firstName')}
+                      </div>
+                      <div
+                        className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'patient', startX: e.clientX, startWidth: columnWidths.patient }; }}
+                        onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, patient: DEFAULT_COLUMN_WIDTHS.patient })); }}
+                      >
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('condition') && (
+                    <th className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.condition }} onClick={() => handleSort('condition')}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Condition {getSortIcon('condition')}</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'condition', startX: e.clientX, startWidth: columnWidths.condition }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, condition: DEFAULT_COLUMN_WIDTHS.condition })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('priority') && (
+                    <th className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.priority }} onClick={() => handleSort('priority')}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Priority {getSortIcon('priority')}</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'priority', startX: e.clientX, startWidth: columnWidths.priority }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, priority: DEFAULT_COLUMN_WIDTHS.priority })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('status') && (
+                    <th className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.status }} onClick={() => handleSort('status')}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Status {getSortIcon('status')}</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'status', startX: e.clientX, startWidth: columnWidths.status }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, status: DEFAULT_COLUMN_WIDTHS.status })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('scheduledFor') && (
+                    <th className="px-3 py-2.5 text-left z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.scheduledFor }}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><Calendar size={12} /> Scheduled For</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'scheduledFor', startX: e.clientX, startWidth: columnWidths.scheduledFor }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, scheduledFor: DEFAULT_COLUMN_WIDTHS.scheduledFor })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('submitted') && (
+                    <th className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.submitted }} onClick={() => handleSort('submittedAt')}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Submitted {getSortIcon('submittedAt')}</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'submitted', startX: e.clientX, startWidth: columnWidths.submitted }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, submitted: DEFAULT_COLUMN_WIDTHS.submitted })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('lastActivity') && (
+                    <th className="px-3 py-2.5 text-left cursor-pointer hover:bg-gray-100 transition-colors z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.lastActivity }} onClick={() => handleSort('lastUpdatedAt')}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide">Last Activity {getSortIcon('lastUpdatedAt')}</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'lastActivity', startX: e.clientX, startWidth: columnWidths.lastActivity }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, lastActivity: DEFAULT_COLUMN_WIDTHS.lastActivity })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('preferred') && (
+                    <th className="px-2 py-2.5 text-left z-[3] bg-gray-50 relative select-none" style={{ width: columnWidths.preferred }}>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 uppercase tracking-wide"><PhoneCall size={12} /> Preferred</div>
+                      <div className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); resizeRef.current = { col: 'preferred', startX: e.clientX, startWidth: columnWidths.preferred }; }} onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setColumnWidths(prev => ({ ...prev, preferred: DEFAULT_COLUMN_WIDTHS.preferred })); }}>
+                        <div className="w-0.5 h-4 rounded-full bg-gray-300 opacity-30 group-hover/resize:opacity-100 group-hover/resize:bg-indigo-400 transition-all" />
+                      </div>
+                    </th>
+                  )}
+                  {visibleColumns.has('actions') && (
+                    <th className="px-3 py-2.5 text-right z-[3] bg-gray-50 select-none" style={{ width: columnWidths.actions }}>
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Actions</span>
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {paginatedLeads.map((lead, index) => {
+                  // Determine opaque row background for frozen cells (must be solid, not transparent)
+                  const rowBg = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                  return (
+                    <tr
+                      key={lead.id}
+                      className={`
                     group hover:bg-blue-50 transition-colors
                     ${rowBg}
                   `}
-                  >
-                    {visibleColumns.has('leadId') && (
-                      <td
-                        className={`px-6 py-4 whitespace-nowrap sticky left-0 z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
-                        style={{ width: columnWidths.leadId }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
-                            {lead.leadId}
-                          </span>
-                        </div>
-                      </td>
-                    )}
-                    {visibleColumns.has('patient') && (
-                      <td
-                        className={`px-6 py-4 whitespace-nowrap sticky z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
-                        style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-semibold text-blue-700">
-                              {/* Display initials - handle empty/unknown names gracefully */}
-                              {(lead.firstName && lead.firstName !== 'Unknown' ? lead.firstName.charAt(0) : lead.email?.charAt(0) || '?')}
-                              {lead.lastName?.charAt(0) || ''}
+                    >
+                      {visibleColumns.has('leadId') && (
+                        <td
+                          className={`px-3 py-3 whitespace-nowrap sticky left-0 z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
+                          style={{ width: columnWidths.leadId }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-mono text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
+                              {lead.leadId}
                             </span>
                           </div>
-                          <div className="flex flex-col min-w-0">
-                            {/* Display name with graceful fallbacks + ellipsis for long names */}
-                            {(lead.firstName && lead.firstName !== 'Unknown') || lead.lastName ? (
-                              <p className="text-sm font-medium text-gray-900 truncate" style={{ maxWidth: '150px' }}>
-                                {lead.firstName || ''} {lead.lastName || ''}
-                              </p>
-                            ) : lead.email ? (
-                              <p className="text-sm font-medium text-gray-700 truncate" style={{ maxWidth: '150px' }}>
-                                {lead.email}
-                              </p>
-                            ) : (
-                              <p className="text-sm font-medium text-gray-400 italic">
-                                Name not provided
-                              </p>
-                            )}
-                            {/* Referral Badge */}
-                            {lead.isReferral && (
-                              <span
-                                className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 border border-purple-200 w-fit"
-                                title={lead.referringProviderName ? `Referred by ${lead.referringProviderName}` : 'Provider Referral'}
-                              >
-                                <UserCheck size={10} />
-                                {lead.referringProviderName ? `Ref: ${lead.referringProviderName}` : 'Referral'}
+                        </td>
+                      )}
+                      {visibleColumns.has('patient') && (
+                        <td
+                          className={`px-3 py-3 whitespace-nowrap sticky z-[2] ${rowBg} group-hover:!bg-blue-50 transition-colors`}
+                          style={{ width: columnWidths.patient, left: visibleColumns.has('leadId') ? columnWidths.leadId : 0, boxShadow: '4px 0 8px rgba(0,0,0,0.06)' }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
+                              <span className="text-xs font-semibold text-blue-700">
+                                {/* Display initials - handle empty/unknown names gracefully */}
+                                {(lead.firstName && lead.firstName !== 'Unknown' ? lead.firstName.charAt(0) : lead.email?.charAt(0) || '?')}
+                                {lead.lastName?.charAt(0) || ''}
+                              </span>
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              {/* Display name with graceful fallbacks + ellipsis for long names */}
+                              {(lead.firstName && lead.firstName !== 'Unknown') || lead.lastName ? (
+                                <p className="text-sm font-medium text-gray-900 truncate" style={{ maxWidth: '150px' }}>
+                                  {lead.firstName || ''} {lead.lastName || ''}
+                                </p>
+                              ) : lead.email ? (
+                                <p className="text-sm font-medium text-gray-700 truncate" style={{ maxWidth: '150px' }}>
+                                  {lead.email}
+                                </p>
+                              ) : (
+                                <p className="text-sm font-medium text-gray-400 italic">
+                                  Name not provided
+                                </p>
+                              )}
+                              {/* Referral Badge */}
+                              {lead.isReferral && (
+                                <span
+                                  className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 border border-purple-200 w-fit"
+                                  title={lead.referringProviderName ? `Referred by ${lead.referringProviderName}` : 'Provider Referral'}
+                                >
+                                  <UserCheck size={10} />
+                                  {lead.referringProviderName ? `Ref: ${lead.referringProviderName}` : 'Referral'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      )}
+                      {visibleColumns.has('condition') && (
+                        <td className="px-3 py-3" style={{ overflow: 'visible', position: 'relative' }}>
+                          <TruncatedCell
+                            text={
+                              // conditions is an array (new multi-condition leads):
+                              //   • length > 0 → format and display
+                              //   • length === 0 → coordinator didn't select a condition → "Not Provided"
+                              // conditions is undefined (legacy single-condition leads):
+                              //   → fall back to the legacy `condition` string field
+                              Array.isArray(lead.conditions)
+                                ? lead.conditions.length > 0
+                                  ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
+                                  : 'Not Provided'
+                                : formatConditionDisplay(lead.condition)
+                            }
+                            maxWidth={Math.max(columnWidths.condition - 48, 100)}
+                            className="text-sm text-gray-700"
+                          />
+                        </td>
+                      )}
+
+                      {visibleColumns.has('priority') && (
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <Badge variant="priority" value={lead.priority} />
+                        </td>
+                      )}
+                      {visibleColumns.has('status') && (
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <div className="flex flex-col gap-1">
+                            <Badge variant="status" value={lead.status} />
+                            {/* Follow-up reason tag — single source of truth for queue routing tags */}
+                            {lead.followUpReason && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                <Tag size={9} />
+                                {lead.followUpReason}
                               </span>
                             )}
                           </div>
-                        </div>
-                      </td>
-                    )}
-                    {visibleColumns.has('condition') && (
-                      <td className="px-6 py-4" style={{ overflow: 'visible', position: 'relative' }}>
-                        <TruncatedCell
-                          text={
-                            // conditions is an array (new multi-condition leads):
-                            //   • length > 0 → format and display
-                            //   • length === 0 → coordinator didn't select a condition → "Not Provided"
-                            // conditions is undefined (legacy single-condition leads):
-                            //   → fall back to the legacy `condition` string field
-                            Array.isArray(lead.conditions)
-                              ? lead.conditions.length > 0
-                                ? formatConditionsDisplay(lead.conditions, lead.otherConditionText)
-                                : 'Not Provided'
-                              : formatConditionDisplay(lead.condition)
-                          }
-                          maxWidth={Math.max(columnWidths.condition - 48, 100)}
-                          className="text-sm text-gray-700"
-                        />
-                      </td>
-                    )}
-
-                    {visibleColumns.has('priority') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <Badge variant="priority" value={lead.priority} />
-                      </td>
-                    )}
-                    {visibleColumns.has('status') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          <Badge variant="status" value={lead.status} />
-                          {/* Follow-up reason tag — single source of truth for queue routing tags */}
-                          {lead.followUpReason && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              <Tag size={9} />
-                              {lead.followUpReason}
+                        </td>
+                      )}
+                      {visibleColumns.has('scheduledFor') && (
+                        <td className="px-3 py-3 overflow-hidden" style={{ maxWidth: columnWidths.scheduledFor }}>
+                          {(lead.scheduledCallbackAt || lead.nextFollowUpAt) ? (
+                            (() => {
+                              const scheduleFor = lead.scheduledCallbackAt || lead.nextFollowUpAt;
+                              if (!scheduleFor) return null;
+                              const { text, urgency } = formatScheduledDateTime(scheduleFor);
+                              const urgencyStyles = {
+                                past: 'bg-gray-100 text-gray-600 border-gray-200',
+                                soon: 'bg-red-50 text-red-700 border-red-200 animate-pulse',
+                                today: 'bg-amber-50 text-amber-700 border-amber-200',
+                                upcoming: 'bg-green-50 text-green-700 border-green-200',
+                              };
+                              return (
+                                <span
+                                  className={`
+                                    inline-flex items-center gap-1 px-2 py-0.5
+                                    text-xs font-medium rounded-lg border
+                                    max-w-full overflow-hidden text-ellipsis whitespace-nowrap
+                                    ${urgencyStyles[urgency]}
+                                  `}
+                                  title={text}
+                                >
+                                  <Calendar size={11} className="flex-shrink-0" />
+                                  <span className="truncate">{text}</span>
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                      )}
+                      {visibleColumns.has('submitted') && (
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="text-sm text-gray-500">
+                            {formatDate(lead.submittedAt)}
+                          </span>
+                        </td>
+                      )}
+                      {visibleColumns.has('lastActivity') && (
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {lead.lastUpdatedAt ? (
+                            <span className="text-sm text-gray-700 font-medium">
+                              {formatRelativeTime(lead.lastUpdatedAt)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                              New (untouched)
                             </span>
                           )}
-                        </div>
-                      </td>
-                    )}
-                    {visibleColumns.has('scheduledFor') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {(lead.scheduledCallbackAt || lead.nextFollowUpAt) ? (
-                          (() => {
-                            const scheduleFor = lead.scheduledCallbackAt || lead.nextFollowUpAt;
-                            if (!scheduleFor) return null;
-                            const { text, urgency } = formatScheduledDateTime(scheduleFor);
-                            const urgencyStyles = {
-                              past: 'bg-gray-100 text-gray-600 border-gray-200',
-                              soon: 'bg-red-50 text-red-700 border-red-200 animate-pulse',
-                              today: 'bg-amber-50 text-amber-700 border-amber-200',
-                              upcoming: 'bg-green-50 text-green-700 border-green-200',
-                            };
-                            return (
-                              <span className={`
-                            inline-flex items-center gap-1.5 px-2.5 py-1 
-                            text-xs font-medium rounded-lg border
-                            ${urgencyStyles[urgency]}
-                          `}>
-                                <Calendar size={12} />
-                                {text}
-                              </span>
-                            );
-                          })()
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                    )}
-                    {visibleColumns.has('submitted') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-500">
-                          {formatDate(lead.submittedAt)}
-                        </span>
-                      </td>
-                    )}
-                    {visibleColumns.has('lastActivity') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {lead.lastUpdatedAt ? (
-                          <span className="text-sm text-gray-700 font-medium">
-                            {formatRelativeTime(lead.lastUpdatedAt)}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            New (untouched)
-                          </span>
-                        )}
-                      </td>
-                    )}
-                    {visibleColumns.has('preferred') && (
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        {lead.preferredContactMethod ? (
-                          (() => {
-                            const method = lead.preferredContactMethod.toLowerCase();
-                            const isPhone = method.includes('phone') || method === 'call';
-                            const isEmail = method === 'email';
-                            const isSms = method === 'sms' || method === 'text';
-                            const isAny = method === 'any' || method === 'no preference';
+                        </td>
+                      )}
+                      {visibleColumns.has('preferred') && (
+                        <td className="px-2 py-3 whitespace-nowrap">
+                          {lead.preferredContactMethod ? (
+                            (() => {
+                              const method = lead.preferredContactMethod.toLowerCase();
+                              const isPhone = method.includes('phone') || method === 'call';
+                              const isEmail = method === 'email';
+                              const isSms = method === 'sms' || method === 'text';
+                              const isAny = method === 'any' || method === 'no preference';
 
-                            return (
-                              <span className={`
+                              return (
+                                <span className={`
                             inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full
                             ${isPhone ? 'bg-green-100 text-green-700'
-                                  : isEmail ? 'bg-blue-100 text-blue-700'
-                                    : isSms ? 'bg-purple-100 text-purple-700'
-                                      : isAny ? 'bg-gray-100 text-gray-600'
-                                        : 'bg-amber-100 text-amber-700'}
+                                    : isEmail ? 'bg-blue-100 text-blue-700'
+                                      : isSms ? 'bg-purple-100 text-purple-700'
+                                        : isAny ? 'bg-gray-100 text-gray-600'
+                                          : 'bg-amber-100 text-amber-700'}
                           `}>
-                                {isPhone && <PhoneCall size={10} />}
-                                {isEmail && <Mail size={10} />}
-                                {isSms && <MessageSquare size={10} />}
-                                {formatPreferredContact(lead.preferredContactMethod)}
-                              </span>
-                            );
-                          })()
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
-                    )}
-                    {visibleColumns.has('actions') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          {/* CALL BUTTON - Triggers tel: link for 3CX Chrome extension */}
-                          {lead.phone && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCallVia3CX(lead.phone);
-                              }}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors duration-150"
-                              title={`Call ${lead.firstName} via 3CX`}
-                            >
-                              <PhoneCall size={15} />
-                            </button>
+                                  {isPhone && <PhoneCall size={10} />}
+                                  {isEmail && <Mail size={10} />}
+                                  {isSms && <MessageSquare size={10} />}
+                                  {formatPreferredContact(lead.preferredContactMethod)}
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
                           )}
-
-                          {/* EMAIL BUTTON */}
-                          {lead.email && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedLeadForComm(lead);
-                                setEmailDialogOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors duration-150"
-                              title={`Email ${lead.firstName}`}
-                            >
-                              <Mail size={15} />
-                            </button>
-                          )}
-
-                          {/* SMS BUTTON */}
-                          {lead.phone && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedLeadForComm(lead);
-                                setSmsDialogOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150"
-                              title={`SMS ${lead.firstName}`}
-                            >
-                              <MessageSquare size={15} />
-                            </button>
-                          )}
-
-                          {/* ATTACHMENT BUTTON — only visible for leads with attachments */}
-                          {attachmentCounts[lead.id] && attachmentCounts[lead.id] > 0 && (
-                            <div className="relative">
+                        </td>
+                      )}
+                      {visibleColumns.has('actions') && (
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* CALL BUTTON - Triggers tel: link for 3CX Chrome extension */}
+                            {lead.phone && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openAttachDropdown(lead.id, e.currentTarget);
+                                  handleCallVia3CX(lead.phone);
                                 }}
-                                className={`p-1.5 rounded-lg transition-colors duration-150 relative ${attachDropdownLeadId === lead.id
-                                  ? 'text-amber-600 bg-amber-50'
-                                  : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
-                                  }`}
-                                title={`${attachmentCounts[lead.id]} attachment${attachmentCounts[lead.id] > 1 ? 's' : ''}`}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors duration-150"
+                                title={`Call ${lead.firstName} via 3CX`}
                               >
-                                <Paperclip size={15} />
-                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                                  {attachmentCounts[lead.id]}
-                                </span>
+                                <PhoneCall size={15} />
                               </button>
+                            )}
 
-                              {/* Attachment Dropdown — Premium */}
-                              {attachDropdownLeadId === lead.id && (
-                                <div
-                                  ref={attachDropdownRef}
-                                  className={`absolute right-0 z-50 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${attachDropdownPlacement === 'up' ? 'bottom-full mb-1 origin-bottom-right' : 'top-full mt-1 origin-top-right'}`}
-                                  onClick={(e) => e.stopPropagation()}
+                            {/* EMAIL BUTTON */}
+                            {lead.email && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedLeadForComm(lead);
+                                  setEmailDialogOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors duration-150"
+                                title={`Email ${lead.firstName}`}
+                              >
+                                <Mail size={15} />
+                              </button>
+                            )}
+
+                            {/* SMS BUTTON */}
+                            {lead.phone && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedLeadForComm(lead);
+                                  setSmsDialogOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors duration-150"
+                                title={`SMS ${lead.firstName}`}
+                              >
+                                <MessageSquare size={15} />
+                              </button>
+                            )}
+
+                            {/* ATTACHMENT BUTTON — only visible for leads with attachments */}
+                            {attachmentCounts[lead.id] && attachmentCounts[lead.id] > 0 && (
+                              <div className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openAttachDropdown(lead.id, e.currentTarget);
+                                  }}
+                                  className={`p-1.5 rounded-lg transition-colors duration-150 relative ${attachDropdownLeadId === lead.id
+                                    ? 'text-amber-600 bg-amber-50'
+                                    : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
+                                    }`}
+                                  title={`${attachmentCounts[lead.id]} attachment${attachmentCounts[lead.id] > 1 ? 's' : ''}`}
                                 >
-                                  {/* Dropdown Header */}
-                                  <div className="flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
-                                    <span className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
-                                      <Paperclip size={12} />
-                                      Attachments ({attachmentCounts[lead.id] || attachDropdownItems.length})
-                                    </span>
-                                    <button
-                                      onClick={() => { setAttachDropdownLeadId(null); setAttachDeleteConfirm(null); }}
-                                      className="text-amber-400 hover:text-amber-600 text-sm font-medium"
-                                    >×</button>
-                                  </div>
+                                  <Paperclip size={15} />
+                                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                                    {attachmentCounts[lead.id]}
+                                  </span>
+                                </button>
 
-                                  {/* Loading State */}
-                                  {attachDropdownLoading && (
-                                    <div className="flex items-center justify-center py-6">
-                                      <Loader2 size={18} className="animate-spin text-amber-500" />
-                                      <span className="ml-2 text-xs text-gray-500">Loading attachments...</span>
-                                    </div>
-                                  )}
-
-                                  {/* Attachment List */}
-                                  {!attachDropdownLoading && attachDropdownItems.length > 0 && (
-                                    <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
-                                      {attachDropdownItems.map((att) => (
-                                        <div key={att.id}>
-                                          {/* Delete Confirmation Inline */}
-                                          {attachDeleteConfirm === att.id ? (
-                                            <div className="flex items-center justify-between px-3.5 py-2.5 bg-red-50 border-l-2 border-red-400">
-                                              <span className="text-[11px] text-red-700 font-medium">Delete this file?</span>
-                                              <div className="flex items-center gap-1.5">
-                                                <button
-                                                  onClick={() => setAttachDeleteConfirm(null)}
-                                                  className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-white border border-gray-200 rounded hover:bg-gray-50 transition-colors"
-                                                >Cancel</button>
-                                                <button
-                                                  onClick={() => handleAttachDelete(lead.id, att.id)}
-                                                  disabled={attachDeleting === att.id}
-                                                  className="px-2 py-0.5 text-[10px] font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1"
-                                                >
-                                                  {attachDeleting === att.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
-                                                  Delete
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ) : (
-                                            <div className="flex items-center gap-2 px-3.5 py-2 hover:bg-gray-50/80 transition-colors group/item">
-                                              {/* File Type Icon */}
-                                              <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center">
-                                                {getFileIcon(att.file_type)}
-                                              </div>
-                                              {/* File Info */}
-                                              <div className="flex-1 min-w-0">
-                                                <p className="text-xs font-medium text-gray-800 truncate" title={att.filename}>
-                                                  {att.filename}
-                                                </p>
-                                                <p className="text-[10px] text-gray-400">
-                                                  {formatFileSize(att.file_size)} · {new Date(att.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                                </p>
-                                              </div>
-                                              {/* Action Buttons */}
-                                              <div className="flex items-center gap-0.5 flex-shrink-0">
-                                                {/* Download */}
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); handleDownload(lead.id, att); }}
-                                                  disabled={attachDownloading === att.id}
-                                                  className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
-                                                  title={`Download ${att.filename}`}
-                                                >
-                                                  {attachDownloading === att.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                                                </button>
-                                                {/* Delete */}
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); setAttachDeleteConfirm(att.id); }}
-                                                  className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover/item:opacity-100"
-                                                  title={`Delete ${att.filename}`}
-                                                >
-                                                  <Trash2 size={13} />
-                                                </button>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {/* Empty State */}
-                                  {!attachDropdownLoading && attachDropdownItems.length === 0 && (
-                                    <div className="py-6 text-center">
-                                      <Paperclip size={20} className="mx-auto text-gray-300 mb-1" />
-                                      <p className="text-xs text-gray-400">No attachments found</p>
-                                    </div>
-                                  )}
-
-                                  {/* Footer — Upload More */}
-                                  {!attachDropdownLoading && (
-                                    <div className="border-t border-gray-100 px-3.5 py-2.5 bg-gray-50/50">
-                                      <input
-                                        ref={attachFileInputRef}
-                                        type="file"
-                                        multiple
-                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp"
-                                        className="hidden"
-                                        onChange={(e) => {
-                                          if (e.target.files && e.target.files.length > 0) {
-                                            handleAttachUploadMore(lead.id, e.target.files);
-                                          }
-                                        }}
-                                      />
+                                {/* Attachment Dropdown — Premium */}
+                                {attachDropdownLeadId === lead.id && (
+                                  <div
+                                    ref={attachDropdownRef}
+                                    className={`absolute right-0 z-50 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${attachDropdownPlacement === 'up' ? 'bottom-full mb-1 origin-bottom-right' : 'top-full mt-1 origin-top-right'}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {/* Dropdown Header */}
+                                    <div className="flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-100">
+                                      <span className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                                        <Paperclip size={12} />
+                                        Attachments ({attachmentCounts[lead.id] || attachDropdownItems.length})
+                                      </span>
                                       <button
-                                        onClick={() => attachFileInputRef.current?.click()}
-                                        disabled={attachUploading}
-                                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                                      >
-                                        {attachUploading ? (
-                                          <>
-                                            <Loader2 size={12} className="animate-spin" />
-                                            Uploading...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Plus size={12} />
-                                            Upload More Documents
-                                          </>
-                                        )}
-                                      </button>
+                                        onClick={() => { setAttachDropdownLeadId(null); setAttachDeleteConfirm(null); }}
+                                        className="text-amber-400 hover:text-amber-600 text-sm font-medium"
+                                      >×</button>
                                     </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
 
-                          {/* VIEW BUTTON */}
-                          <button
-                            onClick={() => onView(lead.id)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors duration-150"
-                            title="View lead details"
-                          >
-                            <Eye size={15} />
-                          </button>
+                                    {/* Loading State */}
+                                    {attachDropdownLoading && (
+                                      <div className="flex items-center justify-center py-6">
+                                        <Loader2 size={18} className="animate-spin text-amber-500" />
+                                        <span className="ml-2 text-xs text-gray-500">Loading attachments...</span>
+                                      </div>
+                                    )}
 
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                                    {/* Attachment List */}
+                                    {!attachDropdownLoading && attachDropdownItems.length > 0 && (
+                                      <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+                                        {attachDropdownItems.map((att) => (
+                                          <div key={att.id}>
+                                            {/* Delete Confirmation Inline */}
+                                            {attachDeleteConfirm === att.id ? (
+                                              <div className="flex items-center justify-between px-3.5 py-2.5 bg-red-50 border-l-2 border-red-400">
+                                                <span className="text-[11px] text-red-700 font-medium">Delete this file?</span>
+                                                <div className="flex items-center gap-1.5">
+                                                  <button
+                                                    onClick={() => setAttachDeleteConfirm(null)}
+                                                    className="px-2 py-0.5 text-[10px] font-medium text-gray-600 bg-white border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+                                                  >Cancel</button>
+                                                  <button
+                                                    onClick={() => handleAttachDelete(lead.id, att.id)}
+                                                    disabled={attachDeleting === att.id}
+                                                    className="px-2 py-0.5 text-[10px] font-medium text-white bg-red-600 rounded hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                  >
+                                                    {attachDeleting === att.id ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                                                    Delete
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="flex items-center gap-2 px-3.5 py-2 hover:bg-gray-50/80 transition-colors group/item">
+                                                {/* File Type Icon */}
+                                                <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center">
+                                                  {getFileIcon(att.file_type)}
+                                                </div>
+                                                {/* File Info */}
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-xs font-medium text-gray-800 truncate" title={att.filename}>
+                                                    {att.filename}
+                                                  </p>
+                                                  <p className="text-[10px] text-gray-400">
+                                                    {formatFileSize(att.file_size)} · {new Date(att.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                  </p>
+                                                </div>
+                                                {/* Action Buttons */}
+                                                <div className="flex items-center gap-0.5 flex-shrink-0">
+                                                  {/* Download */}
+                                                  <button
+                                                    onClick={(e) => { e.stopPropagation(); handleDownload(lead.id, att); }}
+                                                    disabled={attachDownloading === att.id}
+                                                    className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                                    title={`Download ${att.filename}`}
+                                                  >
+                                                    {attachDownloading === att.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                                                  </button>
+                                                  {/* Delete */}
+                                                  <button
+                                                    onClick={(e) => { e.stopPropagation(); setAttachDeleteConfirm(att.id); }}
+                                                    className="p-1.5 rounded-lg text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover/item:opacity-100"
+                                                    title={`Delete ${att.filename}`}
+                                                  >
+                                                    <Trash2 size={13} />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Empty State */}
+                                    {!attachDropdownLoading && attachDropdownItems.length === 0 && (
+                                      <div className="py-6 text-center">
+                                        <Paperclip size={20} className="mx-auto text-gray-300 mb-1" />
+                                        <p className="text-xs text-gray-400">No attachments found</p>
+                                      </div>
+                                    )}
+
+                                    {/* Footer — Upload More */}
+                                    {!attachDropdownLoading && (
+                                      <div className="border-t border-gray-100 px-3.5 py-2.5 bg-gray-50/50">
+                                        <input
+                                          ref={attachFileInputRef}
+                                          type="file"
+                                          multiple
+                                          accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp"
+                                          className="hidden"
+                                          onChange={(e) => {
+                                            if (e.target.files && e.target.files.length > 0) {
+                                              handleAttachUploadMore(lead.id, e.target.files);
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          onClick={() => attachFileInputRef.current?.click()}
+                                          disabled={attachUploading}
+                                          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                          {attachUploading ? (
+                                            <>
+                                              <Loader2 size={12} className="animate-spin" />
+                                              Uploading...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Plus size={12} />
+                                              Upload More Documents
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* VIEW BUTTON */}
+                            <button
+                              onClick={() => onView(lead.id)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors duration-150"
+                              title="View lead details"
+                            >
+                              <Eye size={15} />
+                            </button>
+
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
