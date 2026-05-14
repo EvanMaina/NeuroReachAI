@@ -47,6 +47,8 @@ class EmailService:
         self.smtp_password = getattr(settings, 'smtp_password', '')
         self.from_email = getattr(
             settings, 'from_email', 'noreply@neuroreach.ai')
+        self.reply_to_email = getattr(
+            settings, 'reply_to_email', 'ask@tmsinstitute.co')
         self.from_name = getattr(settings, 'from_name', 'TMS Institute of Arizona')
 
     def send_email(
@@ -55,6 +57,7 @@ class EmailService:
         subject: str,
         html_content: str,
         text_content: Optional[str] = None,
+        reply_to: Optional[str] = None,
     ) -> bool:
         """
         Send an email.
@@ -64,6 +67,7 @@ class EmailService:
             subject: Email subject
             html_content: HTML email body
             text_content: Plain text email body (optional)
+            reply_to: Reply-To email address (optional)
 
         Returns:
             True if sent successfully, False otherwise
@@ -74,6 +78,9 @@ class EmailService:
             msg['Subject'] = subject
             msg['From'] = f"{self.from_name} <{self.from_email}>"
             msg['To'] = to_email
+            resolved_reply_to = (reply_to or self.reply_to_email or "").strip()
+            if resolved_reply_to:
+                msg['Reply-To'] = resolved_reply_to
 
             # Add text part
             if text_content:

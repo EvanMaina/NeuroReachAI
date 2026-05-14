@@ -292,6 +292,10 @@ class Settings(BaseSettings):
         default="noreply@neuroreach.ai",
         description="From email address"
     )
+    reply_to_email: str = Field(
+        default="ask@tmsinstitute.co",
+        description="Reply-To email address for outbound emails"
+    )
     from_name: str = Field(
         default="TMS Institute of Arizona",
         description="From name for emails"

@@ -272,6 +272,7 @@ def send_email_via_paubox(
     html_content: str,
     text_content: Optional[str] = None,
     lead_id: Optional[str] = None,
+    reply_to: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Convenience function to send email with provider controlled by EMAIL_MODE.
@@ -286,11 +287,15 @@ def send_email_via_paubox(
         html_content: HTML email body
         text_content: Plain text email body (optional)
         lead_id: Optional lead ID for logging
+        reply_to: Reply-To email address (defaults to settings.reply_to_email)
         
     Returns:
         Dict with success status and details
     """
     email_mode = getattr(settings, "email_mode", "maildev").lower().strip()
+    resolved_reply_to = (
+        reply_to or getattr(settings, "reply_to_email", "ask@tmsinstitute.co") or ""
+    ).strip()
 
     # =========================================================================
     # MAILDEV MODE: Go straight to SMTP (MailDev container), skip Paubox
@@ -305,6 +310,7 @@ def send_email_via_paubox(
                 subject=subject,
                 html_content=html_content,
                 text_content=text_content,
+                reply_to=resolved_reply_to,
             )
 
             if smtp_result:
@@ -330,7 +336,8 @@ def send_email_via_paubox(
             to_email=to_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            reply_to=resolved_reply_to,
         )
         
         if result.get("success"):
@@ -350,7 +357,8 @@ def send_email_via_paubox(
             to_email=to_email,
             subject=subject,
             html_content=html_content,
-            text_content=text_content
+            text_content=text_content,
+            reply_to=resolved_reply_to,
         )
         
         return {
