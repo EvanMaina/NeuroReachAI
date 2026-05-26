@@ -291,7 +291,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
   const [rowsPerPage, setRowsPerPage]     = useState<typeof ROWS_PER_PAGE_OPTIONS[number]>(25);
   const [colWidths, setColWidths]   = useState<Record<string, number>>(loadColWidths);
   const [phoneDialOpen, setPhoneDialOpen]         = useState(false);
-  const [phoneTarget, setPhoneTarget]             = useState<{ phone: string; name: string } | null>(null);
+
   const [emailDialogOpen, setEmailDialogOpen]     = useState(false);
   const [smsDialogOpen, setSmsDialogOpen]         = useState(false);
   const [selectedLeadForComm, setSelectedLeadForComm] = useState<LeadTableRow | null>(null);
@@ -341,7 +341,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
 
   const handleOpenDial = useCallback((lead: LeadTableRow) => {
     if (lead.phone?.trim()) { handleCallVia3CX(lead.phone); }
-    else { setPhoneTarget({ phone: '', name: `${lead.firstName} ${lead.lastName}`.trim() }); setPhoneDialOpen(true); }
+    else { setPhoneDialOpen(true); }
   }, [handleCallVia3CX]);
 
   const handleEmail = useCallback((lead: LeadTableRow) => {
@@ -724,7 +724,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
 
       <PhoneDialModal
         isOpen={phoneDialOpen}
-        onClose={() => { setPhoneDialOpen(false); setPhoneTarget(null); }}
+        onClose={() => { setPhoneDialOpen(false); }}
         onCall={handleCallVia3CX}
       />
 

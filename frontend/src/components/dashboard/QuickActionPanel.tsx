@@ -62,6 +62,7 @@ const OUTCOME_ICONS: Record<ContactOutcome, React.ReactNode> = {
   NOT_INTERESTED: <Ban size={18} className="text-slate-500" />,
   SCHEDULED: <CheckCircle size={18} className="text-teal-500" />,
   COMPLETED: <CheckCircle size={18} className="text-green-500" />,
+  NO_SHOW: <AlertCircle size={18} className="text-rose-500" />,
 };
 
 /** Human-readable descriptions for confirmation screen */

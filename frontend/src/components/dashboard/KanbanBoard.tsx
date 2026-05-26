@@ -137,6 +137,13 @@ const OUTCOME_PILL_CONFIG: Record<ContactOutcome, {
     textColor: 'text-green-700',
     borderColor: 'border-green-200',
   },
+  NO_SHOW: {
+    label: 'No Show',
+    icon: <AlertTriangle size={12} />,
+    bgColor: 'bg-rose-50',
+    textColor: 'text-rose-700',
+    borderColor: 'border-rose-200',
+  },
 };
 
 const COLUMNS: KanbanColumn[] = [
