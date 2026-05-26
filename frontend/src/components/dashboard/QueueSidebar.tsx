@@ -40,6 +40,7 @@ import {
   PhoneOff,
   Inbox,
   ThumbsDown,
+  CalendarX2,
 } from 'lucide-react';
 import type { LeadTableRow } from '../../types/lead';
 
@@ -50,6 +51,7 @@ export type QueueType =
   | 'follow_up'
   | 'callback'
   | 'scheduled'
+  | 'post_consultation'
   | 'completed'
   | 'unreachable'
   | 'not_interested'
@@ -141,6 +143,16 @@ const QUEUE_CONFIG: QueueConfig[] = [
     category: 'outcome',
   },
   {
+    id: 'post_consultation',
+    label: 'Post-Consultation',
+    icon: <CalendarX2 size={18} />,
+    color: 'text-rose-600',
+    bgColor: 'bg-rose-50',
+    borderColor: 'border-rose-200',
+    description: 'No-show & missed consultations — re-engage',
+    category: 'outcome',
+  },
+  {
     id: 'completed',
     label: 'Completed',
     icon: <CheckCircle size={18} />,
@@ -218,7 +230,7 @@ const QUEUE_CONFIG: QueueConfig[] = [
  * 
  * Only NEW (or null) means never contacted.
  */
-const CONTACTED_OUTCOMES = ['ANSWERED', 'NO_ANSWER', 'UNREACHABLE', 'CALLBACK_REQUESTED', 'NOT_INTERESTED', 'SCHEDULED', 'COMPLETED'];
+const CONTACTED_OUTCOMES = ['ANSWERED', 'NO_ANSWER', 'UNREACHABLE', 'CALLBACK_REQUESTED', 'NOT_INTERESTED', 'SCHEDULED', 'COMPLETED', 'NO_SHOW'];
 
 /**
  * FOLLOW-UP OUTCOMES that need another contact attempt.
@@ -261,6 +273,7 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
     follow_up: 0,
     callback: 0,
     scheduled: 0,
+    post_consultation: 0,
     completed: 0,
     unreachable: 0,
     not_interested: 0,
@@ -318,9 +331,13 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
 
     // FOLLOW-UP: Needs another contact attempt (OVERLAPPING with Contacted)
     // Includes: contactOutcome in [NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED]
-    // OR follow_up_reason in [No Show, Cancelled Appointment, Second Consult Required, etc.]
-    // CRITICAL: NOT_INTERESTED leads are EXCLUDED — they have their own queue and 3-week cadence
-    if (outcome !== 'NOT_INTERESTED' && (FOLLOWUP_OUTCOMES.includes(outcome) || (lead.followUpReason && FOLLOWUP_REASONS.includes(lead.followUpReason)))) {
+    // OR follow_up_reason in [Cancelled Appointment, Second Consult Required, etc.]
+    // EXCLUDED: NOT_INTERESTED (own queue) and NO_SHOW (Post-Consultation queue)
+    if (
+      outcome !== 'NOT_INTERESTED' &&
+      outcome !== 'NO_SHOW' &&
+      (FOLLOWUP_OUTCOMES.includes(outcome) || (lead.followUpReason && FOLLOWUP_REASONS.includes(lead.followUpReason) && lead.followUpReason !== 'No Show'))
+    ) {
       counts.follow_up++;
     }
 
@@ -338,6 +355,11 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
     // NOT INTERESTED: contactOutcome = NOT_INTERESTED or follow_up_reason = "Not Interested"
     if (outcome === 'NOT_INTERESTED' || lead.followUpReason === 'Not Interested') {
       counts.not_interested++;
+    }
+
+    // POST-CONSULTATION: NO_SHOW outcome or legacy "No Show" follow_up_reason
+    if (outcome === 'NO_SHOW' || lead.followUpReason === 'No Show') {
+      counts.post_consultation++;
     }
 
     // Priority queues - cross-cutting views by urgency level
@@ -584,15 +606,14 @@ export const filterLeadsByQueue = (
 
     case 'follow_up':
       // Needs another contact attempt (OVERLAPS with Contacted)
-      // Includes: contactOutcome in [NO_ANSWER, UNREACHABLE, CALLBACK_REQUESTED]
-      // OR follow_up_reason in [No Show, Cancelled Appointment, Second Consult Required, etc.]
-      // CRITICAL: NOT_INTERESTED leads are EXCLUDED — they have their own queue and 3-week cadence
+      // EXCLUDED: NOT_INTERESTED (own queue) and NO_SHOW (Post-Consultation queue)
       return activeLeads.filter(l =>
         l.status !== 'scheduled' &&
         l.contactOutcome !== 'NOT_INTERESTED' &&
+        l.contactOutcome !== 'NO_SHOW' &&
         (
           (l.contactOutcome && FOLLOWUP_OUTCOMES.includes(l.contactOutcome)) ||
-          (l.followUpReason && FOLLOWUP_REASONS.includes(l.followUpReason))
+          (l.followUpReason && FOLLOWUP_REASONS.includes(l.followUpReason) && l.followUpReason !== 'No Show')
         )
       );
 
@@ -614,6 +635,14 @@ export const filterLeadsByQueue = (
     case 'scheduled':
       // Consultation scheduled (status = 'scheduled')
       return activeLeads.filter(l => l.status === 'scheduled');
+
+    case 'post_consultation':
+      // No-show & missed consultations (migration 029).
+      // Matches contact_outcome = NO_SHOW OR legacy follow_up_reason = "No Show".
+      return leads.filter(l =>
+        l.contactOutcome === 'NO_SHOW' ||
+        (l.followUpReason === 'No Show' && l.contactOutcome !== 'COMPLETED')
+      );
 
     case 'completed':
       // Consultation complete - Success!

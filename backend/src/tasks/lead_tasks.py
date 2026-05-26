@@ -1033,24 +1033,15 @@ def send_not_interested_follow_ups(self) -> Dict[str, Any]:
     """
     Automated follow-up for leads marked "Not Interested".
 
-    Sends a softer SMS + email every 3 weeks (21 days) to re-engage
-    leads who initially declined. Uses separate, warmer messaging
-    templates distinct from the standard 6-hour follow-up cadence.
-
-    Eligibility rules:
-    - contact_outcome == NOT_INTERESTED
-    - Lead is NOT soft-deleted (deleted_at IS NULL)
-    - Lead is NOT in SCHEDULED status (if they scheduled, stop follow-ups)
-    - last_follow_up_sent_at is NULL (never sent) OR > 21 days ago
-
-    Follow-ups STOP automatically when:
-    - Lead's contact_outcome changes away from NOT_INTERESTED
-    - Lead gets scheduled (status = SCHEDULED)
-    - Lead is soft-deleted
+    DISABLED 2026-05-22: Automatic outreach to not-interested leads has been
+    turned off per coordinator team request. Leads who decline should not
+    receive unsolicited contact. Re-enable by removing the early return below.
 
     Returns:
         Dict with follow-up stats
     """
+    logger.info("send_not_interested_follow_ups: disabled — returning early")
+    return {"status": "disabled", "sent_email": 0, "sent_sms": 0, "skipped": 0, "errors": []}
     from ..services.email_templates import send_not_interested_follow_up_email
     from ..services.sms_service import sms_service
     from ..services.encryption import EncryptionService

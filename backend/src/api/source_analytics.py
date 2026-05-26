@@ -22,12 +22,12 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, case, text
+from sqlalchemy import func, and_, case, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, Field
 
 from ..core.database import get_db
-from ..models.lead import Lead, PriorityType, LeadStatus, LeadSource
+from ..models.lead import Lead, PriorityType, LeadStatus, LeadSource, ManualLeadSource
 from ..services.cache import get_cache
 from ..core.auth import get_current_user
 
@@ -97,6 +97,17 @@ PLATFORM_ICONS = {
     "Google Ads": "search",
     "Jotform": "file-text",
     "Referral": "users",
+}
+
+# Platform routing for coordinator-attributed manual leads (migration 028).
+# Keys match ManualLeadSource enum values; values must be in ALLOWED_PLATFORMS.
+MANUAL_SOURCE_PLATFORM: Dict[str, str] = {
+    "google_ads":        "Google Ads",
+    "google_search":     "Widget",
+    "social_media":      "Referral",
+    "friend":            "Referral",
+    "provider_referral": "Referral",
+    "other":             "Widget",
 }
 
 # Display-name map for condition enum values — mirrors the one in ai_insights_service.py.
@@ -281,9 +292,10 @@ async def get_source_analytics(
         last_week = datetime.now(timezone.utc) - timedelta(days=7)
         two_weeks_ago = datetime.now(timezone.utc) - timedelta(days=14)
         
-        # Get all leads in period with source info
-        # CRITICAL: Exclude soft-deleted leads (deleted_at IS NOT NULL)
-        # This ensures consistency with metrics.py and All Leads table
+        # Get all leads in period with source info.
+        # CRITICAL: Exclude soft-deleted leads.
+        # Manual leads are included ONLY when manual_lead_source is set
+        # (i.e. the coordinator attributed them to a channel — migration 028).
         leads = db.query(
             Lead.utm_source,
             Lead.utm_medium,
@@ -291,11 +303,19 @@ async def get_source_analytics(
             Lead.status,
             Lead.score,
             Lead.created_at,
-            Lead.is_referral,  # REFERRAL OVERRIDE: needed to classify referral leads correctly
+            Lead.is_referral,
+            Lead.source,
+            Lead.manual_lead_source,
         ).filter(
             Lead.created_at >= cutoff_date,
-            Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
-            Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
+            Lead.deleted_at.is_(None),
+            or_(
+                Lead.source != LeadSource.manual,
+                and_(
+                    Lead.source == LeadSource.manual,
+                    Lead.manual_lead_source.isnot(None),
+                ),
+            ),
         ).all()
         
         logger.info(f"[{request_id}] Retrieved {len(leads)} leads for analysis")
@@ -319,11 +339,13 @@ async def get_source_analytics(
         
         # Aggregate by platform
         for lead in leads:
-            # REFERRAL OVERRIDE: If lead.is_referral is True, classify as Referral
-            # regardless of utm_source/utm_medium. This fixes Widget/Jotform leads
-            # that answered "Yes" to the referral question being misclassified.
+            # Priority 1: is_referral flag overrides all other signals
             if lead.is_referral:
                 platform = "Referral"
+            # Priority 2: coordinator-attributed manual lead (migration 028)
+            elif lead.source == LeadSource.manual and lead.manual_lead_source:
+                platform = MANUAL_SOURCE_PLATFORM.get(lead.manual_lead_source, "Widget")
+            # Priority 3: UTM-based routing (organic widget/jotform/google ads)
             else:
                 platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
             
@@ -374,9 +396,14 @@ async def get_source_analytics(
             Lead.utm_medium,
             Lead.status,
             Lead.is_referral,
+            Lead.source,
+            Lead.manual_lead_source,
         ).filter(
             Lead.deleted_at.is_(None),
-            Lead.source != LeadSource.manual,
+            or_(
+                Lead.source != LeadSource.manual,
+                and_(Lead.source == LeadSource.manual, Lead.manual_lead_source.isnot(None)),
+            ),
         ).all()
 
         all_time_data: Dict[str, Dict[str, int]] = {
@@ -385,6 +412,8 @@ async def get_source_analytics(
         for al in all_time_leads:
             if al.is_referral:
                 p = "Referral"
+            elif al.source == LeadSource.manual and al.manual_lead_source:
+                p = MANUAL_SOURCE_PLATFORM.get(al.manual_lead_source, "Widget")
             else:
                 p = get_platform_from_source(al.utm_source, al.utm_medium)
             if p not in all_time_data:
@@ -534,17 +563,21 @@ async def get_platform_trend(
         end_date = datetime.now(timezone.utc).date()
         start_date = end_date - timedelta(days=period)
         
-        # Get leads with source info
-        # Exclude soft-deleted leads for consistency
+        # Get leads with source info — include attributed manual leads.
         leads = db.query(
             func.date(Lead.created_at).label('date'),
             Lead.utm_source,
             Lead.utm_medium,
-            Lead.is_referral,  # REFERRAL OVERRIDE: needed to classify referral leads correctly
+            Lead.is_referral,
+            Lead.source,
+            Lead.manual_lead_source,
         ).filter(
             func.date(Lead.created_at) >= start_date,
-            Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
-            Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
+            Lead.deleted_at.is_(None),
+            or_(
+                Lead.source != LeadSource.manual,
+                and_(Lead.source == LeadSource.manual, Lead.manual_lead_source.isnot(None)),
+            ),
         ).all()
         
         # Aggregate by date and platform (all 4 platforms)
@@ -564,10 +597,10 @@ async def get_platform_trend(
         for lead in leads:
             date_str = lead.date.isoformat() if lead.date else None
             if date_str and date_str in daily_data:
-                # REFERRAL OVERRIDE: If lead.is_referral is True, classify as Referral
-                # regardless of utm_source/utm_medium.
                 if lead.is_referral:
                     platform = "Referral"
+                elif lead.source == LeadSource.manual and lead.manual_lead_source:
+                    platform = MANUAL_SOURCE_PLATFORM.get(lead.manual_lead_source, "Widget")
                 else:
                     platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
                 if platform in daily_data[date_str]:
@@ -646,21 +679,25 @@ async def get_hot_leads_by_platform(
     try:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
         
-        # Get hot leads with source info
-        # Exclude soft-deleted leads for consistency
+        # Get hot leads with source info — include attributed manual leads.
         hot_leads = db.query(
             Lead.utm_source,
             Lead.utm_medium,
-            Lead.is_referral,  # REFERRAL OVERRIDE: needed to classify referral leads correctly
+            Lead.is_referral,
             Lead.status,
             Lead.score,
             Lead.condition,
+            Lead.source,
+            Lead.manual_lead_source,
         ).filter(
             and_(
                 Lead.created_at >= cutoff_date,
                 Lead.priority == PriorityType.HOT,
-                Lead.deleted_at.is_(None),  # Exclude soft-deleted leads
-                Lead.source != LeadSource.manual,  # Exclude coordinator-added manual leads from platform analytics
+                Lead.deleted_at.is_(None),
+                or_(
+                    Lead.source != LeadSource.manual,
+                    and_(Lead.source == LeadSource.manual, Lead.manual_lead_source.isnot(None)),
+                ),
             )
         ).all()
         
@@ -677,10 +714,10 @@ async def get_hot_leads_by_platform(
             }
         
         for lead in hot_leads:
-            # REFERRAL OVERRIDE: If lead.is_referral is True, classify as Referral
-            # regardless of utm_source/utm_medium.
             if lead.is_referral:
                 platform = "Referral"
+            elif lead.source == LeadSource.manual and lead.manual_lead_source:
+                platform = MANUAL_SOURCE_PLATFORM.get(lead.manual_lead_source, "Widget")
             else:
                 platform = get_platform_from_source(lead.utm_source, lead.utm_medium)
             

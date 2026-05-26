@@ -124,7 +124,7 @@ type PageType = 'dashboard' | 'coordinator' | 'leads' | 'deleted-leads' | 'provi
 // Valid coordinator queue types
 const COORDINATOR_QUEUES = [
   'all', 'new', 'contacted', 'followup', 'callback',
-  'scheduled', 'completed', 'unreachable', 'not-interested', 'hot', 'medium', 'low',
+  'scheduled', 'post-consultation', 'completed', 'unreachable', 'not-interested', 'hot', 'medium', 'low',
 ] as const;
 
 interface RouteInfo {

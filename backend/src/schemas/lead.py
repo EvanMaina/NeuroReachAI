@@ -690,7 +690,13 @@ class LeadResponse(BaseModel):
         default=None,
         description="When to follow up with this lead"
     )
-    
+
+    # No-show reason captured when coordinator marks a scheduled lead as no-show (migration 029)
+    no_show_reason: Optional[str] = Field(
+        default=None,
+        description="Coordinator-selected reason why the patient missed their scheduled consultation",
+    )
+
     # Last Activity timestamp
     last_updated_at: Optional[datetime] = Field(
         default=None,
@@ -756,6 +762,18 @@ class LeadListResponse(BaseModel):
         description="Lead source (widget, jotform, google_ads, referral, manual, etc.)"
     )
     tms_therapy_interest: Optional[str] = None
+
+    # Coordinator-entered source channel for manual leads (migration 028)
+    manual_lead_source: Optional[str] = Field(
+        default=None,
+        description="How the patient found us — set by coordinator on manual lead entry",
+    )
+
+    # No-show reason captured when coordinator marks a scheduled lead as no-show (migration 029)
+    no_show_reason: Optional[str] = Field(
+        default=None,
+        description="Coordinator-selected reason why the patient missed their scheduled consultation",
+    )
 
     # Last Activity timestamp
     last_updated_at: Optional[datetime] = Field(
@@ -1081,7 +1099,21 @@ class ManualLeadCreate(BaseModel):
     )
     
     # =========================================================================
-    # Referral Support (NEW — manual leads can now be marked as referrals)
+    # Source Attribution (migration 028)
+    # How the patient discovered the clinic — routes manual leads to the
+    # correct Source Analytics platform card.
+    # =========================================================================
+    manual_lead_source: Optional[str] = Field(
+        default=None,
+        description=(
+            "Marketing attribution for this lead: google_ads, google_search, "
+            "social_media, friend, provider_referral, other. "
+            "NULL = unattributed (excluded from analytics)."
+        ),
+    )
+
+    # =========================================================================
+    # Referral Support (manual leads can now be marked as referrals)
     # =========================================================================
     is_referral: Optional[bool] = Field(
         default=False,

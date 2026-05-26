@@ -130,6 +130,8 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
     const [isSending, setIsSending] = useState(false);
     const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
     const [editablePhone, setEditablePhone] = useState('');
+    const [sendSucceeded, setSendSucceeded] = useState(false);
+    const [draining, setDraining] = useState(false);
 
     // Refs to prevent unnecessary re-renders when lead object reference changes
     const prevIsOpenRef = useRef(false);
@@ -167,6 +169,8 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
             const currentLead = leadRef.current;
             setSelectedCategory(currentLead ? 'follow_up' : 'custom');
             setSendResult(null);
+            setSendSucceeded(false);
+            setDraining(false);
             setEditablePhone(currentLead?.phone || '');
 
             if (currentLead) {
@@ -191,6 +195,14 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
             }
         }
     }, [selectedCategory, replaceVariables]);
+
+    // Auto-dismiss with drain animation after successful send
+    useEffect(() => {
+        if (!sendSucceeded) return;
+        const tDrain = setTimeout(() => setDraining(true), 150);
+        const tClose = setTimeout(() => { onSendSuccess?.(); onClose(); }, 3300);
+        return () => { clearTimeout(tDrain); clearTimeout(tClose); };
+    }, [sendSucceeded]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ---------------------------------------------------------------------------
     // Helpers
@@ -252,11 +264,7 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
                     message: `SMS sent successfully to ${recipientName}.`,
                 });
                 setIsSending(false);
-                // Defer onSendSuccess and close until after user sees confirmation
-                setTimeout(() => {
-                    onSendSuccess?.();
-                    onClose();
-                }, 2000);
+                setSendSucceeded(true);
                 return;
             } else {
                 setSendResult({ success: false, message: result.message || 'Failed to send SMS. Please try again.' });
@@ -273,6 +281,66 @@ export const SMSComposeDialog: React.FC<SMSComposeDialogProps> = ({
     // ---------------------------------------------------------------------------
 
     if (!isOpen || (!lead && !generalMode)) return null;
+
+    // ── Premium success screen ─────────────────────────────────────────────
+    if (sendSucceeded && lead) {
+        const recipientName = [lead.firstName, lead.lastName].filter(Boolean).join(' ') || 'Recipient';
+        const phone = editablePhone || lead.phone;
+        const preview = message.trim().split('\n')[0].slice(0, 80) + (message.length > 80 ? '…' : '');
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.03]">
+                <div className="w-full max-w-[480px] mx-4 rounded-2xl bg-white shadow-2xl ring-1 ring-gray-200 flex flex-col items-center py-14 px-8 text-center gap-7 overflow-hidden">
+                    {/* Animated checkmark */}
+                    <div className="relative flex items-center justify-center w-24 h-24">
+                        <span className="absolute inset-0 rounded-full bg-emerald-100 animate-ping" style={{ animationDuration: '1.8s', opacity: 0.35 }} />
+                        <span className="absolute w-20 h-20 rounded-full bg-emerald-50" />
+                        <div className="relative w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-200">
+                            <CheckCircle size={32} className="text-white" strokeWidth={2.5} />
+                        </div>
+                    </div>
+                    {/* Heading + recipient */}
+                    <div className="flex flex-col gap-1.5">
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">SMS Sent!</h3>
+                        <p className="text-sm text-gray-500 leading-relaxed">
+                            Your message to{' '}
+                            <span className="font-semibold text-gray-700">{recipientName}</span>{' '}
+                            has been delivered.
+                        </p>
+                        <p className="text-xs text-gray-400 font-mono mt-0.5">{phone}</p>
+                    </div>
+                    {/* Message preview chip */}
+                    {preview && (
+                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-100 max-w-full overflow-hidden">
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span className="text-xs text-emerald-700 font-medium truncate">{preview}</span>
+                        </div>
+                    )}
+                    {/* Drain countdown bar */}
+                    <div className="w-full max-w-[200px] flex flex-col items-center gap-2">
+                        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-emerald-400 rounded-full"
+                                style={{
+                                    width: draining ? '0%' : '100%',
+                                    transition: draining ? 'width 3000ms linear' : 'none',
+                                }}
+                            />
+                        </div>
+                        <p className="text-[11px] text-gray-400 font-medium">Closing in a moment…</p>
+                    </div>
+                    {/* Done CTA */}
+                    <button
+                        type="button"
+                        onClick={() => { onSendSuccess?.(); onClose(); }}
+                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.97] px-7 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-200 transition-all duration-150"
+                    >
+                        <CheckCircle size={16} />
+                        Done
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     const charInfo = getCharacterInfo(message);
     const isOverLimit = message.length > MAX_LENGTH;

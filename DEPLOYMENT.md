@@ -1,462 +1,365 @@
-# SleepReach — Deployment Guide
+# NeuroReach AI — Deployment Reference
 
-## Prerequisites
-
-| Tool | Version | Purpose |
-|------|---------|---------|
-| **Node.js** | 22.x | Frontend builds |
-| **Python** | 3.11 | Backend runtime |
-| **Docker** | 24+ | Container builds |
-| **AWS CLI** | 2.x | Infrastructure management |
-| **Git** | 2.x | Version control |
-
-### AWS Access
-
-```bash
-# Configure AWS CLI with the sleepreach profile
-aws configure --profile sleepreach
-# Region: us-east-2
-# Output: json
-```
-
-GitHub Secrets required (already configured):
-- `AWS_ACCESS_KEY_ID` — IAM user access key
-- `AWS_SECRET_ACCESS_KEY` — IAM user secret key
+> Last updated: 2026-05-26. Update this file whenever the pipeline changes.
 
 ---
 
-## Environment Setup
+## Overview
 
-### Local Development
+NeuroReach AI uses a **fully automatic, one-push CI/CD pipeline** on GitHub Actions, deploying to AWS ECS (Fargate).
 
+**The developer workflow is:**
+
+```
+Make changes locally → push to dev → everything happens automatically
+```
+
+One push to `dev` triggers CI, staging deploy, and production deploy — no manual steps after the push.
+
+---
+
+## Environments
+
+| Environment | URL | Branch | ECS Cluster |
+|---|---|---|---|
+| Production | https://app.tmsinstitute.co | `main` | `neuroreach-ai-cluster` |
+| Staging | https://app-staging.tmsinstitute.co | `staging` | `neuroreach-ai-cluster` |
+| Local Dev | http://localhost:5173 | — | Docker Compose |
+
+---
+
+## Pipeline Architecture
+
+```
+Developer pushes to dev
+        │
+        ▼
+┌──────────────────────────────┐
+│         CI Workflow           │  .github/workflows/ci.yml
+│  Runs on every push to dev   │
+│  and on all pull requests     │
+└─────────────┬────────────────┘
+              │ Critical checks pass?
+              ▼
+┌──────────────────────────────┐
+│    Promote & Deploy All       │  .github/workflows/promote.yml
+│    (auto-triggered by CI)     │
+└──────┬───────────────┬───────┘
+       │               │
+       ▼               ▼
+  dev → staging    staging → main
+       │               │
+       ▼               ▼
+ Deploy Staging    Deploy Production
+  (ECS Fargate)    (ECS Fargate)
+```
+
+---
+
+## Step 1 — CI Checks (`.github/workflows/ci.yml`)
+
+Runs on every push to `dev` and on every pull request.
+
+### Checks
+
+| Check | Tool | Blocks deployment? |
+|---|---|---|
+| Backend lint | Flake8 (max line 120) | No — advisory |
+| Backend type check | MyPy | No — advisory |
+| Backend unit tests | Pytest (SQLite in-memory) | No — advisory |
+| Frontend lint | ESLint | No — advisory |
+| **Frontend type check** | **TypeScript `tsc --noEmit`** | **Yes** |
+| **Frontend build** | **Vite (`npm run build` + widget + assessment)** | **Yes** |
+| Frontend tests | Vitest | No — advisory |
+| CVE scan | Trivy (CRITICAL/HIGH) | No — advisory |
+| Secret scan | Gitleaks | No — advisory |
+| **Backend Docker build** | `docker build --target production` | **Yes** |
+| Changelog check | Git diff on CHANGELOG.md | No — advisory |
+
+**CI passes if and only if `tsc`, `npm run build`, and `docker build` all succeed.**
+All other failures appear in the summary but do not block the promotion.
+
+---
+
+## Step 2 — Promote & Deploy (`.github/workflows/promote.yml`)
+
+**Auto-triggers** when CI completes with `success` on the `dev` branch.
+Can also be **manually triggered**: GitHub → Actions → "Promote & Deploy All Environments" → Run workflow.
+
+### Sequence
+
+| Step | What happens |
+|---|---|
+| **Gate** | Confirms CI passed (or manual trigger). Exits early otherwise. |
+| **Merge dev → staging** | Checks out `staging`, merges `origin/dev`, pushes. |
+| **Deploy Staging** | Calls `deploy-staging.yml` as a reusable workflow (full build + deploy). |
+| **Merge staging → main** | Runs in parallel with staging deploy. Merges `origin/staging` into `main`, pushes. |
+| **Deploy Production** | Calls `deploy-production.yml` with `skip_ci: true` (CI already ran on dev). |
+
+---
+
+## Step 3 — Build & Deploy (both environments)
+
+`deploy-staging.yml` and `deploy-production.yml` follow the same steps.
+Differences: ECS service/task names, image tag prefixes (`staging-` vs `prod-`), and target URLs.
+
+### 3.1 Repo Identity Guard *(production only)*
+`scripts/verify_repo_identity.sh` confirms the codebase is NeuroReach AI.
+Deployment aborts if another product's markers are detected (cross-contamination guard).
+
+### 3.2 AWS Authentication
+```
+aws-actions/configure-aws-credentials
+  AWS_ACCESS_KEY_ID     → GitHub secret
+  AWS_SECRET_ACCESS_KEY → GitHub secret
+  Region: us-east-2
+  ECR Registry: 131880217305.dkr.ecr.us-east-2.amazonaws.com
+```
+
+### 3.3 Build Frontend Bundles
 ```bash
-# Clone the repository
-git clone https://github.com/EvanMaina/SleepReach.git
-cd SleepReach
-
-# Backend setup
-cd backend
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
-
-# Frontend setup
-cd ../frontend
+cd frontend
 npm ci
+npm run build           # Main React SPA      → frontend/dist/
+npm run build:widget    # Embeddable widget   → frontend/dist-widget/
+npm run build:assessment # Assessment flow    → frontend/dist-assessment/
 ```
+`VITE_API_URL` is injected at build time (e.g. `https://app.tmsinstitute.co`).
 
-### Local `.env` (backend/.env)
+Bundles are copied into `backend/frontend-bundles/` so the backend Docker image can serve them as static files.
 
-Your local dev environment uses **fake services** (MailDev for email, local SMS dev server). Production credentials live **only** in AWS Secrets Manager — never in code.
-
-```env
-ENVIRONMENT=development
-DATABASE_URL=postgresql://sleepreach:password@localhost:5432/sleepreach
-REDIS_URL=redis://localhost:6379/0
-EMAIL_MODE=maildev
-SMS_MODE=local
-```
-
-### Docker Compose (Local Dev)
-
+### 3.4 Copy SQL Migrations into Docker Context
 ```bash
-# Start all services locally
-docker-compose up -d
-
-# Services started:
-#   - PostgreSQL (port 5432)
-#   - Redis (port 6379)
-#   - MailDev (port 1080 — fake email UI)
-#   - SMS Dev Server (port 8025 — fake SMS)
-#   - Backend (port 8000)
-#   - Frontend (port 3000)
+cp database/init/*.sql backend/migrations/
 ```
+All numbered SQL files (`001_…sql` through latest) are placed inside the Docker build context so `run_migrations.py` finds them at `/app/migrations/` inside the container.
 
-| Service | Local URL | Purpose |
-|---------|-----------|---------|
-| Frontend | http://localhost:3000 | Dashboard |
-| Backend API | http://localhost:8000 | API |
-| MailDev | http://localhost:1080 | Fake email inbox |
-| SMS Dev | http://localhost:8025 | Fake SMS viewer |
-| API Docs | http://localhost:8000/docs | Swagger (dev only) |
+### 3.5 Build Backend Docker Image
+```bash
+docker build \
+  --target production \
+  --tag <ecr>/neuroreach-ai/backend:prod-<sha7> \
+  --tag <ecr>/neuroreach-ai/backend:prod-latest \
+  --file backend/Dockerfile backend/
+```
+Tagged with an immutable SHA tag (`prod-<sha7>`) and a rolling `prod-latest` tag.
+
+### 3.6 CVE Scan
+Trivy scans the built image for CRITICAL CVEs. Non-blocking — results appear in the workflow summary.
+
+### 3.7 Push Image to ECR
+Three tags pushed: `prod-<sha7>`, `prod-latest`, `latest`.
+
+### 3.8 Run Database Migrations *(before deploying new backend code)*
+
+**This is the most critical step. Migrations run before new application code goes live, guaranteeing the schema is ready.**
+
+1. A new ECS task definition revision is registered using the freshly-pushed image.
+2. A one-off Fargate task runs with the command override:
+   ```
+   python /app/scripts/run_migrations.py
+   ```
+3. The script reads `*.sql` files from `/app/migrations/`, checks a `schema_migrations` table, and applies only files not yet applied. Already-applied files are skipped — re-running is always safe.
+4. The pipeline polls every 10 seconds, up to 5 minutes.
+5. **If the migration task exits non-zero, the entire deployment is aborted immediately.** The running production backend continues on the old schema — no broken intermediate state.
+
+### 3.9 Deploy Backend ECS Service
+- Downloads current task definition JSON from ECS
+- Renders a new revision with the updated image tag
+- Deploys via `aws-actions/amazon-ecs-deploy-task-definition` with `wait-for-service-stability: true` (15-minute timeout)
+- ECS rolling update: new tasks start → health checks pass → old tasks terminate
+
+### 3.10 Deploy Celery Worker ECS Service
+Same process as 3.9. Uses the same Docker image, different ECS service (`neuroreach-ai-celery-service`) and task definition (`neuroreach-ai-celery`).
+
+**Celery runs with embedded Beat** (`celery worker -B`). After deploy, the pipeline enforces `desiredCount=1` to prevent duplicate scheduled tasks (emails/SMS firing twice).
+
+### 3.11 Build & Deploy Frontend Docker Image
+```bash
+docker build --target production --file frontend/Dockerfile frontend/
+```
+Pushed to ECR as `neuroreach-ai/frontend:prod-<sha7>`, then deployed to `neuroreach-ai-frontend-service` (nginx container serving the React SPA).
+
+### 3.12 Smoke Tests
+After services stabilise, the pipeline curls the ALB directly:
+- `GET /health/live` with `Host: app.tmsinstitute.co` header — must return 200
+- `GET /health` — full health check
+- `GET https://app.tmsinstitute.co/health/live` via custom domain — non-blocking
+
+ALB DNS: `neuroreach-ai-alb-1879069977.us-east-2.elb.amazonaws.com`
+
+### 3.13 Post-Deploy Identity Verification *(production only)*
+Fetches `https://app.tmsinstitute.co/` and checks that the HTML `<title>` contains "NeuroReach". Retries up to 6 times over 60 seconds. Fails the pipeline if the wrong product is live.
+
+### 3.14 Git Release Tag *(production only)*
+Creates an annotated tag on `main`:
+```
+deploy-prod-<sha7>-<YYYYMMDD-HHMMSS>
+```
+Every production deployment is permanently traceable in git history.
 
 ---
 
-## CI/CD Pipeline
+## AWS Infrastructure
 
-### Workflows (6 total)
-
-| Workflow | File | Trigger | Purpose |
-|----------|------|---------|---------|
-| **CI** | `ci.yml` | Push to `dev`, PRs | Lint, typecheck, build, security scan |
-| **Deploy Staging** | `deploy-staging.yml` | Push to `stg` | Build → ECR → ECS staging |
-| **Deploy Production** | `deploy-production.yml` | Push to `main` | Build → ECR → ECS production |
-| **Promote** | `promote.yml` | CI passes on `dev` | Auto: dev → stg → main (full pipeline) |
-| **Rollback** | `rollback.yml` | Manual dispatch | Rollback production to previous revision |
-| **Backup** | `backup.yml` | Daily 2AM UTC + Weekly Sunday 4AM UTC | Database backup to S3 |
-
-### CI Checks (`ci.yml`)
-
-Runs on every push to `dev` and all PRs:
-
-| Check | Tool | Blocking? |
-|-------|------|-----------|
-| Backend Lint | Flake8 | Advisory |
-| Backend Type Check | MyPy | Advisory |
-| Backend Tests | Pytest | Advisory |
-| Frontend Lint | ESLint | Advisory |
-| **Frontend Type Check** | **TypeScript** | **Yes — must pass** |
-| **Frontend Build** | **Vite** | **Yes — must pass** |
-| Security Scan | Trivy | Advisory |
-| Secret Scan | Gitleaks | Advisory |
-| **Docker Build** | **Docker** | **Yes — must pass** |
-
-### Automatic Promotion Flow
-
-```
-Push to dev
-    │
-    ▼
-CI runs automatically (ci.yml)
-    │
-    ▼ (CI passes)
-Promote workflow triggers (promote.yml)
-    │
-    ├── 1. Merge dev → stg
-    ├── 2. Deploy to Staging (ECS)
-    ├── 3. Merge stg → main
-    └── 4. Deploy to Production (ECS)
-```
-
-**One push to `dev` = automatic deployment to all environments.**
+| Resource | Name |
+|---|---|
+| ECS Cluster | `neuroreach-ai-cluster` |
+| Prod backend service | `neuroreach-ai-backend-service` |
+| Prod celery service | `neuroreach-ai-celery-service` |
+| Prod frontend service | `neuroreach-ai-frontend-service` |
+| Staging backend service | `neuroreach-staging-backend-service` |
+| Staging celery service | `neuroreach-staging-celery-service` |
+| Staging frontend service | `neuroreach-staging-frontend-service` |
+| Prod backend task def | `neuroreach-ai-backend` |
+| Prod celery task def | `neuroreach-ai-celery` |
+| Prod frontend task def | `neuroreach-ai-frontend` |
+| ECR backend repo | `neuroreach-ai/backend` |
+| ECR frontend repo | `neuroreach-ai/frontend` |
+| ALB DNS | `neuroreach-ai-alb-1879069977.us-east-2.elb.amazonaws.com` |
+| AWS Region | `us-east-2` |
+| AWS Account ID | `131880217305` |
 
 ---
 
-## Deployment Flow
+## Required GitHub Secrets
 
-### Branch Strategy
-
-```
-dev (development) → stg (staging) → main (production)
-```
-
-### Step-by-Step: Deploy a Change
-
-```bash
-# 1. Make changes on dev branch
-git checkout dev
-# ... make changes ...
-git add -A && git commit -m "feat: your change"
-
-# 2. Push to dev — CI runs automatically
-git push origin dev
-
-# 3. If CI passes, Promote workflow auto-triggers:
-#    dev → stg (deploy) → main (deploy)
-#    No manual steps needed!
-```
-
-### Manual Deploy to Staging Only
-
-```bash
-git checkout stg
-git merge dev
-git push origin stg
-# deploy-staging.yml triggers automatically
-```
-
-### Manual Deploy to Production Only
-
-```bash
-git checkout main
-git merge stg
-git push origin main
-# deploy-production.yml triggers automatically
-```
-
-### What Each Deploy Does
-
-1. **Checkout** the target branch
-2. **Build frontend** (npm ci → build → build:widget → build:assessment)
-3. **Copy frontend bundles** into backend directory
-4. **Build Docker image** (multi-stage, production target)
-5. **Security scan** with Trivy
-6. **Push to ECR** (tagged `prod-{sha}` or `stg-{sha}`)
-7. **Update ECS task definitions** (backend, celery, frontend)
-8. **Deploy to ECS** with rolling update (wait for stability, 15 min timeout)
-9. **Run smoke tests** (health endpoints, frontend reachability)
-10. **Tag release** in git (production only: `deploy-prod-{sha}-{timestamp}`)
-
----
-
-## GitHub Secrets
+Configure in **GitHub → Settings → Secrets and Variables → Actions** (repository level):
 
 | Secret | Purpose |
-|--------|---------|
-| `AWS_ACCESS_KEY_ID` | IAM access key for ECR/ECS/CloudWatch |
-| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | ECR push + ECS deploy authentication |
+| `AWS_SECRET_ACCESS_KEY` | ECR push + ECS deploy authentication |
+| `GITLEAKS_LICENSE` | Gitleaks secret scanning (optional) |
 
-All application secrets (DB password, Paubox key, Twilio tokens, Anthropic key, encryption keys) are in **AWS Secrets Manager**, injected into ECS task definitions at runtime.
-
----
-
-## Staging Environment
-
-| Resource | Value |
-|----------|-------|
-| **URL** | https://stg.sleeplessinarizona.com |
-| **ECS Services** | sleepreach-stg-backend, stg-frontend, stg-celery |
-| **Database** | sleepreach-stg-db (RDS PostgreSQL 16.13, encrypted, 3-day backup) |
-| **Redis** | sleepreach-stg-redis (ElastiCache, TLS) |
-| **Secrets** | `sleepreach/staging` (Secrets Manager) |
+GitHub Environments (`production`, `staging`) can be configured in **Settings → Environments** to add a manual approval gate before each deploy runs.
 
 ---
 
-## Production Environment
+## Rollback (`.github/workflows/rollback.yml`)
 
-| Resource | Value |
-|----------|-------|
-| **Dashboard** | https://app.sleeplessinarizona.com |
-| **API** | https://api.sleeplessinarizona.com |
-| **Widget** | https://api.sleeplessinarizona.com/widget-embed.js |
-| **Assessment** | https://api.sleeplessinarizona.com/assessment |
-| **ECS Services** | sleepreach-prod-backend, prod-frontend, prod-celery |
-| **Database** | sleepreach-prod-db (RDS PostgreSQL 16.13, encrypted, 7-day backup) |
-| **Redis** | sleepreach-prod-redis (ElastiCache, TLS) |
-| **Secrets** | `sleepreach/production` (Secrets Manager) |
+If production breaks after a deploy, roll back without reverting code.
 
-### Widget Embed Code
+**Trigger**: GitHub → Actions → "Rollback Production" → Run workflow
 
-```html
-<script src="https://api.sleeplessinarizona.com/widget-embed.js"></script>
-```
+| Input | Options | Notes |
+|---|---|---|
+| `rollback_type` | `previous-task-definition` / `specific-image-tag` | `previous-task-definition` is the safe default |
+| `image_tag` | e.g. `prod-18513d3` | Only for `specific-image-tag` |
+| `services` | `both` / `backend-only` / `celery-only` | |
+| `confirm` | Must type `ROLLBACK` | Safety gate |
 
-### Jotform Webhook URL
-
-```
-https://api.sleeplessinarizona.com/api/webhooks/jotform
-```
+Previous image tags are visible in AWS ECR. Git release tags (`deploy-prod-*`) map each SHA to its deploy timestamp.
 
 ---
 
-## Promote & Rollback
+## Database Migration Rules
 
-### Promote (Automatic)
+1. New files go in `database/init/` as `030_description.sql`, `031_…`, etc.
+2. Wrap all enum additions:
+   ```sql
+   DO $$ BEGIN
+     ALTER TYPE my_enum ADD VALUE 'new_value';
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+   ```
+3. Always use `ADD COLUMN IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`.
+4. Never rename existing enum values — PostgreSQL requires a full type replacement.
+5. Push to `dev` — the migration runner applies the new file automatically before the new backend goes live.
 
-The Promote workflow runs automatically when CI passes on `dev`. It can also be triggered manually from the GitHub Actions tab.
+The migration runner (`backend/scripts/run_migrations.py`) tracks applied files in a `schema_migrations` table. Re-running on an existing database is always safe.
 
-### Rollback Production
+---
 
-1. Go to **GitHub Actions → Rollback Production**
-2. Click **Run workflow**
-3. Choose rollback method:
-   - `previous-task-definition` — Roll back to the previous ECS revision
-   - `specific-image-tag` — Deploy a specific ECR image (e.g., `prod-18513d3`)
-4. Choose services: `both`, `backend-only`, or `celery-only`
-5. Type `ROLLBACK` to confirm
-6. Post-rollback: automatic health check verification
+## Moving the Repository to an Enterprise GitHub Account
 
-### Manual Rollback via AWS CLI
+### Option A — GitHub Transfer (recommended)
+
+Keeps full commit history, all branches, tags, Issues, and Pull Requests. The old URL redirects for a period.
+
+1. Current repo → **Settings → Danger Zone → Transfer repository**
+2. Enter the destination org (e.g. `tmsinstitute`)
+3. Confirm with your GitHub password
+
+**After transfer:**
+
+4. Add GitHub secrets in the new repo — Settings → Secrets → Actions:
+   - `AWS_ACCESS_KEY_ID`
+   - `AWS_SECRET_ACCESS_KEY`
+5. Re-create GitHub Environments (`production`, `staging`) in Settings → Environments if you use approval gates
+6. Update your local clone:
+   ```bash
+   git remote set-url origin https://github.com/tmsinstitute/NeuroReachAI.git
+   ```
+7. `secrets.GITHUB_TOKEN` is auto-provisioned by GitHub — no change needed
+8. **No AWS changes required** — the pipeline authenticates with IAM keys, not GitHub identity
+
+### Option B — Manual mirror (if transfer is not available)
 
 ```bash
-# List recent ECR images
-aws ecr describe-images \
-  --repository-name sleepreach/backend \
-  --query 'imageDetails[?imageTags[?starts_with(@,`prod-`)]].imageTags[]' \
-  --output text --profile sleepreach --region us-east-2
+# 1. Clone everything — all branches and tags
+git clone --mirror https://github.com/<old-account>/NeuroReachAI.git neuroreach-mirror
+cd neuroreach-mirror
 
-# Force redeploy current task definition
-aws ecs update-service \
-  --cluster sleepreach-cluster \
-  --service sleepreach-prod-backend \
-  --force-new-deployment \
-  --profile sleepreach --region us-east-2
+# 2. Create the new empty repo on GitHub first, then push
+git remote set-url origin https://github.com/tmsinstitute/NeuroReachAI.git
+git push --mirror
+
+# 3. Update your local checkout
+cd /path/to/local/checkout
+git remote set-url origin https://github.com/tmsinstitute/NeuroReachAI.git
+git fetch --all
 ```
+
+Then follow steps 4–8 from Option A.
 
 ---
 
-## Database Migrations
+## Health Check Endpoints
 
-Migrations are applied via the initial schema files:
-
-- `database/init/001_initial_schema.sql` — Leads table, enums, indexes, RLS
-- `database/init/002_users_and_providers.sql` — Users, providers, notes, settings
-
-For new migrations, add numbered SQL files and apply via ECS exec or the backup task override pattern.
+| Endpoint | Purpose | Used by |
+|---|---|---|
+| `GET /health/live` | API process alive | ALB liveness, smoke tests |
+| `GET /health` | API + DB connectivity | ALB health check, smoke tests |
 
 ---
 
-## Health Checks
-
-| Endpoint | Checks | Used By |
-|----------|--------|---------|
-| `GET /health` | API + Database connectivity | ALB health check |
-| `GET /health/ready` | DB + Redis + Queue depths | Deep readiness (CI smoke tests) |
-| `GET /health/live` | API process alive | ALB liveness probe |
-
-### Quick Health Check
+## Local Development
 
 ```bash
-# Production
-curl https://api.sleeplessinarizona.com/health
-curl https://api.sleeplessinarizona.com/health/ready
-curl https://api.sleeplessinarizona.com/health/live
+# Start all services
+docker compose up -d
+
+# Watch logs
+docker compose logs -f backend
+docker compose logs -f celery
+
+# Apply a migration manually to local DB
+docker exec neuroreach-postgres psql -U postgres -d neuroreach_db \
+  -f /docker-entrypoint-initdb.d/030_description.sql
+
+# Restart backend + frontend together (fixes Docker DNS cache after restart)
+docker restart neuroreach-backend neuroreach-frontend
 ```
+
+Local service ports:
+
+| Service | Port |
+|---|---|
+| Frontend (Vite) | 5173 |
+| Backend API | 8000 |
+| MailDev (email catch) | 1080 |
+| smsdev (SMS catch) | 1081 |
+| Flower (Celery monitor) | 5555 |
 
 ---
 
-## Monitoring
+## Common Issues
 
-### CloudWatch Dashboard
-
-**URL:** https://us-east-2.console.aws.amazon.com/cloudwatch/home?region=us-east-2#dashboards/dashboard/SleepReach-Production
-
-### Alarms (12)
-
-| Alarm | Threshold | Notification |
-|-------|-----------|-------------|
-| Backend CPU High | > 80% for 5 min | SNS → sleepreach-production-alerts |
-| Backend Memory High | > 80% for 5 min | SNS → sleepreach-production-alerts |
-| ALB 5xx Errors | > 10 in 5 min | SNS → sleepreach-production-alerts |
-| RDS CPU High | > 80% for 5 min | SNS → sleepreach-production-alerts |
-| ALB Response Time High | P99 > 5s for 15 min (3/3) | SNS → sleepreach-production-alerts |
-| ALB Target 5xx High | > 10 in 10 min (2/2) | SNS → sleepreach-production-alerts |
-| ALB Unhealthy Hosts | ≥ 1 for 10 min | SNS → sleepreach-production-alerts |
-| Celery CPU High | > 80% for 10 min | SNS → sleepreach-production-alerts |
-| Celery Memory High | > 80% for 10 min | SNS → sleepreach-production-alerts |
-| Service Degraded | Running < Desired for 10 min | SNS → sleepreach-production-alerts |
-| RDS Connections High | > 80 for 10 min | SNS → sleepreach-production-alerts |
-| RDS Storage Low | < 5GB | SNS → sleepreach-production-alerts |
-
-### Log Groups
-
-| Log Group | Retention |
-|-----------|-----------|
-| `/ecs/sleepreach-prod-backend` | 30 days |
-| `/ecs/sleepreach-prod-frontend` | 30 days |
-| `/ecs/sleepreach-prod-celery` | 30 days |
-| `/ecs/sleepreach-stg-*` | 30 days |
-
-### View Logs
-
-```bash
-# Recent backend logs
-aws logs tail /ecs/sleepreach-prod-backend --since 1h \
-  --profile sleepreach --region us-east-2
-
-# Follow logs in real time
-aws logs tail /ecs/sleepreach-prod-backend --follow \
-  --profile sleepreach --region us-east-2
-```
-
----
-
-## Troubleshooting
-
-### ECS Service Not Starting
-
-```bash
-# Check service events
-aws ecs describe-services \
-  --cluster sleepreach-cluster \
-  --services sleepreach-prod-backend \
-  --query 'services[0].events[:5]' \
-  --profile sleepreach --region us-east-2
-
-# Check task stopped reason
-aws ecs list-tasks --cluster sleepreach-cluster --service-name sleepreach-prod-backend \
-  --desired-status STOPPED --profile sleepreach --region us-east-2
-```
-
-### Health Check Failing
-
-```bash
-# Test directly
-curl -v https://api.sleeplessinarizona.com/health
-
-# Check ALB target group health
-aws elbv2 describe-target-health \
-  --target-group-arn <target-group-arn> \
-  --profile sleepreach --region us-east-2
-```
-
-### Database Connection Issues
-
-```bash
-# Verify RDS is available
-aws rds describe-db-instances \
-  --db-instance-identifier sleepreach-prod-db \
-  --query 'DBInstances[0].DBInstanceStatus' \
-  --profile sleepreach --region us-east-2
-```
-
-### Force Redeploy (Same Image)
-
-```bash
-aws ecs update-service \
-  --cluster sleepreach-cluster \
-  --service sleepreach-prod-backend \
-  --force-new-deployment \
-  --profile sleepreach --region us-east-2
-```
-
----
-
-## Backup & Recovery
-
-### Automated Backups
-
-| Type | Schedule | Retention | S3 Bucket |
-|------|----------|-----------|-----------|
-| RDS Automated | Daily 03:00-04:00 UTC | 7 days (prod), 3 days (stg) | — (RDS managed) |
-| GitHub Actions Daily | Daily 02:00 UTC | In S3 | sleepreach-backups-prod |
-| GitHub Actions Weekly | Sunday 04:00 UTC | In S3 | sleepreach-backups-prod |
-
-### Manual Database Snapshot
-
-```bash
-aws rds create-db-snapshot \
-  --db-instance-identifier sleepreach-prod-db \
-  --db-snapshot-identifier sleepreach-manual-$(date +%Y%m%d) \
-  --profile sleepreach --region us-east-2
-```
-
-### Restore from Point-in-Time
-
-```bash
-aws rds restore-db-instance-to-point-in-time \
-  --source-db-instance-identifier sleepreach-prod-db \
-  --target-db-instance-identifier sleepreach-restore-db \
-  --restore-time "2026-04-16T12:00:00Z" \
-  --profile sleepreach --region us-east-2
-```
-
-### Trigger Manual Backup via GitHub Actions
-
-1. Go to **GitHub Actions → Database Backup**
-2. Click **Run workflow**
-3. Choose `daily` or `weekly`
-
----
-
-## Cost Estimate (Monthly)
-
-| Service | Cost |
-|---------|------|
-| ECS Fargate (6 tasks × 0.25 vCPU, 512MB) | ~$40 |
-| RDS db.t3.micro × 2 (prod + stg) | ~$30 |
-| ElastiCache cache.t3.micro × 2 | ~$24 |
-| ALB (shared with NeuroReach) | ~$8 |
-| CloudWatch (dashboard + alarms + logs) | ~$5 |
-| ECR (container images) | ~$1 |
-| **Total** | **~$108/month** |
-
----
-
-## Contacts
-
-| Role | Name | Email |
-|------|------|-------|
-| Primary Admin | Evan Mwaniki | emwaniki@tmsinstitute.co |
-| Administrator | Ruchir Patel | rpatel@sleeplessinarizona.com |
-| Administrator | Rachel Patel | rlpatel@sleeplessinarizona.com |
+| Symptom | Cause | Fix |
+|---|---|---|
+| Frontend returns stale data after backend restart | Docker DNS cache — Node.js caches DNS for process lifetime | `docker restart neuroreach-backend neuroreach-frontend` |
+| Migration fails in CI | Bare `ALTER TYPE` instead of `DO $$ BEGIN … EXCEPTION $$` | Wrap enum additions — see migration rules above |
+| Celery sends duplicate emails/SMS | More than 1 Celery replica running | Pipeline enforces `desiredCount=1`; check ECS service console manually |
+| Production health check fails post-deploy | New code crashes on startup | Check CloudWatch Logs for `/ecs/neuroreach-ai-backend`; rollback via rollback workflow |
+| `tsc` fails in CI | TypeScript error in frontend | Run `npm run type-check` locally before pushing to `dev` |
+| Promote workflow does not auto-trigger | CI on `dev` did not finish with `conclusion == success` | Check the CI run in the Actions tab; fix the failing check and re-push |

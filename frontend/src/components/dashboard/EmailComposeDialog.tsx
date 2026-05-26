@@ -308,6 +308,8 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
     const prevIsOpenRef = useRef(false);
     const leadRef = useRef(lead);
     leadRef.current = lead;
+    const [sendSucceeded, setSendSucceeded] = useState(false);
+    const [draining, setDraining] = useState(false);
 
     const replaceVariables = useCallback((text: string, leadData: Lead): string => {
         return text
@@ -373,6 +375,8 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
             }
             setSendResult(null);
             setAiQueueContext(null);
+            setSendSucceeded(false);
+            setDraining(false);
             void handleAIRecommended();
         }
     }, [isOpen, lead, replaceVariables, handleAIRecommended]);
@@ -389,6 +393,14 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
             }
         }
     }, [selectedCategory, replaceVariables]);
+
+    // Auto-dismiss with drain animation after successful send
+    useEffect(() => {
+        if (!sendSucceeded) return;
+        const tDrain = setTimeout(() => setDraining(true), 150);
+        const tClose = setTimeout(() => { onSendSuccess?.(); onClose(); }, 3300);
+        return () => { clearTimeout(tDrain); clearTimeout(tClose); };
+    }, [sendSucceeded]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ---------------------------------------------------------------------------
     // Handlers
@@ -423,11 +435,7 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
                         : `Email sent successfully to ${recipientName}.`,
                 });
                 setIsSending(false);
-                // Defer onSendSuccess and close until after user sees confirmation
-                setTimeout(() => {
-                    onSendSuccess?.();
-                    onClose();
-                }, 2000);
+                setSendSucceeded(true);
                 return;
             } else {
                 setSendResult({ success: false, message: result.message || 'Failed to send email. Please try again.' });
@@ -444,6 +452,65 @@ export const EmailComposeDialog: React.FC<EmailComposeDialogProps> = ({
     // ---------------------------------------------------------------------------
 
     if (!isOpen || !lead) return null;
+
+    // ── Premium success screen ─────────────────────────────────────────────
+    if (sendSucceeded) {
+        const recipientName = [lead.firstName, lead.lastName].filter(Boolean).join(' ') || 'Recipient';
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/[0.04] p-3">
+                <div className="w-full max-w-[480px] rounded-2xl bg-white shadow-2xl ring-1 ring-gray-200 flex flex-col items-center py-14 px-8 text-center gap-7 overflow-hidden">
+                    {/* Animated checkmark */}
+                    <div className="relative flex items-center justify-center w-24 h-24">
+                        <span className="absolute inset-0 rounded-full bg-emerald-100 animate-ping" style={{ animationDuration: '1.8s', opacity: 0.35 }} />
+                        <span className="absolute w-20 h-20 rounded-full bg-emerald-50" />
+                        <div className="relative w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-200">
+                            <CheckCircle className="w-8 h-8 text-white" strokeWidth={2.5} />
+                        </div>
+                    </div>
+                    {/* Heading + recipient */}
+                    <div className="flex flex-col gap-1.5">
+                        <h3 className="text-2xl font-bold text-gray-900 tracking-tight">Email Sent!</h3>
+                        <p className="text-sm text-gray-500 leading-relaxed">
+                            Your message to{' '}
+                            <span className="font-semibold text-gray-700">{recipientName}</span>{' '}
+                            has been delivered.
+                        </p>
+                        <p className="text-xs text-gray-400 font-mono mt-0.5">{lead.email}</p>
+                    </div>
+                    {/* Subject chip */}
+                    {subject.trim() && (
+                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-50 border border-blue-100 max-w-full overflow-hidden">
+                            <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <span className="text-xs text-blue-700 font-medium truncate">{subject}</span>
+                        </div>
+                    )}
+                    {/* Drain countdown bar */}
+                    <div className="w-full max-w-[200px] flex flex-col items-center gap-2">
+                        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-emerald-400 rounded-full"
+                                style={{
+                                    width: draining ? '0%' : '100%',
+                                    transition: draining ? 'width 3000ms linear' : 'none',
+                                }}
+                            />
+                        </div>
+                        <p className="text-[11px] text-gray-400 font-medium">Closing in a moment…</p>
+                    </div>
+                    {/* Done CTA */}
+                    <button
+                        type="button"
+                        onClick={() => { onSendSuccess?.(); onClose(); }}
+                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.97] px-7 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-200 transition-all duration-150"
+                    >
+                        <CheckCircle className="w-4 h-4" />
+                        Done
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     const aiContextSummary = [
         aiQueueContext?.priority ? `${aiQueueContext.priority.toLowerCase()} priority` : null,
         aiQueueContext?.status ? aiQueueContext.status.replace(/_/g, ' ').toLowerCase() : null,

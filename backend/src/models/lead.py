@@ -88,7 +88,7 @@ class LeadStatus(str, enum.Enum):
 class ContactOutcome(str, enum.Enum):
     """
     Contact outcome for coordinator outreach tracking.
-    
+
     Tracks the result of each contact attempt, enabling:
     - Filtering leads by outcome (show only 'no answer' leads)
     - Progress tracking through outreach workflow
@@ -102,6 +102,7 @@ class ContactOutcome(str, enum.Enum):
     SCHEDULED = "SCHEDULED"          # Consultation has been scheduled
     COMPLETED = "COMPLETED"          # Consultation completed successfully
     NOT_INTERESTED = "NOT_INTERESTED"  # Lead declined, archive
+    NO_SHOW = "NO_SHOW"              # Scheduled consultation was not attended (migration 029)
 
 
 class ContactMethodType(str, enum.Enum):
@@ -114,7 +115,7 @@ class ContactMethodType(str, enum.Enum):
 
 class LeadSource(str, enum.Enum):
     """Lead source/platform for tracking.
-    
+
     IMPORTANT: Enum member NAMES must be lowercase to match PostgreSQL enum values.
     SQLAlchemy with create_type=False uses member NAMES for comparison, not values.
     Database enum: {widget,jotform,google_ads,referral,manual,api,import}
@@ -127,6 +128,20 @@ class LeadSource(str, enum.Enum):
     api = "api"
     # Note: 'import' is a Python reserved keyword, using IMPORT with special handling
     IMPORT = "import"
+
+
+class ManualLeadSource(str, enum.Enum):
+    """Attribution channel for coordinator-entered (manual) leads.
+
+    Stored in leads.manual_lead_source. Determines which Source Analytics
+    platform card the lead counts toward. NULL = unattributed (excluded).
+    """
+    google_ads = "google_ads"           # → Google Ads card
+    google_search = "google_search"     # → Widget card (organic search)
+    social_media = "social_media"       # → Referral card
+    friend = "friend"                   # → Referral card (is_referral=True)
+    provider_referral = "provider_referral"  # → Referral card (is_referral=True)
+    other = "other"                     # → Widget card (catch-all)
 
 
 # =============================================================================
@@ -302,6 +317,15 @@ class Lead(Base):
         nullable=False,
         default=LeadSource.widget,
     )
+
+    # Marketing attribution for coordinator-entered leads (migration 028).
+    # Values: google_ads | google_search | social_media | friend | provider_referral | other
+    # NULL = unattributed (excluded from Source Analytics platform cards).
+    manual_lead_source = Column(String(50), nullable=True)
+
+    # Reason a scheduled consultation was not attended (migration 029).
+    # Set when contact_outcome = NO_SHOW.
+    no_show_reason = Column(String(255), nullable=True)
     
     # UTM Tracking
     utm_source = Column(String(255), nullable=True)

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Sidebar } from '../components/dashboard/Sidebar';
 import { LeadsTable } from '../components/dashboard/LeadsTable';
+import { PostConsultationQueue } from '../components/dashboard/PostConsultationQueue';
 import { LeadDetailModal } from '../components/dashboard/LeadDetailModal';
 import { LeadEditModal } from '../components/dashboard/LeadEditModal';
 import { ScheduleModal } from '../components/dashboard/ScheduleModal';
@@ -44,9 +45,10 @@ const QUEUE_CONFIG: Record<string, { title: string; subtitle: string; color: str
   'callback': { title: 'Callback Requested', subtitle: 'Call back at requested time', color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
   // Outcome Queues
   'scheduled': { title: 'Scheduled Consultations', subtitle: 'Consultation booked - Ready for appointment', color: 'text-green-600', bgColor: 'bg-green-50' },
+  'post_consultation': { title: 'Post-Consultation', subtitle: 'No-show & missed consultations — track and re-engage', color: 'text-violet-700', bgColor: 'bg-violet-50' },
   'completed': { title: 'Completed Leads', subtitle: 'Consultation complete or treatment started', color: 'text-teal-600', bgColor: 'bg-teal-50' },
   'unreachable': { title: 'Unreachable Leads', subtitle: 'Unable to contact - Needs review', color: 'text-slate-600', bgColor: 'bg-slate-50' },
-  'not_interested': { title: 'Not Interested', subtitle: 'Lead declined — Auto follow-up every 3 weeks', color: 'text-orange-600', bgColor: 'bg-orange-50' },
+  'not_interested': { title: 'Not Interested', subtitle: 'Lead declined', color: 'text-orange-600', bgColor: 'bg-orange-50' },
   // Priority Queues (Cross-cutting views)
   'hot': { title: 'Hot Priority Leads', subtitle: 'Urgent - Contact within 1 hour', color: 'text-red-600', bgColor: 'bg-red-50' },
   'medium': { title: 'Medium Priority Leads', subtitle: 'Standard - Contact within 24 hours', color: 'text-amber-600', bgColor: 'bg-amber-50' },
@@ -89,7 +91,8 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
   const activeQueue: QueueType = (
     queueType === 'followup' ? 'follow_up'
       : queueType === 'not-interested' ? 'not_interested'
-        : queueType
+        : queueType === 'post-consultation' ? 'post_consultation'
+          : queueType
   ) as QueueType;
   const queueConfig = QUEUE_CONFIG[activeQueue] || QUEUE_CONFIG['all'];
 
@@ -706,18 +709,28 @@ export const CoordinatorDashboard: React.FC<CoordinatorDashboardProps> = ({ queu
 
           {/* Clean Table View */}
           <div className="p-2 lg:p-3">
-            <LeadsTable
-              leads={filteredQueueLeads}
-              totalCount={filteredQueueLeads.length}
-              isLoading={isLoading}
-              error={leadsError}
-              onRetry={handleRefresh}
-              onView={handleLeadClick}
-              onEdit={hasPermission('edit_leads') ? handleEditLead : undefined}
-              onDelete={hasPermission('delete_leads') ? handleOpenDelete : undefined}
-              resetFilterKey={activeQueue}
-              onRefreshNeeded={refreshLeads}
-            />
+            {activeQueue === 'post_consultation' ? (
+              <PostConsultationQueue
+                leads={filteredQueueLeads}
+                isLoading={isLoading}
+                onView={handleLeadClick}
+                onReEngage={(lead) => handleOpenSchedule(lead, 'consultation')}
+                onRefresh={refreshLeads}
+              />
+            ) : (
+              <LeadsTable
+                leads={filteredQueueLeads}
+                totalCount={filteredQueueLeads.length}
+                isLoading={isLoading}
+                error={leadsError}
+                onRetry={handleRefresh}
+                onView={handleLeadClick}
+                onEdit={hasPermission('edit_leads') ? handleEditLead : undefined}
+                onDelete={hasPermission('delete_leads') ? handleOpenDelete : undefined}
+                resetFilterKey={activeQueue}
+                onRefreshNeeded={refreshLeads}
+              />
+            )}
           </div>
         </div>
       </main>

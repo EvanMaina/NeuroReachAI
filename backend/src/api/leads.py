@@ -14,7 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, func, or_
+from sqlalchemy import and_, desc, func, or_
 
 from ..core.config import settings
 from ..core.database import get_db
@@ -212,7 +212,7 @@ def apply_queue_filter(query, queue_type: Optional[str]):
     Args:
         query: SQLAlchemy query already filtered for deleted_at IS NULL
         queue_type: One of 'all','new','contacted','follow_up','callback',
-                    'scheduled','completed','unreachable','hot','medium','low'
+                    'scheduled','post_consultation','completed','unreachable','hot','medium','low'
 
     Returns:
         Modified query with the appropriate WHERE clauses applied
@@ -298,6 +298,20 @@ def apply_queue_filter(query, queue_type: Optional[str]):
                 LeadStatus.CONSULTATION_COMPLETE,
                 LeadStatus.TREATMENT_STARTED,
             ])
+        )
+
+    if queue_type == "post_consultation":
+        # Leads that missed a scheduled consultation — contact_outcome = NO_SHOW
+        # OR legacy leads still using follow_up_reason = "No Show".
+        return query.filter(
+            Lead.status.notin_(TERMINAL),
+            or_(
+                Lead.contact_outcome == ContactOutcome.NO_SHOW,
+                and_(
+                    Lead.follow_up_reason == "No Show",
+                    Lead.contact_outcome != ContactOutcome.COMPLETED,
+                ),
+            ),
         )
 
     if queue_type == "unreachable":
@@ -1002,6 +1016,8 @@ async def list_leads(
                 source=lead.source.value if lead.source else None,
                 tms_therapy_interest=lead.tms_therapy_interest,
                 last_updated_at=lead.last_updated_at,
+                no_show_reason=lead.no_show_reason,
+                manual_lead_source=lead.manual_lead_source,
             )
 
         # Use thread pool for concurrent decryption (max 8 workers)
@@ -1279,6 +1295,8 @@ async def search_leads_phi(
                 contact_outcome=lead.contact_outcome or ContactOutcome.NEW,
                 contact_attempts=lead.contact_attempts or 0,
                 last_contact_attempt=lead.last_contact_attempt,
+                no_show_reason=lead.no_show_reason,
+                manual_lead_source=lead.manual_lead_source,
             )
         )
 
@@ -1485,7 +1503,13 @@ async def create_manual_lead(
         # Referral Provider Matching/Creation (reuses widget logic)
         # =================================================================
         referring_provider_id = None
-        is_referral = bool(lead_data.is_referral) and bool(lead_data.referring_provider_name and lead_data.referring_provider_name.strip())
+        # friend / provider_referral source selections automatically mark the
+        # lead as a referral even if the coordinator didn't toggle the switch.
+        _referral_sources = {"friend", "provider_referral"}
+        _source_forces_referral = (lead_data.manual_lead_source or "") in _referral_sources
+        is_referral = (
+            bool(lead_data.is_referral) or _source_forces_referral
+        ) and bool(lead_data.referring_provider_name and lead_data.referring_provider_name.strip())
 
         if is_referral:
             provider_name_lookup = lead_data.referring_provider_name.strip()
@@ -1569,6 +1593,10 @@ async def create_manual_lead(
             contact_outcome=ContactOutcome.NEW,
             # Source tracking
             source=LeadSource.manual,
+            # Marketing attribution (migration 028): routes this lead to the
+            # correct Source Analytics card when not None.
+            # friend/provider_referral also force is_referral=True (see below).
+            manual_lead_source=lead_data.manual_lead_source or None,
             # Referral tracking — linked to provider if referral
             is_referral=is_referral,
             referring_provider_id=referring_provider_id,
@@ -2792,10 +2820,14 @@ async def update_consultation_outcome(
             lead.completed_by_user_id = None
             lead.completed_at = None
         lead.status = LeadStatus.CONTACTED
-        lead.contact_outcome = ContactOutcome.ANSWERED
+        lead.contact_outcome = ContactOutcome.NO_SHOW
         lead.follow_up_reason = "No Show"
         lead.follow_up_date = now + timedelta(days=1)
         lead.next_follow_up_at = lead.follow_up_date
+        # Store coordinator-selected reason (migration 029)
+        no_show_reason_val = body.get("no_show_reason")
+        if no_show_reason_val and isinstance(no_show_reason_val, str):
+            lead.no_show_reason = no_show_reason_val.strip() or None
     elif outcome_lower == "cancelled":
         if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
             lead.completed_by_user_id = None

@@ -26,7 +26,7 @@ export type LeadStatus =
  * Contact outcome for coordinator outreach tracking
  * Tracks the result of each contact attempt
  */
-export type ContactOutcome = 
+export type ContactOutcome =
   | 'NEW'                 // Not contacted yet
   | 'ANSWERED'            // Spoke with lead, can proceed to schedule
   | 'NO_ANSWER'           // Called but no pickup, needs follow-up
@@ -34,7 +34,8 @@ export type ContactOutcome =
   | 'CALLBACK_REQUESTED'  // Lead asked to call back at specific time
   | 'SCHEDULED'           // Consultation has been scheduled
   | 'COMPLETED'           // Consultation completed successfully
-  | 'NOT_INTERESTED';     // Lead declined, archive
+  | 'NOT_INTERESTED'      // Lead declined, archive
+  | 'NO_SHOW';            // Scheduled consultation was not attended (migration 029)
 
 /**
  * Contact outcome configuration for UI display
@@ -42,7 +43,7 @@ export type ContactOutcome =
  */
 export const CONTACT_OUTCOME_CONFIG: Record<ContactOutcome, {
   label: string;
-  iconName: 'Sparkles' | 'CheckCircle2' | 'PhoneMissed' | 'PhoneOff' | 'Clock' | 'Ban' | 'Calendar' | 'CheckCircle';
+  iconName: 'Sparkles' | 'CheckCircle2' | 'PhoneMissed' | 'PhoneOff' | 'Clock' | 'Ban' | 'Calendar' | 'CheckCircle' | 'CalendarX2';
   color: string;
   bgColor: string;
   borderColor: string;
@@ -129,6 +130,16 @@ export const CONTACT_OUTCOME_CONFIG: Record<ContactOutcome, {
     description: 'Consultation completed',
     iconColor: 'text-green-500',
     ringColor: 'ring-green-400',
+  },
+  NO_SHOW: {
+    label: 'No Show',
+    iconName: 'CalendarX2',
+    color: 'text-rose-700',
+    bgColor: 'bg-rose-50',
+    borderColor: 'border-rose-200',
+    description: 'Did not attend scheduled consultation',
+    iconColor: 'text-rose-500',
+    ringColor: 'ring-rose-400',
   },
 };
 
@@ -242,6 +253,10 @@ export interface LeadTableRow {
   // Lead source — identifies origin (widget, jotform, manual, etc.)
   // Used to suppress notifications for coordinator-added manual leads
   source?: string;
+  /** Marketing attribution for coordinator-entered leads (migration 028). */
+  manualLeadSource?: string;
+  /** Reason a scheduled consultation was missed (migration 029). */
+  noShowReason?: string;
   tmsTherapyInterest?: string;
   /** Coordinator-captured city/area (e.g. "Gilbert, AZ"). Powers expansion insights. */
   leadLocation?: string;

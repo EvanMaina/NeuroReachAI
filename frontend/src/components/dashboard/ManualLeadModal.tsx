@@ -13,9 +13,11 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   X, UserPlus, Loader2, CheckCircle2, AlertCircle, UserCheck, ChevronDown,
-  Upload, FileText, FileSpreadsheet, Image as ImageIcon, Paperclip, Trash2
+  Upload, FileText, FileSpreadsheet, Image as ImageIcon, Paperclip, Trash2,
+  Megaphone, Search, Share2, Users, Stethoscope, HelpCircle,
 } from 'lucide-react';
 import { createManualLead, type IManualLeadRequest } from '../../services/leads';
 import { uploadAttachment, formatFileSize, notifyAttachmentsChanged } from '../../services/attachments';
@@ -66,6 +68,88 @@ const SPECIALTY_OPTIONS = [
   'Other',
 ];
 
+/**
+ * How the patient found us — coordinator attribution choices.
+ * Maps to ManualLeadSource enum values on the backend.
+ * friend & provider_referral auto-force is_referral=True server-side.
+ */
+interface SourceOption {
+  value: string;
+  label: string;
+  sublabel: string;
+  icon: React.ReactNode;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  accentColor: string;
+  expandsReferral?: boolean;
+}
+
+const SOURCE_OPTIONS: SourceOption[] = [
+  {
+    value: 'google_ads',
+    label: 'Google Ad',
+    sublabel: 'Clicked a paid Google advertisement',
+    icon: <Megaphone size={18} />,
+    color: 'text-red-600',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-200',
+    accentColor: 'ring-red-400',
+  },
+  {
+    value: 'google_search',
+    label: 'Google Search',
+    sublabel: 'Found us via organic Google search',
+    icon: <Search size={18} />,
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50',
+    borderColor: 'border-blue-200',
+    accentColor: 'ring-blue-400',
+  },
+  {
+    value: 'social_media',
+    label: 'Social Media',
+    sublabel: 'Facebook, Instagram, TikTok, etc.',
+    icon: <Share2 size={18} />,
+    color: 'text-violet-600',
+    bgColor: 'bg-violet-50',
+    borderColor: 'border-violet-200',
+    accentColor: 'ring-violet-400',
+  },
+  {
+    value: 'friend',
+    label: 'Friend / Word of Mouth',
+    sublabel: 'Referred by a friend or family member',
+    icon: <Users size={18} />,
+    color: 'text-emerald-600',
+    bgColor: 'bg-emerald-50',
+    borderColor: 'border-emerald-200',
+    accentColor: 'ring-emerald-400',
+    expandsReferral: true,
+  },
+  {
+    value: 'provider_referral',
+    label: 'Provider Referral',
+    sublabel: 'Referred by a doctor, therapist, or clinic',
+    icon: <Stethoscope size={18} />,
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-50',
+    borderColor: 'border-purple-200',
+    accentColor: 'ring-purple-400',
+    expandsReferral: true,
+  },
+  {
+    value: 'other',
+    label: 'Other / Unknown',
+    sublabel: 'Source not listed above',
+    icon: <HelpCircle size={18} />,
+    color: 'text-gray-500',
+    bgColor: 'bg-gray-50',
+    borderColor: 'border-gray-200',
+    accentColor: 'ring-gray-400',
+  },
+];
+
 /** Max file size 25MB */
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
@@ -98,6 +182,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const queryClient = useQueryClient();
   // Form state
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -110,6 +195,10 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
   const [insuranceProvider, setInsuranceProvider] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Source attribution state (migration 028)
+  const [manualLeadSource, setManualLeadSource] = useState<string>('');
+  const [manualLeadSourceOther, setManualLeadSourceOther] = useState<string>('');
 
   // Referral state
   const [isReferral, setIsReferral] = useState(false);
@@ -154,6 +243,8 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
     setInsuranceProvider('');
     setZipCode('');
     setNotes('');
+    setManualLeadSource('');
+    setManualLeadSourceOther('');
     setIsReferral(false);
     setProviderName('');
     setProviderContact('');
@@ -172,6 +263,21 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
     resetForm();
     onClose();
   }, [resetForm, onClose]);
+
+  // ---------------------------------------------------------------------------
+  // Source Attribution Handler
+  // ---------------------------------------------------------------------------
+
+  const handleSourceSelect = useCallback((value: string) => {
+    const newValue = manualLeadSource === value ? '' : value;
+    setManualLeadSource(newValue);
+    const opt = SOURCE_OPTIONS.find(o => o.value === value);
+    if (opt?.expandsReferral && newValue) {
+      setIsReferral(true);
+    }
+  }, [manualLeadSource]);
+
+  const selectedSourceOpt = SOURCE_OPTIONS.find(o => o.value === manualLeadSource);
 
   // ---------------------------------------------------------------------------
   // Provider Autocomplete
@@ -322,6 +428,13 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
       if (zipCode.trim()) payload.zip_code = zipCode.trim();
       if (notes.trim()) payload.notes = notes.trim();
 
+      // Source attribution (migration 028)
+      if (manualLeadSource) payload.manual_lead_source = manualLeadSource;
+      // Prepend "other" free-text to notes so it's visible in the lead profile
+      if (manualLeadSource === 'other' && manualLeadSourceOther.trim()) {
+        payload.notes = `Source: ${manualLeadSourceOther.trim()}${notes.trim() ? `\n${notes.trim()}` : ''}`;
+      }
+
       // Referral fields
       if (isReferral && providerName.trim()) {
         payload.is_referral = true;
@@ -332,6 +445,12 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
 
       const response = await createManualLead(payload);
       if (!isMountedRef.current) return;
+
+      // Invalidate all caches so dashboards and sidebar counts reflect the new lead immediately
+      queryClient.invalidateQueries({ queryKey: ['source-analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leads', 'queue-summary'] });
 
       // Upload pending files (non-blocking — lead already created)
       let uploadFailed = false;
@@ -387,6 +506,7 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
   }, [
     firstName, lastName, email, phone, condition, conditionOther,
     urgency, hasInsurance, insuranceProvider, zipCode, notes,
+    manualLeadSource, manualLeadSourceOther,
     isReferral, providerName, providerContact, providerSpecialty,
     pendingFiles, handleClose, onSuccess,
   ]);
@@ -430,8 +550,13 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
               <p className="text-sm text-gray-500">
                 Lead <span className="font-mono font-semibold text-emerald-600">{success.leadNumber}</span> added to the New Leads queue.
               </p>
+              {selectedSourceOpt && (
+                <p className={`text-xs mt-2 flex items-center gap-1 ${selectedSourceOpt.color}`}>
+                  {selectedSourceOpt.icon} Via {selectedSourceOpt.label}
+                </p>
+              )}
               {isReferral && providerName.trim() && (
-                <p className="text-xs text-purple-600 mt-2 flex items-center gap-1">
+                <p className="text-xs text-purple-600 mt-1 flex items-center gap-1">
                   <UserCheck size={12} /> Referral from {providerName.trim()} linked
                 </p>
               )}
@@ -540,6 +665,94 @@ export const ManualLeadModal: React.FC<ManualLeadModalProps> = ({
                     <input type="text" value={zipCode} onChange={(e) => setZipCode(e.target.value)} maxLength={10}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors" />
                   </div>
+                </div>
+
+                {/* ============================================================= */}
+                {/* Source Attribution (migration 028) — inline tile grid         */}
+                {/* ============================================================= */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+                      <Search size={11} className="text-gray-400" />
+                      How did they find us?
+                    </label>
+                    <span className="text-[10px] text-gray-400">Optional — for analytics</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {SOURCE_OPTIONS.map((opt) => {
+                      const isSelected = manualLeadSource === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => handleSourceSelect(opt.value)}
+                          className={`
+                            relative flex flex-col items-start gap-2.5 px-3 py-3 rounded-2xl border text-left
+                            transition-all duration-200 focus:outline-none group overflow-hidden
+                            ${isSelected
+                              ? `${opt.bgColor} ${opt.borderColor} shadow-md ring-2 ${opt.accentColor} ring-offset-1`
+                              : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm hover:bg-gray-50/60'
+                            }
+                          `}
+                        >
+                          {/* Selected indicator bar at top */}
+                          {isSelected && (
+                            <span className={`absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl ${opt.borderColor} ${opt.bgColor.replace('50','200')}`} />
+                          )}
+                          {/* Icon + check row */}
+                          <div className="flex items-center justify-between w-full">
+                            <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200
+                              ${isSelected
+                                ? `${opt.bgColor} ${opt.color} border ${opt.borderColor}`
+                                : 'bg-gray-100 text-gray-400 border border-gray-200 group-hover:bg-gray-50'
+                              }`}>
+                              {opt.icon}
+                            </span>
+                            {isSelected
+                              ? <CheckCircle2 size={14} className={`${opt.color} shrink-0`} />
+                              : <span className="w-4 h-4 rounded-full border-2 border-gray-200 group-hover:border-gray-300 transition-colors" />
+                            }
+                          </div>
+                          {/* Label + sublabel */}
+                          <div className="min-w-0">
+                            <p className={`text-[11px] font-bold leading-tight ${isSelected ? opt.color : 'text-gray-700'}`}>
+                              {opt.label}
+                            </p>
+                            <p className="text-[10px] text-gray-400 leading-tight mt-0.5 line-clamp-2">
+                              {opt.sublabel}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* "Other" free-text — shown when Other / Unknown is selected */}
+                  {manualLeadSource === 'other' && (
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={manualLeadSourceOther}
+                        onChange={(e) => setManualLeadSourceOther(e.target.value)}
+                        placeholder="e.g. Newspaper ad, Radio, Community event…"
+                        maxLength={120}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-colors"
+                      />
+                      <p className="mt-1 text-[10px] text-gray-400">
+                        Saved to lead notes · Analytics: counted under <span className="font-medium text-gray-500">Other / Unknown</span>. Future trend report can group custom sources.
+                      </p>
+                    </div>
+                  )}
+
+                  {manualLeadSource && selectedSourceOpt && manualLeadSource !== 'other' && (
+                    <p className={`mt-2 text-[11px] ${selectedSourceOpt.color} flex items-center gap-1.5`}>
+                      <CheckCircle2 size={10} />
+                      {selectedSourceOpt.sublabel}
+                      <button type="button" onClick={() => setManualLeadSource('')} className="ml-auto text-gray-400 hover:text-gray-600 underline underline-offset-2">
+                        Clear
+                      </button>
+                    </p>
+                  )}
                 </div>
 
                 {/* ============================================================= */}

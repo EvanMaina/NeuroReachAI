@@ -115,7 +115,18 @@ const CONSULTATION_OUTCOME_CONFIG: Record<ConsultationOutcome, {
 };
 
 // Dialog view state machine
-type DialogView = 'outcomes' | 'confirmation' | 'reschedule' | 'followup';
+type DialogView = 'outcomes' | 'confirmation' | 'no_show_reason' | 'reschedule' | 'followup';
+
+/** Structured no-show reasons for coordinator selection */
+const NO_SHOW_REASONS: { value: string; label: string; sublabel: string }[] = [
+  { value: 'no_call_no_show', label: 'No Call / No Show', sublabel: 'Did not call or arrive, no prior notice' },
+  { value: 'cancelled_reschedule', label: 'Patient Cancelled — wants reschedule', sublabel: 'Called ahead, wants to book a new time' },
+  { value: 'cancelled_not_interested', label: 'Patient Cancelled — not interested', sublabel: 'Called ahead, no longer wants to proceed' },
+  { value: 'insurance_issue', label: 'Insurance / Coverage Issue', sublabel: 'Could not confirm coverage before appointment' },
+  { value: 'transportation', label: 'Transportation Issue', sublabel: 'Unable to get to the clinic' },
+  { value: 'provider_unavailable', label: 'Provider Unavailable', sublabel: 'Clinic-side cancellation' },
+  { value: 'other', label: 'Other', sublabel: 'Reason not listed above' },
+];
 
 /** Confirmation text for each consultation outcome */
 const OUTCOME_CONFIRM_TEXT: Record<ConsultationOutcome, { title: string; description: string; color: string }> = {
@@ -136,8 +147,8 @@ const OUTCOME_CONFIRM_TEXT: Record<ConsultationOutcome, { title: string; descrip
   },
   NO_SHOW: {
     title: 'Mark as No Show',
-    description: 'Lead moves to Follow-up queue with "No Show" tag. Auto follow-up in 1 day.',
-    color: 'text-red-700',
+    description: 'Lead moves to Post-Consultation queue. Select a reason to help track patterns.',
+    color: 'text-rose-700',
   },
   CANCELLED: {
     title: 'Mark as Cancelled',
@@ -168,6 +179,8 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
   const [pendingOutcome, setPendingOutcome] = useState<ConsultationOutcome | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [noteText, setNoteText] = useState('');
+  const [noShowReason, setNoShowReason] = useState<string>('');
+  const [noShowReasonOther, setNoShowReasonOther] = useState<string>('');
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Date picker state (for reschedule / followup)
@@ -187,6 +200,8 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
       setDialogView('outcomes');
       setPendingOutcome(null);
       setNoteText('');
+      setNoShowReason('');
+      setNoShowReasonOther('');
       setPickerDate('');
       setPickerTime('');
       setPickerError(null);
@@ -198,7 +213,11 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return;
       if (e.key === 'Escape') {
-        if (dialogView !== 'outcomes') {
+        if (dialogView === 'no_show_reason' || dialogView === 'confirmation') {
+          setDialogView('outcomes');
+          setPendingOutcome(null);
+          setNoShowReason('');
+        } else if (dialogView !== 'outcomes') {
           setDialogView('outcomes');
           setPendingOutcome(null);
         } else {
@@ -260,10 +279,15 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
     };
   }, [isDragging]);
 
-  // Step 1: User clicks outcome button → show confirmation
+  // Step 1: User clicks outcome button → show reason picker (NO_SHOW) or confirmation
   const handleOutcomeClick = useCallback((outcome: ConsultationOutcome) => {
     setPendingOutcome(outcome);
-    setDialogView('confirmation');
+    setNoShowReason('');
+    if (outcome === 'NO_SHOW') {
+      setDialogView('no_show_reason');
+    } else {
+      setDialogView('confirmation');
+    }
   }, []);
 
   const executeOutcomeRef = useRef<((outcome: ConsultationOutcome, scheduledAt?: string) => Promise<void>) | null>(null);
@@ -339,6 +363,9 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
         notes: noteText.trim() || undefined,
         scheduled_callback_at: scheduledAt,
         expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
+        ...(outcome === 'NO_SHOW' && noShowReason
+          ? { no_show_reason: noShowReason === 'other' ? (noShowReasonOther.trim() || 'Other') : noShowReason }
+          : {}),
       });
 
       // Build success toast message
@@ -367,7 +394,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
           }
           break;
         case 'NO_SHOW':
-          toastMessage = `✓ ${leadName} moved to Follow-up — No Show`;
+          toastMessage = `✓ ${leadName} moved to Post-Consultation queue`;
           break;
         case 'CANCELLED':
           toastMessage = `✓ ${leadName} moved to Follow-up — Cancelled`;
@@ -394,7 +421,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
     } finally {
       setIsUpdating(false);
     }
-  }, [lead, noteText, onClose]);
+  }, [lead, noteText, noShowReason, noShowReasonOther, onClose]);
 
   executeOutcomeRef.current = executeOutcome;
 
@@ -634,6 +661,103 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
                 </div>
               </div>
             </>
+          )}
+
+          {/* ================================================================= */}
+          {/* VIEW: NO-SHOW REASON PICKER                                      */}
+          {/* ================================================================= */}
+          {dialogView === 'no_show_reason' && (
+            <div className="px-5 py-5 space-y-3">
+              <button
+                onClick={() => { setDialogView('outcomes'); setPendingOutcome(null); setNoShowReason(''); }}
+                className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 font-medium transition-colors"
+              >
+                <ArrowLeft size={16} />
+                Back to outcomes
+              </button>
+
+              {/* Header */}
+              <div className="text-center pb-1">
+                <div className="w-12 h-12 mx-auto rounded-xl bg-rose-100 flex items-center justify-center mb-2 border border-rose-200">
+                  <UserX size={22} className="text-rose-600" />
+                </div>
+                <h4 className="font-bold text-gray-900">Why did they miss?</h4>
+                <p className="text-xs text-gray-500 mt-0.5">Helps the team identify patterns and improve</p>
+              </div>
+
+              {/* Reason grid */}
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-0.5">
+                {NO_SHOW_REASONS.map((r) => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => setNoShowReason(r.value)}
+                    className={`
+                      w-full flex items-start gap-3 px-3 py-2.5 rounded-xl text-left border transition-all duration-150
+                      ${noShowReason === r.value
+                        ? 'bg-rose-50 border-rose-300 ring-1 ring-rose-400'
+                        : 'border-gray-200 hover:border-rose-200 hover:bg-rose-50/40 bg-white'
+                      }
+                    `}
+                  >
+                    <span className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${
+                      noShowReason === r.value ? 'border-rose-500 bg-rose-500' : 'border-gray-300'
+                    }`}>
+                      {noShowReason === r.value && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block text-sm font-semibold ${noShowReason === r.value ? 'text-rose-700' : 'text-gray-800'}`}>
+                        {r.label}
+                      </span>
+                      <span className="block text-[11px] text-gray-500">{r.sublabel}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* "Other" free-text input — only shown when Other is selected */}
+              {noShowReason === 'other' && (
+                <div className="mt-1">
+                  <label className="block text-xs font-semibold text-rose-700 mb-1">
+                    Describe the reason <span className="text-rose-400">(required)</span>
+                  </label>
+                  <textarea
+                    autoFocus
+                    value={noShowReasonOther}
+                    onChange={(e) => setNoShowReasonOther(e.target.value)}
+                    placeholder="e.g. Patient was admitted to hospital…"
+                    rows={2}
+                    className="w-full px-3 py-2 text-sm border border-rose-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-transparent placeholder:text-gray-400"
+                  />
+                </div>
+              )}
+
+              {/* Action row */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => { setDialogView('outcomes'); setPendingOutcome(null); setNoShowReason(''); setNoShowReasonOther(''); }}
+                  disabled={isUpdating}
+                  className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-semibold transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void executeOutcomeRef.current?.('NO_SHOW')}
+                  disabled={isUpdating || !noShowReason || (noShowReason === 'other' && !noShowReasonOther.trim())}
+                  className="flex-1 px-4 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold transition-all shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isUpdating
+                    ? <><Loader2 size={18} className="animate-spin" /> Saving...</>
+                    : <><UserX size={18} /> Mark No Show</>
+                  }
+                </button>
+              </div>
+              {(!noShowReason || (noShowReason === 'other' && !noShowReasonOther.trim())) && (
+                <p className="text-[11px] text-center text-gray-400">
+                  {!noShowReason ? 'Select a reason to continue' : 'Enter a description to continue'}
+                </p>
+              )}
+            </div>
           )}
 
           {/* ================================================================= */}

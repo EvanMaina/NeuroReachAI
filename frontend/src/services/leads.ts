@@ -16,11 +16,12 @@ import { apiClient } from './api';
 export type QueueTypeFilter =
   | 'all'
   | 'new'
-  | 'contacted'  // All leads with contact attempts (inclusive view)
+  | 'contacted'        // All leads with contact attempts (inclusive view)
   | 'followup'
   | 'callback'
   | 'scheduled'
-  | 'completed'  // Consultation complete - Success!
+  | 'post_consultation' // No-show & missed consultations (migration 029)
+  | 'completed'        // Consultation complete - Success!
   | 'unreachable'
   | 'hot'
   | 'medium'
@@ -179,6 +180,8 @@ export interface IManualLeadRequest {
   zip_code?: string;
   urgency?: string;
   notes?: string;
+  /** Marketing attribution — routes lead to correct analytics card (migration 028). */
+  manual_lead_source?: string;
   // Referral support
   is_referral?: boolean;
   referring_provider_name?: string;
@@ -398,6 +401,10 @@ function mapLeadResponse(lead: Record<string, unknown>): ILeadListItem {
     // Without this mapping, source is always undefined, and undefined !== 'manual' = true,
     // causing every manual lead to fire a notification.
     source: lead.source as string | undefined,
+    // Marketing attribution for coordinator-entered leads (migration 028)
+    manualLeadSource: lead.manual_lead_source as string | undefined,
+    // Reason a scheduled consultation was missed (migration 029)
+    noShowReason: lead.no_show_reason as string | undefined,
   };
 }
 
@@ -871,6 +878,8 @@ export interface IUpdateConsultationOutcomeRequest {
   contact_method?: ContactMethod;
   /** Optimistic locking timestamp from the last lead fetch */
   expected_updated_at?: string;
+  /** Reason a scheduled consultation was missed — required when outcome = 'no_show' */
+  no_show_reason?: string;
 }
 
 /**

@@ -97,6 +97,10 @@ interface TransformedLeadItem {
   preferredContactMethod?: string;
   // Lead source — widget, jotform, manual, etc.
   source?: string;
+  // Marketing attribution for coordinator-entered leads (migration 028)
+  manualLeadSource?: string;
+  // Reason a scheduled consultation was missed (migration 029)
+  noShowReason?: string;
 }
 
 // =============================================================================
@@ -141,6 +145,10 @@ export function transformLeadToTableRow(item: TransformedLeadItem, index: number
     preferredContactMethod: item.preferredContactMethod || undefined,
     // Lead source — passed through for notification filtering
     source: item.source || undefined,
+    // Marketing attribution for coordinator-entered leads
+    manualLeadSource: item.manualLeadSource || undefined,
+    // No-show reason for post-consultation queue
+    noShowReason: item.noShowReason || undefined,
   };
 }
 
@@ -308,6 +316,7 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
+      queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.queueSummary() });
       queryClient.refetchQueries({ queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }) });
       // Cross-invalidate source analytics so conversion rates update without a manual refresh
       queryClient.invalidateQueries({ queryKey: ['source-analytics'] });
@@ -360,16 +369,20 @@ export function useLeads(options: UseLeadsOptions = {}): UseLeadsReturn {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.all });
       queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
+      queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.queueSummary() });
       queryClient.refetchQueries({ queryKey: LEADS_QUERY_KEYS.list({ page: 1, page_size: pageSize }) });
       // Cross-invalidate source analytics so conversion rates update without a manual refresh
       queryClient.invalidateQueries({ queryKey: ['source-analytics'] });
     },
   });
 
-  // Manual refresh function
+  // Manual refresh function — also invalidates queue-summary so sidebar counts
+  // update immediately for callers like ConsultationPanel that bypass mutations.
   const refresh = useCallback(async () => {
+    queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.queueSummary() });
+    queryClient.invalidateQueries({ queryKey: LEADS_QUERY_KEYS.dashboardSummary() });
     await refetch();
-  }, [refetch]);
+  }, [refetch, queryClient]);
 
   // Update status function
   const updateStatus = useCallback(
