@@ -800,6 +800,8 @@ def send_automated_follow_ups(self) -> Dict[str, Any]:
     Returns:
         Dict with follow-up stats
     """
+    logger.info("send_automated_follow_ups: disabled 2026-05-28 — only welcome email/SMS are active")
+    return {"status": "disabled", "sent_email": 0, "sent_sms": 0, "skipped": 0, "errors": []}
     from ..services.email_templates import send_follow_up_email
     from ..services.sms_service import sms_service
     from ..services.encryption import EncryptionService
@@ -1588,6 +1590,8 @@ def send_unreachable_follow_ups(self) -> Dict[str, Any]:
     - NOT in SCHEDULED status
     - last_follow_up_sent_at is NULL or > 24 hours ago
     """
+    logger.info("send_unreachable_follow_ups: disabled 2026-05-28 — only welcome email/SMS are active")
+    return {"status": "disabled", "sent_email": 0, "skipped": 0, "errors": []}
     from ..services.email_templates import send_unreachable_follow_up_email
     from ..services.encryption import EncryptionService
     from ..models.lead import ContactOutcome
@@ -1678,6 +1682,8 @@ def send_72h_social_proof_emails(self) -> Dict[str, Any]:
     - NOT soft-deleted
     - Has an email address
     """
+    logger.info("send_72h_social_proof_emails: disabled 2026-05-28 — only welcome email/SMS are active")
+    return {"status": "disabled", "sent": 0, "skipped": 0, "errors": []}
     from ..services.email_templates import send_social_proof_72h_email
     from ..services.encryption import EncryptionService
     from ..models.lead import ContactOutcome
@@ -1761,6 +1767,8 @@ def send_day14_reengagement_emails(self) -> Dict[str, Any]:
     - NOT soft-deleted
     - Has an email address
     """
+    logger.info("send_day14_reengagement_emails: disabled 2026-05-28 — only welcome email/SMS are active")
+    return {"status": "disabled", "sent": 0, "skipped": 0, "errors": []}
     from ..services.email_templates import send_day14_reengagement_email
     from ..services.encryption import EncryptionService
     from ..models.lead import ContactOutcome
@@ -1841,6 +1849,8 @@ def send_monthly_provider_emails(self) -> Dict[str, Any]:
     Queries the referring_providers table for ACTIVE providers with email,
     sends the B2B outreach email from Dr. Patel.
     """
+    logger.info("send_monthly_provider_emails: disabled 2026-05-28 — only welcome email/SMS are active")
+    return {"status": "disabled", "sent": 0, "skipped": 0, "errors": []}
     from ..services.email_templates import send_provider_monthly_email
     from ..models.provider import ReferringProvider
 
