@@ -533,6 +533,10 @@ class CacheService:
         # Invalidate dashboard stats (quick refresh needed)
         self.delete(f"{self.PREFIX_DASHBOARD}:stats")
         self.delete(f"{self.PREFIX_LEADS}:counts")
+
+        # Queue sidebar badge counts (GET /api/leads/queue-summary, 10s TTL).
+        # Without this delete, badges could lag a mutation by up to 10 seconds.
+        self.delete("leads:queue_summary")
         
         # CRITICAL FIX: Also invalidate metrics dashboard summary cache
         # This key is used by /api/metrics/analytics/dashboard-summary

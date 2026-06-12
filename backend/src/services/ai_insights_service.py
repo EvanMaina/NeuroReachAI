@@ -8,8 +8,9 @@ takes 20–50s end-to-end) so we:
     - Cache the final response in Redis for 1 hour (key: ai_insights:v1).
     - Return an instant stub narrative on cold cache so the UI never blocks;
       the actual AI model call runs async via Celery.
-    - Use prompt caching on the large system prompt (stable across every
-      organisation-wide refresh) to keep repeated refreshes cheap.
+    - Send the large static system prompt FIRST so OpenAI's automatic prompt
+      caching (stable prefixes ≥1024 tokens) keeps repeated refreshes cheap —
+      never interpolate timestamps or per-request data into it.
 
 Per-lead email drafts (Send Email → "AI Recommended" tab) share the same
 client + model but use a separate, lead-specific prompt. Those are small and
@@ -948,47 +949,46 @@ def _build_user_message(metrics: InsightMetrics) -> str:
 
 def call_ai_model_for_insights(metrics: InsightMetrics) -> dict[str, Any]:
     """
-    Synchronous AI model call. Uses prompt caching on the system prompt so
-    hourly refreshes at the same org are dramatically cheaper.
+    Synchronous AI model call (OpenAI Chat Completions).
+
+    The static system prompt is sent first, so OpenAI's automatic prompt
+    caching (stable prefixes ≥1024 tokens) keeps hourly refreshes cheap.
+    JSON mode guarantees the response body is a single valid JSON object.
 
     Raises on failure — caller is responsible for surfacing the stub fallback.
     """
-    if not settings.anthropic_api_key:
+    if not settings.openai_api_key:
         raise RuntimeError("AI provider API key is not configured.")
 
     # Import lazily so the backend still boots when the SDK isn't installed
     # (e.g. fresh dev setup before `pip install`).
-    import anthropic
+    from openai import OpenAI
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, timeout=90.0, max_retries=2)
 
-    response = client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=4096,
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }
+    response = client.chat.completions.create(
+        model=settings.openai_model,
+        # Generous ceiling — reasoning models spend part of this budget on
+        # internal reasoning tokens before emitting the JSON payload.
+        max_completion_tokens=16384,
+        # JSON mode — the SYSTEM_PROMPT already specifies the exact schema.
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _build_user_message(metrics)},
         ],
-        messages=[{"role": "user", "content": _build_user_message(metrics)}],
     )
 
-    # Extract the first text block — ignore thinking blocks.
-    text_block = next(
-        (b for b in response.content if getattr(b, "type", None) == "text"),
-        None,
-    )
-    if text_block is None:
+    text = (response.choices[0].message.content or "") if response.choices else ""
+    if not text.strip():
         raise RuntimeError("AI model returned no text content.")
 
     try:
-        parsed = _extract_json_object(text_block.text)
+        parsed = _extract_json_object(text)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
             f"AI model returned non-JSON content: {exc}. "
-            f"First 200 chars: {(text_block.text or '')[:200]!r}"
+            f"First 200 chars: {text[:200]!r}"
         ) from exc
 
     return parsed
@@ -1277,7 +1277,7 @@ def get_insights(
 
     metrics = collect_metrics(db)
 
-    if force_refresh and settings.anthropic_api_key:
+    if force_refresh and settings.openai_api_key:
         try:
             result = call_ai_model_for_insights(metrics)
             result = _attach_real_metrics(result, metrics)
@@ -1435,7 +1435,7 @@ def refresh_insights_sync(db: Session) -> dict[str, Any]:
         db.rollback()
     db.close()
 
-    if not settings.anthropic_api_key:
+    if not settings.openai_api_key:
         result = _stub_insights(metrics)
         get_cache().set(
             INSIGHTS_CACHE_KEY,
@@ -1560,7 +1560,7 @@ def generate_email_draft(db: Session, lead: Lead) -> dict[str, Any]:
     if cached:
         return cached
 
-    if not settings.anthropic_api_key:
+    if not settings.openai_api_key:
         # Caller (HTTP layer) maps this to 503 SERVICE_UNAVAILABLE so the UI
         # shows a real error instead of the old silent template masquerading
         # as AI output.
@@ -1571,37 +1571,48 @@ def generate_email_draft(db: Session, lead: Lead) -> dict[str, Any]:
 
     payload = _email_prompt_payload(db, lead)
 
-    import anthropic
+    from openai import OpenAI
 
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    response = client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=1024,
-        system=[
-            {
-                "type": "text",
-                "text": EMAIL_SYSTEM_PROMPT,
-                # Prompt cache the system message — the structure is identical
-                # across every lead, so this saves ~600 input tokens per call.
-                "cache_control": {"type": "ephemeral"},
-            }
+    client = OpenAI(api_key=settings.openai_api_key, timeout=60.0, max_retries=2)
+    response = client.chat.completions.create(
+        model=settings.openai_model,
+        # Headroom for reasoning tokens + a ≤160-word email body.
+        max_completion_tokens=2048,
+        # Strict structured output — the API guarantees {subject, body}.
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "email_draft",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "subject": {"type": "string"},
+                        "body": {"type": "string"},
+                    },
+                    "required": ["subject", "body"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        messages=[
+            # Static system prompt first — eligible for OpenAI automatic
+            # prompt caching when combined prefix exceeds 1024 tokens.
+            {"role": "system", "content": EMAIL_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload)},
         ],
-        messages=[{"role": "user", "content": json.dumps(payload)}],
     )
 
-    text_block = next(
-        (b for b in response.content if getattr(b, "type", None) == "text"),
-        None,
-    )
-    if text_block is None:
+    text = (response.choices[0].message.content or "") if response.choices else ""
+    if not text.strip():
         raise RuntimeError("AI model returned no email draft content.")
 
     try:
-        parsed = _extract_json_object(text_block.text)
+        parsed = _extract_json_object(text)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
             f"AI model returned invalid JSON: {exc}. "
-            f"First 200 chars: {(text_block.text or '')[:200]!r}"
+            f"First 200 chars: {text[:200]!r}"
         ) from exc
 
     if not isinstance(parsed, dict) or "subject" not in parsed or "body" not in parsed:

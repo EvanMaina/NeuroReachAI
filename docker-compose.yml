@@ -67,8 +67,6 @@ services:
     image: redis:7.4-alpine
     container_name: neuroreach-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     command: >

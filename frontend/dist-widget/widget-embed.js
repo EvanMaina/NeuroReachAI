@@ -1,4 +1,4 @@
-(function(){"use strict";function f(){const e=document.querySelectorAll('script[src*="widget-embed"]'),t=e[e.length-1];let n="";if(t)try{const a=new URL(t.src);n=t.getAttribute("data-api-url")||`${a.protocol}//${a.host}`}catch(a){n=t.getAttribute("data-api-url")||""}return{apiUrl:n||window.location.origin}}const r={dk:"#1B3A4B",tl:"#1a6b5a",tl2:"#2d8a7a",wh:"#FFFFFF",mu:"#888"};function h(){if(document.querySelector("style[data-nr-card-widget]"))return;if(!document.querySelector('link[href*="Montserrat"]')){const t=document.createElement("link");t.rel="stylesheet",t.href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap",document.head.appendChild(t)}const e=document.createElement("style");e.setAttribute("data-nr-card-widget",""),e.textContent=`
+(function(){"use strict";function f(){const e=document.querySelectorAll('script[src*="widget-embed"]'),t=e[e.length-1];let n="";if(t)try{const i=new URL(t.src);n=t.getAttribute("data-api-url")||`${i.protocol}//${i.host}`}catch(i){n=t.getAttribute("data-api-url")||""}return{apiUrl:n||window.location.origin}}const a={dk:"#1B3A4B",tl:"#1a6b5a",tl2:"#2d8a7a",wh:"#FFFFFF",mu:"#888"};function u(){if(document.querySelector("style[data-nr-card-widget]"))return;if(!document.querySelector('link[href*="Montserrat"]')){const t=document.createElement("link");t.rel="stylesheet",t.href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap",document.head.appendChild(t)}const e=document.createElement("style");e.setAttribute("data-nr-card-widget",""),e.textContent=`
     /* ============================================================
        BASE — Tier 2: Desktop/Laptop (1280-1439px) as default
        z-index: 99 — BELOW site navigation dropdowns
@@ -52,7 +52,7 @@
     /* --- Brand Bar Color Wave --- */
     .nr-card-bar-top, .nr-card-bar-bottom {
       height: 3px;
-      background: linear-gradient(90deg, ${r.dk}, ${r.tl}, ${r.tl2}, ${r.tl}, ${r.dk});
+      background: linear-gradient(90deg, ${a.dk}, ${a.tl}, ${a.tl2}, ${a.tl}, ${a.dk});
       background-size: 300% 100%;
       animation: nr-wave 6s ease-in-out infinite;
     }
@@ -76,7 +76,7 @@
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
       font-size: 20px;
       font-weight: 700;
-      background: linear-gradient(135deg, ${r.dk} 0%, ${r.tl} 50%, ${r.tl2} 100%);
+      background: linear-gradient(135deg, ${a.dk} 0%, ${a.tl} 50%, ${a.tl2} 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -98,8 +98,8 @@
       font-size: 15px;
       font-weight: 600;
       font-family: 'Montserrat', Arial, Helvetica, sans-serif;
-      color: ${r.wh};
-      background: linear-gradient(135deg, ${r.dk} 0%, ${r.tl} 100%);
+      color: ${a.wh};
+      background: linear-gradient(135deg, ${a.dk} 0%, ${a.tl} 100%);
       border: none;
       border-radius: 8px;
       cursor: pointer;
@@ -136,13 +136,13 @@
 
     /* --- CTA Hover (desktop) --- */
     .nr-card-cta:hover {
-      background: linear-gradient(135deg, ${r.tl} 0%, ${r.dk} 100%);
+      background: linear-gradient(135deg, ${a.tl} 0%, ${a.dk} 100%);
       box-shadow: 0 4px 16px rgba(26,107,90,0.4);
       transform: translateY(-2px);
       animation: none;
     }
     .nr-card-cta:hover::before { animation: none; left: 100%; }
-    .nr-card-cta:focus-visible { outline: 3px solid ${r.tl}; outline-offset: 3px; }
+    .nr-card-cta:focus-visible { outline: 3px solid ${a.tl}; outline-offset: 3px; }
     .nr-card-cta:active { transform: translateY(0); box-shadow: 0 2px 6px rgba(26,107,90,0.2); }
 
     /* --- Arrow Nudge --- */
@@ -165,7 +165,7 @@
       justify-content: center;
       gap: 4px;
       font-size: 10px;
-      color: ${r.mu};
+      color: ${a.mu};
       letter-spacing: 0.02em;
       font-weight: 400;
       line-height: 1.4;
@@ -367,4 +367,4 @@
       }
     }
 
-  `,document.head.appendChild(e)}function x(){return window.location.href.toLowerCase().includes("/assessment")}function u(e){const t=e.apiUrl+"/assessment?utm_source=floating_widget&utm_medium=cta",n=document.createElement("div");n.id="nr-card-widget",n.setAttribute("role","complementary"),n.setAttribute("aria-label","TMS Assessment — free 2-minute confidential check");const a=document.createElement("div");a.className="nr-card-inner";const m=document.createElement("div");m.className="nr-card-bar-top";const o=document.createElement("div");o.className="nr-card-body";const c=document.createElement("h2");c.className="nr-card-headline",c.textContent="Could TMS help me?";const i=document.createElement("a");i.className="nr-card-cta",i.href=t,i.target="_blank",i.rel="noopener noreferrer",i.setAttribute("aria-label","Take a free 2-minute TMS assessment (opens in new tab)"),i.innerHTML='<span>Take Free Assessment</span><span class="nr-card-cta-arrow">&rarr;</span>';const l=document.createElement("div");l.className="nr-card-trust",l.innerHTML='<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🟢 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>🔐 256-bit</span>',o.appendChild(c),o.appendChild(i),o.appendChild(l);const g=document.createElement("div");g.className="nr-card-bar-bottom",a.appendChild(m),a.appendChild(o),a.appendChild(g),n.appendChild(a),document.body.appendChild(n),setTimeout(()=>{n.classList.add("nr-card-visible")},1500)}function s(){const e=document.getElementById("nr-card-widget");e&&e.remove(),["nr-banner-widget","nr-cta-wrapper","nr-cta-widget","nr-assessment-btn","nr-assessment-btn-pulse","nr-cta-tooltip","nr-cta-icon","nr-cta-text"].forEach(t=>{const n=document.getElementById(t);n&&n.remove()}),["style[data-nr-banner-widget]","style[data-nr-cta-widget]","style[data-nr-widget]"].forEach(t=>{document.querySelectorAll(t).forEach(n=>n.remove())}),document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove())}function b(){[500,1e3,2e3,3e3,5e3,8e3].forEach(e=>{setTimeout(()=>{try{document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove()),document.querySelectorAll("style[data-nr-cta-widget],style[data-nr-widget]").forEach(t=>t.remove())}catch(t){}},e)})}const w=(()=>{try{return new URLSearchParams(window.location.search).get("nr-debug")==="1"}catch(e){return!1}})(),d="[NR Widget]";function p(){if(document.getElementById("nr-card-widget"))return;if(x()){s();return}s();const e=f();h(),u(e),b(),w&&console.log(d,"v20.0.0 →",e.apiUrl+"/assessment",`screen: ${window.innerWidth}px`)}(function(){try{document.readyState==="loading"?document.addEventListener("DOMContentLoaded",()=>{try{p()}catch(e){console.error(d,e)}}):p(),window.addEventListener("popstate",()=>{setTimeout(()=>{try{x()?s():document.getElementById("nr-card-widget")||p()}catch(e){console.error(d,e)}},100)})}catch(e){console.error(d,e)}})()})();
+  `,document.head.appendChild(e)}function x(){return window.location.href.toLowerCase().includes("/assessment")}function h(e){try{const t=new URLSearchParams(window.location.search),n=t.get("utm_source"),i=t.get("utm_medium"),d=t.get("utm_campaign"),o=t.get("utm_term"),s=t.get("gclid"),r=new URLSearchParams;return n?(r.set("utm_source",n),i&&r.set("utm_medium",i),d&&r.set("utm_campaign",d),o&&r.set("utm_term",o),r.set("utm_content","floating_widget")):s?(r.set("utm_source","google"),r.set("utm_medium","cpc"),r.set("utm_content","floating_widget")):(r.set("utm_source","floating_widget"),r.set("utm_medium","cta")),`${e}/assessment?${r.toString()}`}catch(t){return`${e}/assessment?utm_source=floating_widget&utm_medium=cta`}}function b(e){const t=h(e.apiUrl),n=document.createElement("div");n.id="nr-card-widget",n.setAttribute("role","complementary"),n.setAttribute("aria-label","TMS Assessment — free 2-minute confidential check");const i=document.createElement("div");i.className="nr-card-inner";const d=document.createElement("div");d.className="nr-card-bar-top";const o=document.createElement("div");o.className="nr-card-body";const s=document.createElement("h2");s.className="nr-card-headline",s.textContent="Could TMS help me?";const r=document.createElement("a");r.className="nr-card-cta",r.href=t,r.target="_blank",r.rel="noopener noreferrer",r.setAttribute("aria-label","Take a free 2-minute TMS assessment (opens in new tab)"),r.innerHTML='<span>Take Free Assessment</span><span class="nr-card-cta-arrow">&rarr;</span>';const m=document.createElement("div");m.className="nr-card-trust",m.innerHTML='<span>🔒 Confidential</span><span class="nr-card-trust-sep">&middot;</span><span>🟢 HIPAA</span><span class="nr-card-trust-sep">&middot;</span><span>🔐 256-bit</span>',o.appendChild(s),o.appendChild(r),o.appendChild(m);const g=document.createElement("div");g.className="nr-card-bar-bottom",i.appendChild(d),i.appendChild(o),i.appendChild(g),n.appendChild(i),document.body.appendChild(n),setTimeout(()=>{n.classList.add("nr-card-visible")},1500)}function p(){const e=document.getElementById("nr-card-widget");e&&e.remove(),["nr-banner-widget","nr-cta-wrapper","nr-cta-widget","nr-assessment-btn","nr-assessment-btn-pulse","nr-cta-tooltip","nr-cta-icon","nr-cta-text"].forEach(t=>{const n=document.getElementById(t);n&&n.remove()}),["style[data-nr-banner-widget]","style[data-nr-cta-widget]","style[data-nr-widget]"].forEach(t=>{document.querySelectorAll(t).forEach(n=>n.remove())}),document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove())}function w(){[500,1e3,2e3,3e3,5e3,8e3].forEach(e=>{setTimeout(()=>{try{document.querySelectorAll('[id^="nr-cta"],[id^="nr-assessment"]').forEach(t=>t.remove()),document.querySelectorAll("style[data-nr-cta-widget],style[data-nr-widget]").forEach(t=>t.remove())}catch(t){}},e)})}const y=(()=>{try{return new URLSearchParams(window.location.search).get("nr-debug")==="1"}catch(e){return!1}})(),c="[NR Widget]";function l(){if(document.getElementById("nr-card-widget"))return;if(x()){p();return}p();const e=f();u(),b(e),w(),y&&console.log(c,"v20.0.0 →",e.apiUrl+"/assessment",`screen: ${window.innerWidth}px`)}(function(){try{document.readyState==="loading"?document.addEventListener("DOMContentLoaded",()=>{try{l()}catch(e){console.error(c,e)}}):l(),window.addEventListener("popstate",()=>{setTimeout(()=>{try{x()?p():document.getElementById("nr-card-widget")||l()}catch(e){console.error(c,e)}},100)})}catch(e){console.error(c,e)}})()})();

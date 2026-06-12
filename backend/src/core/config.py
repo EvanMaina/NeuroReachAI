@@ -113,15 +113,15 @@ class Settings(BaseSettings):
         default=100, description="Batch size for lead processing")
 
     # ==========================================================================
-    # AI provider settings (AI Insights + email drafts)
+    # AI provider settings (AI Insights + email drafts) — OpenAI
     # ==========================================================================
-    anthropic_api_key: str = Field(
+    openai_api_key: str = Field(
         default="",
-        description="AI provider API key. Empty means AI features return deterministic fallback data."
+        description="OpenAI API key. Empty means AI features return deterministic fallback data."
     )
-    anthropic_model: str = Field(
-        default="claude-opus-4-1-20250805",
-        description="AI provider model ID for AI Insights + email drafts."
+    openai_model: str = Field(
+        default="gpt-5.5",
+        description="OpenAI model ID for AI Insights + email drafts."
     )
     ai_insights_cache_ttl: int = Field(
         default=3600,

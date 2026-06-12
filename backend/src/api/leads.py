@@ -160,6 +160,21 @@ def clear_lead_transition_fields(lead: Lead) -> None:
     lead.scheduled_notes = None
 
 
+def clear_treatment_decision_fields(lead: Lead) -> None:
+    """
+    Reset the post-consultation treatment decision (migration 030).
+
+    Called when a lead enters CONSULTATION_COMPLETE fresh (the decision is
+    pending again) or leaves the completed/treatment statuses entirely
+    (the previous decision no longer applies).
+    """
+    lead.treatment_decision = None
+    lead.treatment_decision_at = None
+    lead.treatment_decided_by_user_id = None
+    lead.treatment_no_reason = None
+    lead.mt_scheduled_for = None
+
+
 def get_client_ip(request: Request) -> Optional[str]:
     """
     Extract client IP from request headers.
@@ -301,9 +316,14 @@ def apply_queue_filter(query, queue_type: Optional[str]):
         )
 
     if queue_type == "post_consultation":
-        # Leads that missed a scheduled consultation — contact_outcome = NO_SHOW
-        # OR legacy leads still using follow_up_reason = "No Show".
-        return query.filter(
+        # Two populations (migration 030 added the second):
+        #   1) No-shows — contact_outcome = NO_SHOW, or legacy leads still
+        #      using follow_up_reason = "No Show".
+        #   2) Completed consults whose treatment decision is pending
+        #      (treatment_decision IS NULL) or decided "yes" but still awaiting
+        #      the MT appointment (status leaves for TREATMENT_STARTED when MT
+        #      is recorded). treatment_decision = 'no' stays in Completed only.
+        no_show_arm = and_(
             Lead.status.notin_(TERMINAL),
             or_(
                 Lead.contact_outcome == ContactOutcome.NO_SHOW,
@@ -313,6 +333,14 @@ def apply_queue_filter(query, queue_type: Optional[str]):
                 ),
             ),
         )
+        treatment_pending_arm = and_(
+            Lead.status == LeadStatus.CONSULTATION_COMPLETE,
+            or_(
+                Lead.treatment_decision.is_(None),
+                Lead.treatment_decision == "yes",
+            ),
+        )
+        return query.filter(or_(no_show_arm, treatment_pending_arm))
 
     if queue_type == "unreachable":
         return query.filter(
@@ -1018,6 +1046,10 @@ async def list_leads(
                 last_updated_at=lead.last_updated_at,
                 no_show_reason=lead.no_show_reason,
                 manual_lead_source=lead.manual_lead_source,
+                treatment_decision=lead.treatment_decision,
+                treatment_decision_at=lead.treatment_decision_at,
+                treatment_no_reason=lead.treatment_no_reason,
+                mt_scheduled_for=lead.mt_scheduled_for,
             )
 
         # Use thread pool for concurrent decryption (max 8 workers)
@@ -1297,6 +1329,10 @@ async def search_leads_phi(
                 last_contact_attempt=lead.last_contact_attempt,
                 no_show_reason=lead.no_show_reason,
                 manual_lead_source=lead.manual_lead_source,
+                treatment_decision=lead.treatment_decision,
+                treatment_decision_at=lead.treatment_decision_at,
+                treatment_no_reason=lead.treatment_no_reason,
+                mt_scheduled_for=lead.mt_scheduled_for,
             )
         )
 
@@ -1757,8 +1793,8 @@ async def get_queue_summary(
 
     _QUEUE_TYPES = [
         "all", "new", "contacted", "follow_up", "callback",
-        "scheduled", "completed", "unreachable", "not_interested",
-        "hot", "medium", "low",
+        "scheduled", "post_consultation", "completed", "unreachable",
+        "not_interested", "hot", "medium", "low",
     ]
 
     try:
@@ -2358,9 +2394,12 @@ async def update_lead_status(
     if transitioning_into_closed:
         lead.completed_by_user_id = current_user.id
         lead.completed_at = datetime.now(timezone.utc)
+        # Entering completed fresh → treatment decision is pending (migration 030)
+        clear_treatment_decision_fields(lead)
     elif old_status in closing_statuses and new_status not in closing_statuses:
         lead.completed_by_user_id = None
         lead.completed_at = None
+        clear_treatment_decision_fields(lead)
 
     # Mark activity timestamp
     mark_lead_activity(lead)
@@ -2794,10 +2833,14 @@ async def update_consultation_outcome(
         lead.follow_up_date = None
         lead.completed_by_user_id = current_user.id
         lead.completed_at = now
+        # Fresh completion → treatment decision is pending again; lead surfaces
+        # in the Post-Consultation queue until the coordinator records yes/no.
+        clear_treatment_decision_fields(lead)
     elif outcome_lower == "reschedule":
         if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
             lead.completed_by_user_id = None
             lead.completed_at = None
+            clear_treatment_decision_fields(lead)
         lead.status = LeadStatus.SCHEDULED
         lead.contact_outcome = ContactOutcome.SCHEDULED
         lead.follow_up_reason = "Rescheduled"
@@ -2808,6 +2851,7 @@ async def update_consultation_outcome(
         if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
             lead.completed_by_user_id = None
             lead.completed_at = None
+            clear_treatment_decision_fields(lead)
         # Move back to the Follow-up workflow with a coordinator callback date.
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.ANSWERED
@@ -2819,6 +2863,7 @@ async def update_consultation_outcome(
         if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
             lead.completed_by_user_id = None
             lead.completed_at = None
+            clear_treatment_decision_fields(lead)
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.NO_SHOW
         lead.follow_up_reason = "No Show"
@@ -2832,6 +2877,7 @@ async def update_consultation_outcome(
         if old_status_enum in (LeadStatus.CONSULTATION_COMPLETE, LeadStatus.TREATMENT_STARTED):
             lead.completed_by_user_id = None
             lead.completed_at = None
+            clear_treatment_decision_fields(lead)
         lead.status = LeadStatus.CONTACTED
         lead.contact_outcome = ContactOutcome.ANSWERED
         lead.follow_up_reason = "Cancelled Appointment"
@@ -2905,6 +2951,202 @@ async def update_consultation_outcome(
         "lead_id": str(lead.id),
         "new_status": lead.status.value,
         "follow_up_reason": lead.follow_up_reason,
+    }
+
+
+@router.patch(
+    "/{lead_id}/treatment-decision",
+    summary="Record Post-Consultation Treatment Decision",
+    description=(
+        "Record whether a patient with a completed consultation will be doing "
+        "treatment, i.e. whether a Motor Threshold appointment will be scheduled."
+    ),
+)
+async def update_treatment_decision(
+    lead_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("administrator", "coordinator")),
+) -> dict:
+    """
+    Record the post-consultation treatment decision (migration 030).
+
+    Accepts JSON body with:
+      - decision: str (yes|no|pending|mt_scheduled)
+      - treatment_no_reason: Optional[str] (context when decision = no)
+      - mt_scheduled_for: Optional[str] (ISO datetime, REQUIRED for mt_scheduled)
+      - notes: Optional[str]
+      - expected_updated_at: Optional[str] (optimistic lock)
+
+    WORKFLOW RULES:
+    | decision     | Effect                                                        |
+    |--------------|---------------------------------------------------------------|
+    | yes          | treatment_decision='yes'; lead stays in Post-Consultation (Awaiting MT) |
+    | no           | treatment_decision='no'; lead remains CONSULTATION_COMPLETE (Completed queue) |
+    | pending      | undo — decision reset to NULL (only while CONSULTATION_COMPLETE) |
+    | mt_scheduled | requires prior 'yes'; stamps mt_scheduled_for and moves the lead to TREATMENT_STARTED |
+    """
+    lead = db.query(Lead).filter(
+        Lead.id == lead_id,
+        Lead.deleted_at.is_(None),
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    decision = (body.get("decision") or "").lower().strip()
+    notes = body.get("notes")
+    expected_updated_at_raw = body.get("expected_updated_at")
+
+    expected_updated_at = None
+    if isinstance(expected_updated_at_raw, str) and expected_updated_at_raw.strip():
+        try:
+            expected_updated_at = datetime.fromisoformat(
+                expected_updated_at_raw.replace("Z", "+00:00")
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid expected_updated_at timestamp.")
+
+    ensure_expected_updated_at(lead, expected_updated_at, lead_id)
+
+    old_status = lead.status.value if lead.status else None
+    old_treatment_decision = lead.treatment_decision
+    now = datetime.now(timezone.utc)
+
+    if decision in ("yes", "no", "pending"):
+        # Decisions are only recordable on a completed consultation that has
+        # not yet progressed to treatment.
+        if lead.status != LeadStatus.CONSULTATION_COMPLETE:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Treatment decision can only be recorded for leads with a completed "
+                    f"consultation (current status: {old_status})."
+                ),
+            )
+
+    if decision == "yes":
+        lead.treatment_decision = "yes"
+        lead.treatment_decision_at = now
+        lead.treatment_decided_by_user_id = current_user.id
+        lead.treatment_no_reason = None
+    elif decision == "no":
+        lead.treatment_decision = "no"
+        lead.treatment_decision_at = now
+        lead.treatment_decided_by_user_id = current_user.id
+        treatment_no_reason_val = body.get("treatment_no_reason")
+        if treatment_no_reason_val and isinstance(treatment_no_reason_val, str):
+            lead.treatment_no_reason = treatment_no_reason_val.strip()[:255] or None
+        else:
+            lead.treatment_no_reason = None
+        lead.mt_scheduled_for = None
+    elif decision == "pending":
+        clear_treatment_decision_fields(lead)
+    elif decision == "mt_scheduled":
+        if lead.status != LeadStatus.CONSULTATION_COMPLETE or lead.treatment_decision != "yes":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "MT appointment can only be recorded after the treatment decision "
+                    "is 'yes' on a completed consultation."
+                ),
+            )
+        mt_raw = body.get("mt_scheduled_for")
+        if not isinstance(mt_raw, str) or not mt_raw.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="mt_scheduled_for (ISO datetime) is required for mt_scheduled.",
+            )
+        try:
+            lead.mt_scheduled_for = datetime.fromisoformat(mt_raw.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid mt_scheduled_for timestamp.")
+        # Treatment phase begins with the MT appointment.
+        lead.status = LeadStatus.TREATMENT_STARTED
+        # completed_by_user_id / completed_at stay — closer attribution belongs
+        # to the coordinator who completed the consult.
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid decision: {decision or '(missing)'}")
+
+    user_name = (
+        f"{current_user.first_name} {current_user.last_name}".strip()
+        or current_user.email
+        or "System"
+    )
+
+    note_text_user = (notes or "").strip()
+    decision_labels = {
+        "yes": "Will be doing treatment — MT appointment to be scheduled",
+        "no": "Will NOT be doing treatment",
+        "pending": "Treatment decision reset to pending",
+        "mt_scheduled": "MT appointment scheduled — treatment started",
+    }
+    try:
+        from ..models.lead_note import LeadNote
+
+        note_text = f"Treatment decision: {decision_labels[decision]}"
+        if decision == "no" and lead.treatment_no_reason:
+            note_text += f" (reason: {lead.treatment_no_reason})"
+        if decision == "mt_scheduled" and lead.mt_scheduled_for:
+            note_text += f" for {lead.mt_scheduled_for.isoformat()}"
+        if note_text_user:
+            note_text += f" — {note_text_user}"
+        db.add(LeadNote(
+            lead_id=lead.id,
+            note_text=note_text,
+            created_by=current_user.id,
+            created_by_name=user_name,
+            note_type="outcome",
+            related_outcome=f"treatment_{decision}",
+        ))
+    except Exception as e:
+        logger.warning(f"Failed to create treatment decision note: {e}")
+
+    mark_lead_activity(lead)
+    db.commit()
+    db.refresh(lead)
+
+    try:
+        cache = get_cache()
+        cache.invalidate_on_lead_change()
+    except Exception:
+        pass
+
+    try:
+        audit_service = AuditService(db)
+        audit_service.log_update(
+            table_name="leads",
+            record_id=lead.id,
+            ip_address=get_client_ip(request),
+            endpoint=f"/api/leads/{lead_id}/treatment-decision",
+            request_method="PATCH",
+            user_agent=get_user_agent(request),
+            old_values={"status": old_status, "treatment_decision": old_treatment_decision},
+            new_values={
+                "status": lead.status.value,
+                "treatment_decision": lead.treatment_decision,
+                "treatment_no_reason": lead.treatment_no_reason,
+                "mt_scheduled_for": (
+                    lead.mt_scheduled_for.isoformat() if lead.mt_scheduled_for else None
+                ),
+            },
+        )
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "lead_id": str(lead.id),
+        "new_status": lead.status.value,
+        "treatment_decision": lead.treatment_decision,
+        "treatment_no_reason": lead.treatment_no_reason,
+        "mt_scheduled_for": (
+            lead.mt_scheduled_for.isoformat() if lead.mt_scheduled_for else None
+        ),
     }
 
 

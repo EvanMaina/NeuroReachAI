@@ -101,6 +101,11 @@ interface TransformedLeadItem {
   manualLeadSource?: string;
   // Reason a scheduled consultation was missed (migration 029)
   noShowReason?: string;
+  // Post-consultation treatment decision (migration 030)
+  treatmentDecision?: string;
+  treatmentDecisionAt?: string;
+  treatmentNoReason?: string;
+  mtScheduledFor?: string;
 }
 
 // =============================================================================
@@ -149,6 +154,11 @@ export function transformLeadToTableRow(item: TransformedLeadItem, index: number
     manualLeadSource: item.manualLeadSource || undefined,
     // No-show reason for post-consultation queue
     noShowReason: item.noShowReason || undefined,
+    // Post-consultation treatment decision (migration 030)
+    treatmentDecision: item.treatmentDecision || undefined,
+    treatmentDecisionAt: item.treatmentDecisionAt || undefined,
+    treatmentNoReason: item.treatmentNoReason || undefined,
+    mtScheduledFor: item.mtScheduledFor || undefined,
   };
 }
 

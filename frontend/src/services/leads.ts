@@ -405,6 +405,11 @@ function mapLeadResponse(lead: Record<string, unknown>): ILeadListItem {
     manualLeadSource: lead.manual_lead_source as string | undefined,
     // Reason a scheduled consultation was missed (migration 029)
     noShowReason: lead.no_show_reason as string | undefined,
+    // Post-consultation treatment decision (migration 030)
+    treatmentDecision: lead.treatment_decision as string | undefined,
+    treatmentDecisionAt: lead.treatment_decision_at as string | undefined,
+    treatmentNoReason: lead.treatment_no_reason as string | undefined,
+    mtScheduledFor: lead.mt_scheduled_for as string | undefined,
   };
 }
 
@@ -897,6 +902,57 @@ export async function updateConsultationOutcome(
   const response = await apiClient.patch<ILeadResponse>(
     `/api/leads/${leadId}/consultation-outcome`,
     outcomeData
+  );
+  return response.data;
+}
+
+// =============================================================================
+// Post-Consultation Treatment Decision API (migration 030)
+// =============================================================================
+
+/**
+ * Treatment decision actions:
+ *  - 'yes'          — patient will be doing treatment; lead stays in
+ *                     Post-Consultation ("Awaiting MT") until the MT
+ *                     appointment is recorded
+ *  - 'no'           — patient is not proceeding; lead remains Consultation Complete
+ *  - 'pending'      — undo a recorded decision
+ *  - 'mt_scheduled' — record the Motor Threshold appointment; lead moves to
+ *                     Treatment Started (requires a prior 'yes')
+ */
+export type TreatmentDecisionAction = 'yes' | 'no' | 'pending' | 'mt_scheduled';
+
+export interface IUpdateTreatmentDecisionRequest {
+  decision: TreatmentDecisionAction;
+  /** Optional context when decision = 'no' */
+  treatment_no_reason?: string;
+  /** ISO datetime — REQUIRED when decision = 'mt_scheduled' */
+  mt_scheduled_for?: string;
+  notes?: string;
+  /** Optimistic locking timestamp from the last lead fetch */
+  expected_updated_at?: string;
+}
+
+export interface IUpdateTreatmentDecisionResponse {
+  success: boolean;
+  lead_id: string;
+  new_status: string;
+  treatment_decision: string | null;
+  treatment_no_reason: string | null;
+  mt_scheduled_for: string | null;
+}
+
+/**
+ * Record whether a patient with a completed consultation will be doing
+ * treatment — i.e. whether a Motor Threshold appointment will be scheduled.
+ */
+export async function updateTreatmentDecision(
+  leadId: string,
+  data: IUpdateTreatmentDecisionRequest
+): Promise<IUpdateTreatmentDecisionResponse> {
+  const response = await apiClient.patch<IUpdateTreatmentDecisionResponse>(
+    `/api/leads/${leadId}/treatment-decision`,
+    data
   );
   return response.data;
 }

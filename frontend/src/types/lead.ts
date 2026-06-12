@@ -257,6 +257,14 @@ export interface LeadTableRow {
   manualLeadSource?: string;
   /** Reason a scheduled consultation was missed (migration 029). */
   noShowReason?: string;
+  /** Post-consultation treatment decision: 'yes' | 'no' | undefined = pending (migration 030). */
+  treatmentDecision?: string;
+  /** When the treatment decision was recorded (migration 030). */
+  treatmentDecisionAt?: string;
+  /** Optional reason when treatmentDecision = 'no' (migration 030). */
+  treatmentNoReason?: string;
+  /** Motor Threshold appointment datetime (migration 030). */
+  mtScheduledFor?: string;
   tmsTherapyInterest?: string;
   /** Coordinator-captured city/area (e.g. "Gilbert, AZ"). Powers expansion insights. */
   leadLocation?: string;

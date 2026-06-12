@@ -697,6 +697,21 @@ class LeadResponse(BaseModel):
         description="Coordinator-selected reason why the patient missed their scheduled consultation",
     )
 
+    # Post-consultation treatment decision (migration 030)
+    treatment_decision: Optional[str] = Field(
+        default=None,
+        description="Treatment decision after completed consult: 'yes' (MT will be scheduled), 'no', or NULL (pending)",
+    )
+    treatment_decision_at: Optional[datetime] = None
+    treatment_no_reason: Optional[str] = Field(
+        default=None,
+        description="Optional reason when treatment_decision = 'no'",
+    )
+    mt_scheduled_for: Optional[datetime] = Field(
+        default=None,
+        description="Motor Threshold appointment datetime (set when lead moves to TREATMENT_STARTED)",
+    )
+
     # Last Activity timestamp
     last_updated_at: Optional[datetime] = Field(
         default=None,
@@ -773,6 +788,21 @@ class LeadListResponse(BaseModel):
     no_show_reason: Optional[str] = Field(
         default=None,
         description="Coordinator-selected reason why the patient missed their scheduled consultation",
+    )
+
+    # Post-consultation treatment decision (migration 030)
+    treatment_decision: Optional[str] = Field(
+        default=None,
+        description="Treatment decision after completed consult: 'yes' (MT will be scheduled), 'no', or NULL (pending)",
+    )
+    treatment_decision_at: Optional[datetime] = None
+    treatment_no_reason: Optional[str] = Field(
+        default=None,
+        description="Optional reason when treatment_decision = 'no'",
+    )
+    mt_scheduled_for: Optional[datetime] = Field(
+        default=None,
+        description="Motor Threshold appointment datetime (set when lead moves to TREATMENT_STARTED)",
     )
 
     # Last Activity timestamp

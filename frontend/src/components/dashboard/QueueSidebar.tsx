@@ -149,7 +149,7 @@ const QUEUE_CONFIG: QueueConfig[] = [
     color: 'text-rose-600',
     bgColor: 'bg-rose-50',
     borderColor: 'border-rose-200',
-    description: 'No-show & missed consultations — re-engage',
+    description: 'No-shows & completed consults — record treatment decision',
     category: 'outcome',
   },
   {
@@ -297,6 +297,14 @@ const calculateQueueCounts = (leads: LeadTableRow[]): Record<QueueType, number> 
   // Count completed leads separately
   counts.completed = nonLostLeads.filter(l =>
     ['consultation complete', 'treatment started'].includes(l.status)
+  ).length;
+
+  // POST-CONSULTATION treatment arm (migration 030): completed consults whose
+  // treatment decision is pending, or 'yes' and awaiting the MT appointment.
+  // (The no-show arm is counted inside the activeLeads loop below.)
+  counts.post_consultation += nonLostLeads.filter(l =>
+    l.status === 'consultation complete' &&
+    (!l.treatmentDecision || l.treatmentDecision === 'yes')
   ).length;
 
   activeLeads.forEach(lead => {
@@ -637,11 +645,24 @@ export const filterLeadsByQueue = (
       return activeLeads.filter(l => l.status === 'scheduled');
 
     case 'post_consultation':
-      // No-show & missed consultations (migration 029).
-      // Matches contact_outcome = NO_SHOW OR legacy follow_up_reason = "No Show".
+      // Two populations (mirrors backend apply_queue_filter):
+      //  1) No-shows (migration 029) — contact_outcome = NO_SHOW OR legacy
+      //     follow_up_reason = "No Show".
+      //  2) Completed consults (migration 030) whose treatment decision is
+      //     pending, or decided "yes" and awaiting the MT appointment.
+      //     treatmentDecision = 'no' stays in the Completed queue only.
       return leads.filter(l =>
-        l.contactOutcome === 'NO_SHOW' ||
-        (l.followUpReason === 'No Show' && l.contactOutcome !== 'COMPLETED')
+        (
+          !['consultation complete', 'treatment started', 'lost', 'disqualified'].includes(l.status) &&
+          (
+            l.contactOutcome === 'NO_SHOW' ||
+            (l.followUpReason === 'No Show' && l.contactOutcome !== 'COMPLETED')
+          )
+        ) ||
+        (
+          l.status === 'consultation complete' &&
+          (!l.treatmentDecision || l.treatmentDecision === 'yes')
+        )
       );
 
     case 'completed':

@@ -1,13 +1,12 @@
 /**
- * PostConsultationQueue — World-class missed-consultation tracker
+ * PostConsultationQueue — World-class post-consultation tracker
  *
- * Features:
- * - Area trend chart with selectable range (7d / 14d / 30d / All)
- * - Donut reason distribution with recharts
- * - Resizable columns (same pattern as LeadsTable — drag handle on header borders)
- * - Pagination (10 / 25 / 50 rows per page)
- * - Email + SMS quick-action icons in every row
- * - Left border urgency accent: green <2d · amber 2-7d · rose >7d
+ * Two populations (mirrors backend apply_queue_filter):
+ *  1) Treatment Decisions (migration 030) — completed consults awaiting the
+ *     coordinator's "will the patient be doing treatment?" call, plus
+ *     decided-yes leads awaiting their Motor Threshold (MT) appointment.
+ *  2) No-shows (migration 029) — missed consultations to re-engage, with
+ *     trend chart, reason donut, resizable columns and pagination.
  *
  * "No-Show Date" uses lastUpdatedAt — scheduled_callback_at is cleared by
  * clear_lead_transition_fields() before NO_SHOW is persisted.
@@ -23,11 +22,13 @@ import {
   PhoneOff, RefreshCw, ThumbsDown, Shield, MapPin,
   UserMinus, HelpCircle, ChevronUp, ChevronDown,
   Loader2, AlertCircle, TrendingUp, FileText,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Stethoscope, CheckCircle2,
+  XCircle, Undo2, CalendarClock, ArrowRight,
 } from 'lucide-react';
 import type { LeadTableRow } from '../../types/lead';
 import { Badge } from '../common/Badge';
 import { formatRelativeTime } from '../../utils/dateFormatters';
+import { updateTreatmentDecision } from '../../services/leads';
 import { PhoneDialModal } from './PhoneDialModal';
 import { EmailComposeDialog } from './EmailComposeDialog';
 import { SMSComposeDialog } from './SMSComposeDialog';
@@ -103,6 +104,19 @@ const REASON_CFG: Record<KnownReason, ReasonCfg> = {
 };
 const KNOWN = new Set<string>(Object.keys(REASON_CFG));
 
+// ---------------------------------------------------------------------------
+// Treatment decision — "No" reasons (application-enforced, migration 030)
+// ---------------------------------------------------------------------------
+
+const TREATMENT_NO_REASONS: { value: string; label: string }[] = [
+  { value: 'insurance_denied',      label: 'Insurance denied / not covered' },
+  { value: 'cost',                  label: 'Cost concerns' },
+  { value: 'chose_other_treatment', label: 'Chose another treatment' },
+  { value: 'not_a_candidate',       label: 'Not a clinical candidate' },
+  { value: 'patient_declined',      label: 'Patient declined' },
+  { value: 'other',                 label: 'Other' },
+];
+
 function getReason(r: string | null | undefined): (ReasonCfg & { isKnown: boolean }) | null {
   if (!r?.trim()) return null;
   if (KNOWN.has(r)) return { ...REASON_CFG[r as KnownReason], isKnown: true };
@@ -132,6 +146,38 @@ function urgencyBorder(ds: string | null | undefined) {
   if (d > 7)  return 'border-l-[3px] border-l-rose-400';
   if (d >= 2) return 'border-l-[3px] border-l-amber-400';
   return 'border-l-[3px] border-l-emerald-400';
+}
+
+/** Format a Date for an <input type="datetime-local"> value (local time). */
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Quick-pick MT appointment slots: tomorrow / +2 days / next Monday, 9:00 AM. */
+function buildMtQuickPicks(): { label: string; value: string }[] {
+  const at9 = (daysAhead: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + daysAhead);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  };
+  const nextMondayOffset = ((8 - new Date().getDay()) % 7) || 7;
+  const picks = [
+    { label: 'Tomorrow 9:00 AM', date: at9(1) },
+    { label: 'In 2 days 9:00 AM', date: at9(2) },
+    { label: 'Next Mon 9:00 AM', date: at9(nextMondayOffset) },
+  ];
+  return picks.map(p => ({ label: p.label, value: toLocalInputValue(p.date) }));
+}
+
+/** Human label for the chosen MT datetime, e.g. "Mon, Jun 15 · 9:00 AM". */
+function fmtMtLabel(value: string): string {
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    + ' · '
+    + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
 // ---------------------------------------------------------------------------
@@ -224,7 +270,7 @@ const SortTh: React.FC<{
   return (
     <th className="relative px-4 py-3 text-left bg-gray-50 select-none" style={{ width, minWidth: 80 }}>
       <button type="button" onClick={() => onSort(field)}
-        className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-widest font-semibold transition-colors ${active ? 'text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}>
+        className={`inline-flex items-center gap-1 text-xs uppercase tracking-widest font-semibold transition-colors ${active ? 'text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}>
         {label}
         {active
           ? (sort.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)
@@ -245,7 +291,7 @@ const StaticTh: React.FC<{
   label: string; width: number; colKey: string; onResizeStart: (col: string, startX: number, startW: number) => void;
 }> = ({ label, width, colKey, onResizeStart }) => (
   <th className="relative px-4 py-3 text-left bg-gray-50 select-none" style={{ width, minWidth: 80 }}>
-    <span className="text-[11px] uppercase tracking-widest font-semibold text-gray-400">{label}</span>
+    <span className="text-xs uppercase tracking-widest font-semibold text-gray-400">{label}</span>
     <div
       className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
       onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onResizeStart(colKey, e.clientX, width); }}
@@ -283,7 +329,7 @@ const CustomPieTooltip = ({ active, payload }: { active?: boolean; payload?: Arr
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50] as const;
 
 export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
-  leads, isLoading, onView, onReEngage,
+  leads, isLoading, onView, onReEngage, onRefresh,
 }) => {
   const [sort, setSort]             = useState<SortState>({ field: 'noShowDate', direction: 'desc' });
   const [trendRange, setTrendRange] = useState<TrendRange>(14);
@@ -354,18 +400,96 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
     setSmsDialogOpen(true);
   }, []);
 
-  // Data
-  const trendData   = useMemo(() => buildTrend(leads, trendRange), [leads, trendRange]);
-  const pieData     = useMemo(() => buildPie(leads), [leads]);
-  const sortedLeads = useMemo(() => sortLeads(leads, sort), [leads, sort]);
+  // ── Treatment decision state (migration 030) ─────────────────────────────
+  const [decisionBusyId, setDecisionBusyId] = useState<string | null>(null);
+  const [decisionErrors, setDecisionErrors] = useState<Record<string, string>>({});
+  const [noFlowLeadId, setNoFlowLeadId]     = useState<string | null>(null);
+  const [noReason, setNoReason]             = useState<string>('');
+  const [mtFlowLeadId, setMtFlowLeadId]     = useState<string | null>(null);
+  const [mtDateTime, setMtDateTime]         = useState<string>('');
+
+  const submitTreatmentDecision = useCallback(async (
+    lead: LeadTableRow,
+    payload: { decision: 'yes' | 'no' | 'pending' | 'mt_scheduled'; treatment_no_reason?: string; mt_scheduled_for?: string },
+    successMessage?: string,
+  ) => {
+    setDecisionBusyId(lead.id);
+    setDecisionErrors(prev => { const next = { ...prev }; delete next[lead.id]; return next; });
+    try {
+      await updateTreatmentDecision(lead.id, {
+        ...payload,
+        expected_updated_at: lead.lastUpdatedAt || lead.updatedAt,
+      });
+      setNoFlowLeadId(null);
+      setNoReason('');
+      setMtFlowLeadId(null);
+      setMtDateTime('');
+      if (successMessage) {
+        // Same toast channel ConsultationPanel uses — rendered by CoordinatorDashboard.
+        window.dispatchEvent(new CustomEvent('neuroreach:toast', {
+          detail: { message: successMessage, type: 'success' },
+        }));
+      }
+      onRefresh();
+    } catch (err) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        || 'Could not save the treatment decision — please retry.';
+      setDecisionErrors(prev => ({ ...prev, [lead.id]: detail }));
+    } finally {
+      setDecisionBusyId(null);
+    }
+  }, [onRefresh]);
+
+  // MT scheduling helpers — quick-pick chips + future-date validation
+  const mtQuickPicks = useMemo(() => buildMtQuickPicks(), []);
+  const mtValid = useMemo(() => {
+    if (!mtDateTime) return false;
+    const t = new Date(mtDateTime).getTime();
+    return Number.isFinite(t) && t > Date.now();
+  }, [mtDateTime]);
+
+  // ── Split the two queue populations ──────────────────────────────────────
+  // Treatment decisions: completed consults pending a decision or awaiting MT.
+  const treatmentLeads = useMemo(
+    () => leads
+      .filter(l =>
+        l.status === 'consultation complete' &&
+        (!l.treatmentDecision || l.treatmentDecision === 'yes'))
+      .sort((a, b) => {
+        // Pending decisions first, then oldest activity first (most overdue on top)
+        const aPending = a.treatmentDecision ? 1 : 0;
+        const bPending = b.treatmentDecision ? 1 : 0;
+        if (aPending !== bPending) return aPending - bPending;
+        return (a.lastUpdatedAt ? +new Date(a.lastUpdatedAt) : 0)
+             - (b.lastUpdatedAt ? +new Date(b.lastUpdatedAt) : 0);
+      }),
+    [leads]
+  );
+  const pendingDecisionCount = useMemo(
+    () => treatmentLeads.filter(l => !l.treatmentDecision).length,
+    [treatmentLeads]
+  );
+  const awaitingMtCount = treatmentLeads.length - pendingDecisionCount;
+
+  // No-shows: everything that is not a completed consult.
+  const noShowLeads = useMemo(
+    () => leads.filter(l => l.status !== 'consultation complete'),
+    [leads]
+  );
+
+  // Data (no-show analytics operate on the no-show population only)
+  const trendData   = useMemo(() => buildTrend(noShowLeads, trendRange), [noShowLeads, trendRange]);
+  const pieData     = useMemo(() => buildPie(noShowLeads), [noShowLeads]);
+  const sortedLeads = useMemo(() => sortLeads(noShowLeads, sort), [noShowLeads, sort]);
 
   // Pagination
   const totalPages  = Math.max(1, Math.ceil(sortedLeads.length / rowsPerPage));
   const safePage    = Math.min(currentPage, totalPages);
   const pageLeads   = sortedLeads.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
 
-  const overdue       = useMemo(() => leads.filter(l => daysSince(l.lastUpdatedAt) > 7).length, [leads]);
-  const recordingRate = leads.length > 0 ? Math.round((leads.filter(l => l.noShowReason?.trim()).length / leads.length) * 100) : 0;
+  const overdue       = useMemo(() => noShowLeads.filter(l => daysSince(l.lastUpdatedAt) > 7).length, [noShowLeads]);
+  const recordingRate = noShowLeads.length > 0 ? Math.round((noShowLeads.filter(l => l.noShowReason?.trim()).length / noShowLeads.length) * 100) : 0;
 
   // x-axis: show every other label when range >= 14
   const xFmt = useCallback((val: string, idx: number) => {
@@ -378,7 +502,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
     return (
       <div className="flex items-center justify-center py-24 text-gray-400">
         <Loader2 className="w-6 h-6 animate-spin mr-2.5" />
-        <span className="text-sm font-medium">Loading missed consultations…</span>
+        <span className="text-base font-medium">Loading post-consultation queue…</span>
       </div>
     );
   }
@@ -391,9 +515,10 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
           <CalendarX2 className="w-8 h-8 text-violet-300" />
         </div>
         <div>
-          <p className="text-gray-800 font-semibold text-base">No missed consultations</p>
-          <p className="text-gray-400 text-sm mt-1.5 max-w-xs leading-relaxed">
-            All scheduled patients attended their appointments — excellent coordination!
+          <p className="text-gray-900 font-bold text-lg">Nothing awaiting action</p>
+          <p className="text-gray-400 text-sm mt-2 max-w-sm leading-relaxed">
+            No missed consultations and no completed consults awaiting a treatment
+            decision — excellent coordination!
           </p>
         </div>
       </div>
@@ -412,6 +537,235 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
     <>
       <div className="flex flex-col gap-4">
 
+        {/* ── Treatment Decisions (migration 030) ────────────────────── */}
+        {treatmentLeads.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* Section header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 border-b border-gray-50 bg-gradient-to-r from-emerald-50/70 via-white to-white">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-md shadow-emerald-200/60 flex items-center justify-center shrink-0">
+                  <Stethoscope className="text-white" style={{ width: 22, height: 22 }} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 tracking-tight">Treatment Decisions</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Consult complete — will the patient be doing treatment (MT appointment)?
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                {pendingDecisionCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-3 py-1 rounded-full">
+                    <AlertCircle className="w-3.5 h-3.5" />{pendingDecisionCount} awaiting decision
+                  </span>
+                )}
+                {awaitingMtCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full">
+                    <CalendarClock className="w-3.5 h-3.5" />{awaitingMtCount} awaiting MT
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {treatmentLeads.map((lead) => {
+              const busy = decisionBusyId === lead.id;
+              const error = decisionErrors[lead.id];
+              const isNoFlow = noFlowLeadId === lead.id;
+              const isMtFlow = mtFlowLeadId === lead.id;
+              const awaitingMt = lead.treatmentDecision === 'yes';
+              const leadName = `${lead.firstName} ${lead.lastName || ''}`.trim();
+              const initials = `${lead.firstName?.[0] || ''}${lead.lastName?.[0] || ''}`.toUpperCase() || '?';
+
+              return (
+                <div key={lead.id} className={`border-b border-gray-50 last:border-0 transition-colors ${isMtFlow ? 'bg-violet-50/30' : ''}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4 hover:bg-slate-50/60 transition-colors">
+
+                    {/* Patient identity */}
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
+                        awaitingMt ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700'
+                      }`}>
+                        {initials}
+                      </div>
+                      <button type="button" onClick={() => onView(lead.id)}
+                        className="text-left min-w-0 group" title="View full lead profile">
+                        <span className="block font-semibold text-gray-900 text-[15px] leading-tight truncate group-hover:text-violet-700 transition-colors">
+                          {leadName}
+                        </span>
+                        <span className="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                          <span className="font-mono tracking-tight">{lead.leadId}</span>
+                          <span className="text-gray-300">·</span>
+                          <span>Consult completed {formatRelativeTime(lead.lastUpdatedAt)}</span>
+                        </span>
+                      </button>
+                      <Badge variant="priority" value={lead.priority} size="sm" />
+                    </div>
+
+                    {/* Decision controls */}
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                      {awaitingMt ? (
+                        !isMtFlow && (
+                          <>
+                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold px-3 py-1.5 rounded-xl">
+                              <CheckCircle2 className="w-4 h-4" />Doing treatment
+                              {lead.treatmentDecisionAt && (
+                                <span className="font-normal text-emerald-600/70 hidden xl:inline">
+                                  · decided {formatRelativeTime(lead.treatmentDecisionAt)}
+                                </span>
+                              )}
+                            </span>
+                            <button type="button" disabled={busy}
+                              onClick={() => { setMtFlowLeadId(lead.id); setMtDateTime(''); setNoFlowLeadId(null); }}
+                              className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 active:scale-[0.98] text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-sm shadow-violet-200/70 transition-all"
+                              title="Schedule the Motor Threshold appointment">
+                              <CalendarClock className="w-4 h-4" />Schedule MT appointment
+                            </button>
+                            <button type="button" disabled={busy}
+                              onClick={() => submitTreatmentDecision(
+                                lead, { decision: 'pending' },
+                                `Decision reset — ${leadName} is back to awaiting a treatment decision`,
+                              )}
+                              className="p-2 rounded-xl text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                              title="Undo decision">
+                              {busy ? <Loader2 className="w-4.5 h-4.5 animate-spin" style={{ width: 18, height: 18 }} /> : <Undo2 style={{ width: 18, height: 18 }} />}
+                            </button>
+                          </>
+                        )
+                      ) : isNoFlow ? (
+                        <>
+                          <select
+                            value={noReason}
+                            onChange={e => setNoReason(e.target.value)}
+                            className="border border-gray-200 bg-white rounded-xl px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-rose-400 max-w-[230px]">
+                            <option value="">Reason (optional)…</option>
+                            {TREATMENT_NO_REASONS.map(r => (
+                              <option key={r.value} value={r.value}>{r.label}</option>
+                            ))}
+                          </select>
+                          <button type="button" disabled={busy}
+                            onClick={() => submitTreatmentDecision(
+                              lead,
+                              { decision: 'no', ...(noReason ? { treatment_no_reason: noReason } : {}) },
+                              `✓ ${leadName} marked as not doing treatment — stays in the Completed queue`,
+                            )}
+                            className="inline-flex items-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 active:scale-[0.98] text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-sm transition-all">
+                            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                            Confirm — not doing treatment
+                          </button>
+                          <button type="button" disabled={busy}
+                            onClick={() => { setNoFlowLeadId(null); setNoReason(''); }}
+                            className="text-sm font-medium text-gray-400 hover:text-gray-600 px-2.5 py-2 transition-colors">
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm font-medium text-gray-500 mr-1 hidden md:inline">Doing treatment?</span>
+                          <button type="button" disabled={busy}
+                            onClick={() => submitTreatmentDecision(
+                              lead, { decision: 'yes' },
+                              `✓ ${leadName} is doing treatment — next step: schedule the MT appointment`,
+                            )}
+                            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-sm font-semibold px-5 py-2 rounded-xl shadow-sm shadow-emerald-200/70 transition-all"
+                            title="Patient will be doing treatment — MT appointment to be scheduled">
+                            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            Yes
+                          </button>
+                          <button type="button" disabled={busy}
+                            onClick={() => { setNoFlowLeadId(lead.id); setNoReason(''); setMtFlowLeadId(null); }}
+                            className="inline-flex items-center gap-2 bg-white hover:bg-rose-50 border border-gray-200 hover:border-rose-200 text-gray-600 hover:text-rose-700 text-sm font-semibold px-5 py-2 rounded-xl transition-all"
+                            title="Patient will not be doing treatment">
+                            <XCircle className="w-4 h-4" />No
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* MT scheduling panel — expands beneath the row */}
+                  {isMtFlow && (
+                    <div className="mx-6 mb-5 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-white p-5 shadow-sm">
+                      <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                        <CalendarClock className="text-violet-600" style={{ width: 18, height: 18 }} />
+                        Schedule Motor Threshold (MT) appointment
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 ml-[26px]">
+                        The MT appointment is the first appointment of the treatment phase — daily sessions follow.
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-2 mt-4">
+                        {mtQuickPicks.map(q => (
+                          <button key={q.value} type="button"
+                            onClick={() => setMtDateTime(q.value)}
+                            className={`px-3.5 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                              mtDateTime === q.value
+                                ? 'bg-violet-600 border-violet-600 text-white shadow-sm shadow-violet-200'
+                                : 'bg-white border-gray-200 text-gray-600 hover:border-violet-300 hover:text-violet-700'
+                            }`}>
+                            {q.label}
+                          </button>
+                        ))}
+                        <span className="text-xs text-gray-400 font-medium px-1">or pick a time</span>
+                        <input
+                          type="datetime-local"
+                          value={mtDateTime}
+                          min={toLocalInputValue(new Date())}
+                          onChange={e => setMtDateTime(e.target.value)}
+                          className="border border-violet-200 bg-white rounded-xl px-3.5 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t border-violet-100/80">
+                        <p className="text-sm text-gray-500 flex items-center gap-2">
+                          <ArrowRight className="w-4 h-4 text-violet-400 shrink-0" />
+                          <span>
+                            After confirming, <span className="font-semibold text-gray-700">{lead.firstName}</span> moves
+                            to the <span className="font-semibold text-gray-700">Completed</span> queue
+                            as <span className="font-semibold text-emerald-700">Treatment Started</span>.
+                          </span>
+                        </p>
+                        <div className="flex items-center gap-2.5">
+                          <button type="button" disabled={busy}
+                            onClick={() => { setMtFlowLeadId(null); setMtDateTime(''); }}
+                            className="text-sm font-medium text-gray-400 hover:text-gray-600 px-3 py-2 transition-colors">
+                            Cancel
+                          </button>
+                          <button type="button" disabled={busy || !mtValid}
+                            onClick={() => submitTreatmentDecision(
+                              lead,
+                              { decision: 'mt_scheduled', mt_scheduled_for: new Date(mtDateTime).toISOString() },
+                              `✓ MT scheduled for ${fmtMtLabel(mtDateTime)} — ${leadName} moved to Completed as Treatment Started`,
+                            )}
+                            className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-sm shadow-emerald-200/70 transition-all">
+                            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            {mtValid ? `Confirm MT — ${fmtMtLabel(mtDateTime)}` : 'Confirm MT appointment'}
+                          </button>
+                        </div>
+                      </div>
+                      {mtDateTime && !mtValid && (
+                        <p className="text-xs text-rose-600 flex items-center gap-1.5 mt-2.5">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />The MT appointment must be in the future.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {error && (
+                    <div className="px-6 pb-4 -mt-1">
+                      <p className="text-sm text-rose-600 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 shrink-0" />{error}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── No-show analytics + table (hidden when no no-shows) ───── */}
+        {noShowLeads.length > 0 && (<>
+
         {/* ── Analytics row ──────────────────────────────────────────── */}
         <div className="grid grid-cols-5 gap-4">
 
@@ -419,8 +773,8 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
           <div className="col-span-3 bg-white rounded-2xl border border-gray-100 shadow-sm px-6 pt-5 pb-4">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-sm font-semibold text-gray-800">No-Show Trend</h3>
-                <p className="text-[11px] text-gray-400 mt-0.5">Consultations missed per day</p>
+                <h3 className="text-base font-bold text-gray-900">No-Show Trend</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Consultations missed per day</p>
               </div>
               <div className="flex items-center gap-3">
                 {/* Range selector */}
@@ -430,7 +784,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                       key={String(r.value)}
                       type="button"
                       onClick={() => setTrendRange(r.value)}
-                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all duration-150 ${
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-150 ${
                         trendRange === r.value
                           ? 'bg-white text-violet-700 shadow-sm'
                           : 'text-gray-500 hover:text-gray-700'
@@ -443,18 +797,18 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                 {/* Inline KPIs */}
                 <div className="flex items-center gap-4 text-right">
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Total</p>
-                    <p className="text-xl font-bold text-gray-900 leading-none mt-0.5">{leads.length}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Total</p>
+                    <p className="text-2xl font-bold text-gray-900 leading-none mt-1">{noShowLeads.length}</p>
                   </div>
                   {overdue > 0 && (
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-400">Overdue</p>
-                      <p className="text-xl font-bold text-rose-600 leading-none mt-0.5">{overdue}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-400">Overdue</p>
+                      <p className="text-2xl font-bold text-rose-600 leading-none mt-1">{overdue}</p>
                     </div>
                   )}
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Captured</p>
-                    <p className={`text-xl font-bold leading-none mt-0.5 ${recordingRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>{recordingRate}%</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">Captured</p>
+                    <p className={`text-2xl font-bold leading-none mt-1 ${recordingRate >= 80 ? 'text-emerald-600' : 'text-amber-600'}`}>{recordingRate}%</p>
                   </div>
                 </div>
               </div>
@@ -482,8 +836,8 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
           {/* Donut — 2 cols */}
           <div className="col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm px-5 pt-5 pb-4 flex flex-col">
             <div className="mb-3">
-              <h3 className="text-sm font-semibold text-gray-800">Reason Distribution</h3>
-              <p className="text-[11px] text-gray-400 mt-0.5">Breakdown by no-show category</p>
+              <h3 className="text-base font-bold text-gray-900">Reason Distribution</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Breakdown by no-show category</p>
             </div>
             <div className="flex items-center gap-4 flex-1 min-h-0">
               {/* Donut */}
@@ -497,8 +851,8 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                 </PieChart>
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900 leading-none">{leads.length}</p>
-                    <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mt-0.5">total</p>
+                    <p className="text-3xl font-bold text-gray-900 leading-none">{noShowLeads.length}</p>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-1">total</p>
                   </div>
                 </div>
               </div>
@@ -507,8 +861,8 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                 {pieData.map(({ label, count, fill }) => (
                   <div key={label} className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: fill }} />
-                    <span className="text-[11px] text-gray-600 truncate flex-1" title={label}>{label}</span>
-                    <span className="text-[11px] font-bold text-gray-800 shrink-0">{count}</span>
+                    <span className="text-xs text-gray-600 truncate flex-1" title={label}>{label}</span>
+                    <span className="text-xs font-bold text-gray-800 shrink-0">{count}</span>
                   </div>
                 ))}
               </div>
@@ -521,17 +875,17 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
           {/* Table header strip */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-50">
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-violet-500" />
-              <span className="text-sm font-semibold text-gray-700">
-                {leads.length} missed consultation{leads.length !== 1 ? 's' : ''}
+              <TrendingUp className="w-4.5 h-4.5 text-violet-500" style={{ width: 18, height: 18 }} />
+              <span className="text-base font-bold text-gray-900">
+                {noShowLeads.length} missed consultation{noShowLeads.length !== 1 ? 's' : ''}
               </span>
               {overdue > 0 && (
-                <span className="inline-flex items-center gap-1 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                  <AlertCircle className="w-3 h-3" />{overdue} overdue
+                <span className="inline-flex items-center gap-1.5 bg-rose-50 border border-rose-100 text-rose-600 text-xs font-semibold px-2.5 py-1 rounded-full">
+                  <AlertCircle className="w-3.5 h-3.5" />{overdue} overdue
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-gray-400 font-medium">
+            <div className="flex items-center gap-3 text-xs text-gray-400 font-medium">
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" />Within 2 days</span>
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />2–7 days</span>
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-400" />Overdue &gt;7d</span>
@@ -543,7 +897,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
               <thead className="bg-gray-50/80 border-b border-gray-100">
                 <tr>
                   <th className="px-4 py-3 text-left bg-gray-50 select-none" style={{ width: colWidths.leadId, minWidth: 80 }}>
-                    <span className="text-[11px] uppercase tracking-widest font-semibold text-gray-400">Lead ID</span>
+                    <span className="text-xs uppercase tracking-widest font-semibold text-gray-400">Lead ID</span>
                     <div
                       className="absolute right-0 top-0 h-full w-4 cursor-col-resize z-10 group/resize flex items-center justify-center"
                       onMouseDown={(e) => { e.preventDefault(); handleResizeStart('leadId', e.clientX, colWidths.leadId); }}
@@ -556,7 +910,7 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                   <SortTh label="No-Show Date"   field="noShowDate"   sort={sort} onSort={handleSort} width={colWidths.noShowDate}   colKey="noShowDate"   onResizeStart={handleResizeStart} />
                   <SortTh label="Last Activity"  field="lastActivity" sort={sort} onSort={handleSort} width={colWidths.lastActivity} colKey="lastActivity" onResizeStart={handleResizeStart} />
                   <th className="px-4 py-3 text-right bg-gray-50 select-none" style={{ minWidth: 220 }}>
-                    <span className="text-[11px] uppercase tracking-widest font-semibold text-gray-400">Actions</span>
+                    <span className="text-xs uppercase tracking-widest font-semibold text-gray-400">Actions</span>
                   </th>
                 </tr>
               </thead>
@@ -573,13 +927,13 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
 
                       {/* Lead ID */}
                       <td className="px-4 py-3.5 overflow-hidden" style={{ width: colWidths.leadId }}>
-                        <span className="font-mono text-[11px] text-gray-400 tracking-tight truncate block">{lead.leadId}</span>
+                        <span className="font-mono text-xs text-gray-400 tracking-tight truncate block">{lead.leadId}</span>
                       </td>
 
                       {/* Patient */}
                       <td className="px-4 py-3.5 overflow-hidden" style={{ width: colWidths.patient }}>
                         <div className="flex flex-col gap-1">
-                          <span className="font-semibold text-gray-800 text-sm leading-tight truncate">{lead.firstName} {lead.lastName}</span>
+                          <span className="font-semibold text-gray-900 text-[15px] leading-tight truncate">{lead.firstName} {lead.lastName}</span>
                           <div className="flex flex-wrap items-center gap-1.5">
                             <Badge variant="priority" value={lead.priority} size="sm" />
                             {lead.isReferral && (
@@ -592,13 +946,13 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                       {/* No-Show Reason */}
                       <td className="px-4 py-3.5 overflow-hidden" style={{ width: colWidths.noShowReason }}>
                         {reasonCfg ? (
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold ${reasonCfg.badge}`}>
-                            <reasonCfg.Icon className="w-3.5 h-3.5 shrink-0" />
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold ${reasonCfg.badge}`}>
+                            <reasonCfg.Icon className="w-4 h-4 shrink-0" />
                             <span className="truncate max-w-[150px]" title={reasonCfg.label}>{reasonCfg.label}</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-400 italic">
-                            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-gray-300" />Not recorded
+                          <span className="inline-flex items-center gap-1.5 text-sm text-gray-400 italic">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-gray-300" />Not recorded
                           </span>
                         )}
                       </td>
@@ -606,14 +960,14 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                       {/* No-Show Date */}
                       <td className="px-4 py-3.5 overflow-hidden" style={{ width: colWidths.noShowDate }}>
                         <div className="flex flex-col gap-0.5">
-                          <span className={`text-xs font-medium ${dateColor} truncate`}>{dateText}</span>
-                          {dateSub && <span className={`text-[10px] font-bold uppercase tracking-wide ${dateColor} opacity-70`}>{dateSub}</span>}
+                          <span className={`text-sm font-medium ${dateColor} truncate`}>{dateText}</span>
+                          {dateSub && <span className={`text-[11px] font-bold uppercase tracking-wide ${dateColor} opacity-70`}>{dateSub}</span>}
                         </div>
                       </td>
 
                       {/* Last Activity */}
                       <td className="px-4 py-3.5 overflow-hidden" style={{ width: colWidths.lastActivity }}>
-                        <span className="text-xs text-gray-500">{formatRelativeTime(lead.lastUpdatedAt)}</span>
+                        <span className="text-sm text-gray-500">{formatRelativeTime(lead.lastUpdatedAt)}</span>
                       </td>
 
                       {/* Actions */}
@@ -621,9 +975,9 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Re-engage — primary CTA */}
                           <button type="button" onClick={() => onReEngage(lead)}
-                            className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 active:scale-[0.97] text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm shadow-violet-100 transition-all duration-150"
+                            className="inline-flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 active:scale-[0.98] text-white text-sm font-semibold px-3.5 py-2 rounded-xl shadow-sm shadow-violet-200/70 transition-all duration-150"
                             title="Re-book consultation">
-                            <CalendarPlus className="w-3.5 h-3.5" />Re-engage
+                            <CalendarPlus className="w-4 h-4" />Re-engage
                           </button>
                           {/* Phone */}
                           <button type="button" onClick={() => handleOpenDial(lead)}
@@ -663,17 +1017,17 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
 
           {/* ── Pagination footer ──────────────────────────────────── */}
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-50 bg-gray-50/40">
-            <div className="flex items-center gap-2 text-[11px] text-gray-500">
-              <FileText className="w-3.5 h-3.5 text-gray-400" />
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <FileText className="w-4 h-4 text-gray-400" />
               <span>
-                Showing {leads.length === 0 ? 0 : (safePage - 1) * rowsPerPage + 1}–{Math.min(safePage * rowsPerPage, leads.length)} of {leads.length}
+                Showing {noShowLeads.length === 0 ? 0 : (safePage - 1) * rowsPerPage + 1}–{Math.min(safePage * rowsPerPage, noShowLeads.length)} of {noShowLeads.length}
               </span>
               <span className="text-gray-300 mx-1">·</span>
               <span>Rows per page:</span>
               <select
                 value={rowsPerPage}
                 onChange={e => { setRowsPerPage(Number(e.target.value) as typeof ROWS_PER_PAGE_OPTIONS[number]); setCurrentPage(1); }}
-                className="bg-white border border-gray-200 rounded-md text-[11px] text-gray-600 px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                className="bg-white border border-gray-200 rounded-md text-xs text-gray-600 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400"
               >
                 {ROWS_PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
@@ -719,6 +1073,8 @@ export const PostConsultationQueue: React.FC<PostConsultationQueueProps> = ({
             </div>
           </div>
         </div>
+
+        </>)}
 
       </div>
 

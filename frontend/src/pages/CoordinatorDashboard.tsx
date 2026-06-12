@@ -45,7 +45,7 @@ const QUEUE_CONFIG: Record<string, { title: string; subtitle: string; color: str
   'callback': { title: 'Callback Requested', subtitle: 'Call back at requested time', color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
   // Outcome Queues
   'scheduled': { title: 'Scheduled Consultations', subtitle: 'Consultation booked - Ready for appointment', color: 'text-green-600', bgColor: 'bg-green-50' },
-  'post_consultation': { title: 'Post-Consultation', subtitle: 'No-show & missed consultations — track and re-engage', color: 'text-violet-700', bgColor: 'bg-violet-50' },
+  'post_consultation': { title: 'Post-Consultation', subtitle: 'No-shows to re-engage & completed consults awaiting treatment decision', color: 'text-violet-700', bgColor: 'bg-violet-50' },
   'completed': { title: 'Completed Leads', subtitle: 'Consultation complete or treatment started', color: 'text-teal-600', bgColor: 'bg-teal-50' },
   'unreachable': { title: 'Unreachable Leads', subtitle: 'Unable to contact - Needs review', color: 'text-slate-600', bgColor: 'bg-slate-50' },
   'not_interested': { title: 'Not Interested', subtitle: 'Lead declined', color: 'text-orange-600', bgColor: 'bg-orange-50' },

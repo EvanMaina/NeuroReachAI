@@ -15,7 +15,8 @@
 | **Auth** | JWT (cookie + Bearer) via `backend/src/core/auth.py` |
 | **Encryption** | AES-256 for all PHI via `EncryptionService` (`backend/src/services/encryption.py`) |
 | **Dev containers** | Docker Compose (`docker-compose.yml`); prod variant is `docker-compose.prod.yml` |
-| **Migrations** | Plain SQL files in `database/init/` — numbered `001_…` through `027_…`. New migrations go here. The migration runner tolerates already-exists errors on existing DBs. |
+| **Migrations** | Plain SQL files in `database/init/` — numbered `001_…` through `030_…`. New migrations go here. The migration runner tolerates already-exists errors on existing DBs. |
+| **AI provider** | OpenAI (`openai` SDK, Chat Completions) — env `OPENAI_API_KEY` + `OPENAI_MODEL` (default `gpt-5.5`). Powers AI Insights dashboard (async via Celery, JSON mode) and per-lead email drafts (sync, strict `json_schema`). Ported from Anthropic 2026-06-12. |
 
 ### Dev service ports (local)
 | Service | Port |
@@ -207,37 +208,40 @@ All requests go through `frontend/src/services/api.ts` (`apiClient` — Axios in
 
 ---
 
-## Pending Feature Work (this session)
+## Post-Consultation Treatment Decision (migration 030, shipped 2026-06-12)
 
-### Feature A — Manual Lead Source Attribution
-**Goal**: When coordinator adds a lead manually, let them select HOW the patient found the clinic (Google Ad, Google Search, Social Media, Friend/Word-of-mouth, Provider Referral, Other). Route that lead into the correct analytics platform card.
+> Features A (manual lead source attribution, migration 028) and B (no-show
+> queue, migration 029) shipped in commit `4c6e45f` — see the Lead Lifecycle
+> and Analytics sections above.
 
-**Approach**:
-- New DB column `manual_lead_source VARCHAR(50)` (nullable) on `leads` table → migration `028_add_manual_lead_source.sql`
-- Update `ManualLeadCreate` schema + `IManualLeadRequest` + `create_manual_lead` endpoint
-- Update source analytics to include manual leads that have `manual_lead_source` set (not just `source != manual`), mapping to the correct platform card
-- Premium dropdown in `ManualLeadModal.tsx` with icons and descriptions per option
+**Goal**: When a consult is marked complete, the lead surfaces in the
+Post-Consultation queue until the coordinator records whether the patient
+will be doing **treatment** (i.e. whether a **Motor Threshold (MT)**
+appointment — the first appointment of the treatment phase — will be
+scheduled). User-facing vocabulary is always "treatment", never "TX".
 
-**Platform mapping**:
-| manual_lead_source | Analytics card |
+**Columns on `leads`** (all nullable, migration `030_add_treatment_decision.sql`):
+`treatment_decision` ('yes' | 'no' | NULL = pending), `treatment_decision_at`,
+`treatment_decided_by_user_id` (FK users), `treatment_no_reason`,
+`mt_scheduled_for` (timestamptz).
+
+**Lifecycle** (`PATCH /api/leads/{id}/treatment-decision`, body `decision`):
+| decision | Effect |
 |---|---|
-| google_ads | Google Ads |
-| google_search | Widget (organic digital) |
-| social_media | Referral (no dedicated card yet) |
-| friend | Referral (set is_referral=True) |
-| provider_referral | Referral (is_referral=True, triggers provider link) |
-| other / null | Excluded (as today) |
+| yes | Lead stays in Post-Consultation tagged "Awaiting MT" |
+| no | Lead remains CONSULTATION_COMPLETE (Completed queue only); optional `treatment_no_reason` |
+| pending | Undo — decision reset to NULL |
+| mt_scheduled | Requires prior 'yes' + `mt_scheduled_for` ISO datetime; lead → TREATMENT_STARTED |
 
-### Feature B — No-Show / Post-Consultation Queue
-**Goal**: A premium new queue between Scheduled and Completed that captures leads who had a scheduled consultation but didn't show up, with reason tracking for process improvement.
-
-**Approach**:
-- New `ContactOutcome` value: `NO_SHOW` → migration `029_add_no_show_outcome.sql`
-- New `no_show_reason VARCHAR(255)` (nullable) column on leads → same migration
-- Update `no_show` outcome handler in leads API to set `contact_outcome = NO_SHOW` (instead of ANSWERED)
-- New `no_show` queue type in `QueueSidebar.tsx`
-- Dedicated "No Show" panel with reason display, re-schedule and re-engage quick actions
-- No-show reason dropdown: Patient Cancelled (wants reschedule) / Patient Cancelled (not interested) / No Call / No Show / Insurance Issue / Transportation Issue / Provider Unavailable / Other
+**Rules**:
+- The `post_consultation` queue now has TWO arms (backend `apply_queue_filter`
+  + frontend `filterLeadsByQueue` must stay mirrored): no-shows (migration 029)
+  AND completed consults with `treatment_decision IS NULL OR = 'yes'`.
+- `clear_treatment_decision_fields(lead)` resets all five columns. Called on
+  every fresh transition INTO `CONSULTATION_COMPLETE` (decision pending again)
+  and on every transition OUT of completed/treatment statuses.
+- `PostConsultationQueue.tsx` renders a "Treatment Decisions" section
+  (Yes / No-with-reason / Record-MT / undo) above the no-show analytics.
 
 ---
 

@@ -326,6 +326,20 @@ class Lead(Base):
     # Reason a scheduled consultation was not attended (migration 029).
     # Set when contact_outcome = NO_SHOW.
     no_show_reason = Column(String(255), nullable=True)
+
+    # Post-consultation treatment decision (migration 030).
+    # 'yes' = MT appointment will be scheduled (lead stays in Post-Consultation
+    # until mt_scheduled_for is recorded), 'no' = not proceeding with treatment,
+    # NULL = decision pending (lead shows in Post-Consultation queue).
+    treatment_decision = Column(String(10), nullable=True)
+    treatment_decision_at = Column(DateTime(timezone=True), nullable=True)
+    treatment_decided_by_user_id = Column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    treatment_no_reason = Column(String(255), nullable=True)
+    mt_scheduled_for = Column(DateTime(timezone=True), nullable=True)
     
     # UTM Tracking
     utm_source = Column(String(255), nullable=True)

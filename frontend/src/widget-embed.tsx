@@ -429,8 +429,43 @@ function isAssessmentPage(): boolean {
   return window.location.href.toLowerCase().includes('/assessment');
 }
 
+function buildAssessmentUrl(apiUrl: string): string {
+  try {
+    const page = new URLSearchParams(window.location.search);
+    const utmSource = page.get('utm_source');
+    const utmMedium = page.get('utm_medium');
+    const utmCampaign = page.get('utm_campaign');
+    const utmTerm = page.get('utm_term');
+    const gclid = page.get('gclid');
+
+    const out = new URLSearchParams();
+
+    if (utmSource) {
+      // Explicit UTM params on the page — forward them, mark channel as widget
+      out.set('utm_source', utmSource);
+      if (utmMedium) out.set('utm_medium', utmMedium);
+      if (utmCampaign) out.set('utm_campaign', utmCampaign);
+      if (utmTerm) out.set('utm_term', utmTerm);
+      out.set('utm_content', 'floating_widget');
+    } else if (gclid) {
+      // Google Auto-Tagging (no UTM params, but gclid present) → Google Ads click
+      out.set('utm_source', 'google');
+      out.set('utm_medium', 'cpc');
+      out.set('utm_content', 'floating_widget');
+    } else {
+      // No paid attribution on page — organic/direct widget traffic
+      out.set('utm_source', 'floating_widget');
+      out.set('utm_medium', 'cta');
+    }
+
+    return `${apiUrl}/assessment?${out.toString()}`;
+  } catch {
+    return `${apiUrl}/assessment?utm_source=floating_widget&utm_medium=cta`;
+  }
+}
+
 function createWidget(config: { apiUrl: string }): void {
-  const url = config.apiUrl + '/assessment?utm_source=floating_widget&utm_medium=cta';
+  const url = buildAssessmentUrl(config.apiUrl);
 
   const card = document.createElement('div');
   card.id = 'nr-card-widget';

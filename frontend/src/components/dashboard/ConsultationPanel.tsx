@@ -373,7 +373,7 @@ export const ConsultationPanel: React.FC<ConsultationPanelProps> = ({
       let toastMessage = '';
       switch (outcome) {
         case 'CONSULTATION_COMPLETE':
-          toastMessage = `✓ ${leadName} marked as Completed`;
+          toastMessage = `✓ ${leadName} marked as Completed — moved to Post-Consultation for treatment decision`;
           break;
         case 'RESCHEDULE_REQUESTED':
           if (scheduledAt) {
